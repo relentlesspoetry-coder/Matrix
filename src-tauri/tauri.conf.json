@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Matrix",
+  "version": "0.5.0",
+  "identifier": "com.matrix.frontend",
+  "build": {
+    "frontendDist": "../web"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Matrix",
+        "width": 1360,
+        "height": 850,
+        "minWidth": 860,
+        "minHeight": 600,
+        "backgroundColor": "#0c1019"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' asset: http://asset.localhost; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "deb",
+      "appimage"
+    ],
+    "icon": [
+      "icons/icon.png"
+    ],
+    "category": "Game",
+    "shortDescription": "Console, Steam and Windows game libraries for Linux"
+  }
+}

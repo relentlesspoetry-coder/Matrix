@@ -1,0 +1,14 @@
+{
+  "name": "matrix-linux-frontend",
+  "version": "0.5.0",
+  "private": true,
+  "description": "Matrix Linux desktop build tools",
+  "scripts": {
+    "tauri": "tauri",
+    "build:linux": "tauri build --bundles deb,appimage",
+    "test:core": "cargo test --locked --manifest-path cover-core/Cargo.toml"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  }
+}

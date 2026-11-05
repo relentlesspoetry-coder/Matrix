@@ -1,0 +1,10 @@
+src-tauri/target/
+node_modules/
+.DS_Store
+*.log
+
+cover-core/target/
+.pytest_cache/
+__pycache__/
+
+src-tauri/gen/

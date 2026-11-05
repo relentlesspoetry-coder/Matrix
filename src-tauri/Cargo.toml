@@ -1,0 +1,29 @@
+[package]
+name = "matrix-frontend"
+version = "0.5.0"
+edition = "2021"
+authors = ["relentlesspoetry-coder"]
+build = "build.rs"
+description = "Matrix: console, Steam and Windows game frontend for Linux"
+license = "MIT"
+
+[features]
+default = ["desktop"]
+desktop = ["dep:tauri", "dep:tauri-build"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", optional = true , features = [] }
+
+[dependencies]
+tauri = { version = "2", optional = true , features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
+walkdir = "2"
+sha2 = "0.10"
+base64 = "0.22"
+matrix-cover-core = { path = "../cover-core" }
+
+[dev-dependencies]
+tempfile = "3"
