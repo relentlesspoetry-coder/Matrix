@@ -13,7 +13,7 @@ Validation: 12 deterministic cover-engine tests, 5 actual headless-backend tests
 
 ## Native Linux testing release
 
-- Compiled and checked the complete Tauri desktop application on Zorin 18.1 x86-64; generated a DEB installer.
+- Compiled and checked the complete Tauri desktop application on Zorin 18.1 x86-64; generated DEB and AppImage installers. Both passed the actual native-window test.
 - Added pinned npm Tauri tooling and a GitHub Linux build workflow.
 - Added an actual native WebDriver test with isolated filesystem fixtures, two optional live artwork requests, manual cover round-trip, settings preservation and safe test launcher dispatch for console/Steam/Windows.
 - Added installation/testing instructions and a real native window screenshot. Real gameplay and user-specific emulator/Steam/Wine behavior remain for testing.

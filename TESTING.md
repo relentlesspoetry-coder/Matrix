@@ -16,6 +16,23 @@ This is the first native testing release, version 0.5.0. The build was made on Z
 
 APT installs the GTK/WebKit runtime dependencies if needed. Rust, Node, the source archive and developer tools are not required to run the installed application.
 
+## Portable AppImage alternative
+
+Download `Matrix_0.5.0_amd64.AppImage` from the same release. In its download folder run:
+
+```bash
+chmod +x Matrix_0.5.0_amd64.AppImage
+./Matrix_0.5.0_amd64.AppImage
+```
+
+If FUSE is unavailable, run it in extraction mode:
+
+```bash
+APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix_0.5.0_amd64.AppImage
+```
+
+The AppImage's actual native window, IPC, scanning, local covers, settings and launcher dispatch passed the same isolated desktop test in extraction mode. Other Linux distributions and native FUSE mounting have not been validated. The DEB is recommended on Zorin/Ubuntu.
+
 ## First-run testing
 
 Matrix creates `~/Games/Matrix/` and 14 console subfolders. Place your legally obtained game files inside the appropriate nested `* Games` folder, such as `PS2/PS2 Games`. Existing Steam and Windows games stay in their existing locations.
@@ -31,7 +48,7 @@ A game's emulator, firmware and any required keys must already be installed/conf
 
 ## What was actually verified
 
-- Optimized native Linux compilation and DEB generation succeeded.
+- Optimized native Linux compilation and DEB/AppImage generation succeeded.
 - A real Tauri/WebKit desktop window from the DEB payload was exercised through native WebDriver, in a separate X11 virtual display with an isolated temporary home directory.
 - That test checked actual IPC, creation of all 14 managed console libraries, PS1/PS2 scans, cross-console path rejection, local cover round-trip, preservation of emulator/Windows settings, Steam and Windows tab separation, and process argument dispatch to harmless test launchers.
 - The real desktop automatically downloaded one PS1 and one PS2 default cover using synthetic serial-labelled files. A separate Rust live test verified four sample provider URLs (both default and 3D).
