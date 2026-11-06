@@ -267,7 +267,12 @@ def main():
             wine = home/'bin/wine'
             wine.write_text('#!/bin/sh\nsleep 0.7\necho "Wine fixture could not load runtime" >&2\nexit 17\n')
             click('.game-card')
-            wait_for(lambda: js('return document.querySelector("#launch-status")?.textContent.includes("exit status 17")'))
+            wait_for(lambda: js('return state.launches.windows?.phase === "error"'))
+            failure = js('return state.launches.windows')
+            assert '17' in failure['message'] and 'Windows launcher' in failure['message'], failure
+            # Rust formats ExitStatus as "exit status: 17". Check the actual
+            # backend message in the error UI instead of inventing its wording.
+            assert js('return document.querySelector("#launch-status .launch-error p")?.textContent') == failure['message']
             click('[data-action="launch-details"][data-id="windows"]')
             assert 'Wine fixture could not load runtime' in js('return document.querySelector(".launch-output").textContent')
             assert not js('return Boolean(document.querySelector(".launch-dialog [data-action=open-emulator]"))')
@@ -380,6 +385,10 @@ def main():
             if cfg.online:
                 print('PASS: real desktop automatic PS1 and PS2 cover downloads (synthetic serial-labelled game fixtures)')
         except Exception:
+            try:
+                print('Native UI failure state:', json.dumps(js('return {page:state.page, overlay:state.overlay, busy:state.launchBusy, launches:state.launches, launchStatus:document.querySelector("#launch-status")?.textContent}')))
+            except Exception:
+                pass
             driver_log.flush()
             print((home/'driver.log').read_text())
             raise
