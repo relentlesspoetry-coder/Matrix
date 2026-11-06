@@ -312,6 +312,7 @@ def main():
             click('[data-action="configure"][data-id="ps2"]')
             js('document.querySelector("#emulator-launcher").value="flatpak";document.querySelector("#emulator-launcher").dispatchEvent(new Event("change",{bubbles:true}))')
             wait_for(lambda: js('return document.querySelector("#flatpak-app").options.length === 4'))
+            js('window.__keyEvents=[];document.addEventListener("keydown",event=>{const entry={key:event.key,shift:event.shiftKey,target:event.target.outerHTML};queueMicrotask(()=>{entry.prevented=event.defaultPrevented;entry.active=document.activeElement.outerHTML;window.__keyEvents.push(entry)})})')
             # Native WebKit keyboard navigation, not simulated focus handling.
             # Hidden file/AppImage controls must not steal Flatpak tab order.
             js('document.querySelector("#emulator-launcher").focus()')
@@ -423,7 +424,7 @@ def main():
                 print('PASS: real desktop automatic PS1 and PS2 cover downloads (synthetic serial-labelled game fixtures)')
         except Exception:
             try:
-                print('Native UI failure state:', json.dumps(js('return {page:state.page, overlay:state.overlay, busy:state.launchBusy, launches:state.launches, launchStatus:document.querySelector("#launch-status")?.textContent}')))
+                print('Native UI failure state:', json.dumps(js('return {page:state.page, overlay:state.overlay, busy:state.launchBusy, launches:state.launches, active:document.activeElement.outerHTML, keyEvents:window.__keyEvents, tabStops:[...document.querySelectorAll("#overlay-root button,#overlay-root input,#overlay-root select,#overlay-root textarea,#overlay-root summary")].map(node=>({html:node.outerHTML,tabIndex:node.tabIndex,disabled:node.matches(":disabled"),hidden:!!node.closest("[hidden],[inert]"),rects:node.getClientRects().length,visibility:getComputedStyle(node).visibility})), launchStatus:document.querySelector("#launch-status")?.textContent}')))
             except Exception:
                 pass
             driver_log.flush()
