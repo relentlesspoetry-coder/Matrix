@@ -34,7 +34,7 @@ def main():
                 while time.monotonic()<deadline:
                     if proc.poll() is not None:
                         raise AssertionError('Matrix exited before startup: '+logfile.read_text())
-                    if 'Interface ready' in logfile.read_text():break
+                    if 'Interface ready' in logfile.read_text() and len(list((home/'Games/Matrix').glob('*/* Games')))==14:break
                     time.sleep(.1)
                 else:raise AssertionError('Interface never became ready: '+logfile.read_text())
                 assert len(list((home/'Games/Matrix').glob('*/* Games')))==14
