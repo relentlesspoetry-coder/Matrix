@@ -6,6 +6,7 @@
 - Automatically build, test, sign and publish a new version pushed to main. Add `scripts/release.py` to bump, commit and push each version.
 - Display the supplied artwork for all 14 existing console libraries. Retain four extra supplied images without adding unsupported libraries.
 - Update the public GitHub README with the Matrix Play logo, purpose, installation instructions and capability limits.
+- Require the running executable to be inside its own AppImage mount before allowing replacement; reject inherited AppImage environments from another launcher.
 - Correct a native launch-test timing issue by waiting for the completed cache-environment log.
 
 ## 0.5.2 — Matrix Play name and logo

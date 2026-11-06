@@ -33,8 +33,31 @@ pub(crate) struct Service {
     inner: Arc<Mutex<Runtime>>,
     cancel: Arc<AtomicBool>,
 }
+fn identify_appimage(
+    image: &std::path::Path,
+    appdir: &std::path::Path,
+    exe: &std::path::Path,
+) -> Option<PathBuf> {
+    let image = image.canonicalize().ok()?;
+    let appdir = appdir.canonicalize().ok()?;
+    let exe = exe.canonicalize().ok()?;
+    // A launcher can inherit APPIMAGE from another application. Only our own
+    // mounted/extracted AppImage may be replaced by this process.
+    if image.is_file() && exe.starts_with(&appdir) && exe.file_name()? == "matrix-frontend" {
+        Some(image)
+    } else {
+        None
+    }
+}
+fn running_appimage() -> Option<PathBuf> {
+    identify_appimage(
+        &PathBuf::from(std::env::var_os("APPIMAGE")?),
+        &PathBuf::from(std::env::var_os("APPDIR")?),
+        &std::env::current_exe().ok()?,
+    )
+}
 fn mode() -> String {
-    if std::env::var_os("APPIMAGE").is_some_and(|p| PathBuf::from(p).is_file()) {
+    if running_appimage().is_some() {
         "appimage"
     } else if std::env::current_exe()
         .ok()
@@ -204,9 +227,8 @@ impl Service {
                 return Err("This update is no longer newer".into());
             }
             if install_mode == "appimage" {
-                let target =
-                    std::env::var_os("APPIMAGE").ok_or("Cannot locate the running AppImage")?;
-                return core::install_appimage(&download, &PathBuf::from(target)).map(Some);
+                let target = running_appimage().ok_or("Cannot identify the running Matrix Play AppImage. Use the downloaded installer manually.")?;
+                return core::install_appimage(&download, &target).map(Some);
             }
             if install_mode == "system" {
                 let status=super::launch_command("pkexec").arg("/usr/bin/apt-get").arg("install").arg("-y").arg(&download.path).current_dir("/").status().map_err(|_|"Could not open the system installer. The verified installer is saved in your Matrix Play update folder.")?;
@@ -315,4 +337,32 @@ pub(crate) fn open_update_releases() -> Result<(), String> {
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn inherited_appimage_cannot_select_another_app_for_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let image = root.path().join("Matrix.AppImage");
+        std::fs::write(&image, b"fixture").unwrap();
+        let mount = root.path().join("mount");
+        std::fs::create_dir_all(mount.join("usr/bin")).unwrap();
+        let exe = mount.join("usr/bin/matrix-frontend");
+        std::fs::write(&exe, b"fixture").unwrap();
+        assert_eq!(identify_appimage(&image, &mount, &exe), Some(image.clone()));
+        let outside = root.path().join("matrix-frontend");
+        std::fs::write(&outside, b"fixture").unwrap();
+        assert!(identify_appimage(&image, &mount, &outside).is_none());
+        let wrong = mount.join("usr/bin/other-app");
+        std::fs::write(&wrong, b"fixture").unwrap();
+        assert!(identify_appimage(&image, &mount, &wrong).is_none());
+        #[cfg(unix)]
+        {
+            let link = mount.join("matrix-frontend");
+            std::os::unix::fs::symlink(&outside, &link).unwrap();
+            assert!(identify_appimage(&image, &mount, &link).is_none());
+        }
+    }
 }

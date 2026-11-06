@@ -70,6 +70,7 @@ A game's emulator, firmware and any required keys must already be installed/conf
 
 ## Version 0.5.3 checks
 
+- Six native/headless backend tests pass, including rejection of inherited/unrelated AppImage locations.
 - Five updater-core tests passed: semantic version selection, signatures and repository/package identity, corruption/size limits, cancellation and cached downloads, package headers/symlinks, and staged AppImage replacement with backup using synthetic files.
 - The mock-bridge Chromium test exercised check → download → install → restart controls and all 14 decoded console images. Its installer responses are simulated, not system package installation.
 - The compiled desktop window passed native IPC/scanning/launch-fixture tests, rendered all 14 console images and exposed the real updater status. Ordinary non-WebDriver startup painted successfully without injected graphics settings.
