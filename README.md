@@ -52,6 +52,24 @@ Download **Matrix-Play_0.5.4_amd64.deb** from the [v0.5.4 release](https://githu
 - Persistent per-console favorites with visible counts, plus console-specific search, sorting and grid/list views.
 - Safe process creation using discrete arguments, not shell-interpolated commands. Emulator configuration never automatically rewrites game files.
 
+## Automatic emulator detection
+
+On startup, **Refresh**, or **Emulators & folders → Find emulators**, Matrix Play looks for known installed Flatpak IDs, recognizable executable AppImages and conventional native emulator binaries. A single ready match is linked to its supported consoles automatically. Existing manual choices are kept. Multiple matching installations require a choice in the **Detected emulators** dropdown; missing auto-links can be replaced only by a single ready match.
+
+AppImage scans are bounded to `~/Applications`, `~/AppImages`, `~/Downloads`, `~/.local/bin`, `~/.local/share/appimages`, the managed console folders, and AppImage paths mentioned in `~/.local/share/applications/*.desktop`. Scans are at most three levels deep in common folders, with entry limits. They never run AppImages or grant execute permission. An unexecutable AppImage is offered for explicit setup; unknown names and opaque/custom locations still need Browse. Name/header matching identifies likely emulator capabilities, not publisher authenticity. The generic Dolphin filename is intentionally excluded from global matching to avoid confusing it with KDE's file manager; `dolphin-emu` / `dolphin-emulator` AppImages are recognized.
+
+The current catalogue includes PCSX2 → PS2; DuckStation → PS1; RPCS3 → PS3; PPSSPP → PSP; RMG → N64; Dolphin → GameCube/Wii; Flycast → Dreamcast; Cemu → Wii U; SameBoy → GB; mGBA → GB/GBA; melonDS → DS; Azahar → 3DS; Ryujinx → Switch. Detection does not install an emulator, supply firmware, configure RetroArch cores, or certify gameplay. Flatpak IDs are matched exactly to their published manifests; the supported catalogue is in `src-tauri/src/discovery.rs`.
+
+## Open emulators and diagnose a failed launch
+
+**Open emulator** in a console starts its linked emulator without a game, so you can finish firmware/controller setup. **Save and open emulator** is also available in the setup dialog. Saving alone does not run it.
+
+PCSX2's installed Flatpak was reproduced crashing in fontconfig while constructing its first-run wizard, including when launched directly outside Matrix Play. A runtime-only font configuration allowed its setup and a real game boot to proceed. Matrix Play now enables **Use compatible runtime fonts** by default for the exact PCSX2 Flatpak ID; it can be turned off in setup. This supplies a small Matrix-owned font configuration file for that emulator launch only, reading runtime/app fonts and using the app's own cache. It does not delete fonts/caches or write persistent Flatpak overrides. Other Flatpak profiles may opt into the same option.
+
+An unfinished default PCSX2 setup or empty BIOS selection now produces an explanation and an Open emulator action. This check is skipped for custom portable/data-path arguments. Complete the [PCSX2 first-run wizard](https://pcsx2.net/docs/setup/running/) using your own BIOS before booting PS2 games.
+
+Matrix Play captures emulator output, checks early exits and displays **Launch details** instead of treating every spawned process as a successful game launch. It retains five owner-only logs per console under `$XDG_DATA_HOME/matrix/launches/`, capped at 64 KiB each, and shows the latest 8 KiB in the interface. Status tracks the launcher process; an exit with code zero may be a handoff to an existing window and is not proof of gameplay.
+
 ## Add an AppImage or Flatpak emulator
 
 1. Open a console and choose **Set up emulator** (or **Edit emulator**).
@@ -82,7 +100,7 @@ Verified in source development (CI results are visible in the Actions tab):
 
 - `cargo test --manifest-path cover-core/Cargo.toml`: **12 passed**, one live test skipped by default. These execute the actual Rust cover engine with synthetic, non-proprietary disc fixtures and an injected transport for deterministic HTTP outcomes.
 - `cargo test --manifest-path cover-core/Cargo.toml live_provider_templates -- --ignored --nocapture`: **1 passed**. The real HTTPS transport retrieved and decoded default/3D covers for one PS1 and one PS2 serial; all four sample URLs worked. Temporary images were removed.
-- `cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib`: **9 passed**. This compiles and executes the same native backend functions with desktop-specific Tauri wiring excluded. The isolated-home lifecycle test verifies library separation, path validation, persisted cover settings without profile loss, loading the real online cache, local cover priority and invalid-image rejection.
+- `cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib`: **15 passed**. This compiles and executes the same native backend functions with desktop-specific Tauri wiring excluded. The isolated-home lifecycle test verifies library separation, path validation, persisted cover settings without profile loss, loading the real online cache, local cover priority and invalid-image rejection.
 - `python3 tests/test_structure.py`: all 14 console folder pairs and repeated creation preserve existing files.
 - `python3 tests/test_ui.py`: Chromium integration test passed with a **mock Tauri bridge**. It covers the 14 consoles, independent Steam/Windows tabs, launch dispatch, cover controls/status, explicit serial submission, manual save, TheCoverProject button, style/disable persistence requests, responsive layout and no page script errors.
 - `node --check web/app.js` and Rust formatting/parser checks passed.

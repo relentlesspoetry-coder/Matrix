@@ -12,9 +12,9 @@ pub(crate) enum Launcher {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct FlatpakApp {
-    app_id: String,
-    name: String,
-    installation: String,
+    pub app_id: String,
+    pub name: String,
+    pub installation: String,
 }
 fn parse_flatpaks(text: &str) -> Vec<FlatpakApp> {
     let mut apps = BTreeMap::new();
@@ -24,7 +24,9 @@ fn parse_flatpaks(text: &str) -> Vec<FlatpakApp> {
             continue;
         }
         let (id, name, installation) = (fields[0].trim(), fields[1].trim(), fields[2].trim());
-        if id.split('.').count() < 3
+        if id.len() > 255
+            || id.split('.').any(|p| p.is_empty())
+            || id.split('.').count() < 3
             || !id
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
@@ -145,8 +147,24 @@ pub(crate) fn command(profile: &EmulatorProfile, id: &str) -> Result<Command, St
                 }
             }
             let folder = games_dir(id)?.canonicalize().map_err(|e| e.to_string())?;
-            c.arg(format!("--filesystem={}:ro", folder.display()))
-                .arg(&profile.flatpak_id);
+            c.arg(format!("--filesystem={}:ro", folder.display()));
+            if profile
+                .flatpak_runtime_fonts
+                .unwrap_or(profile.flatpak_id == "net.pcsx2.PCSX2")
+            {
+                let root = dirs::data_local_dir()
+                    .ok_or("Cannot locate Matrix Play data folder")?
+                    .join("matrix/compat");
+                fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+                let path = root.join("runtime-fonts-v1.conf");
+                let config = include_str!("runtime-fonts.conf");
+                if fs::read_to_string(&path).ok().as_deref() != Some(config) {
+                    fs::write(&path, config).map_err(|e| e.to_string())?;
+                }
+                c.arg(format!("--filesystem={}:ro", path.display()))
+                    .arg(format!("--env=FONTCONFIG_FILE={}", path.display()));
+            }
+            c.arg(&profile.flatpak_id);
             Ok(c)
         }
         _ => {

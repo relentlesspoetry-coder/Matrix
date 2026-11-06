@@ -1,7 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod discovery;
 mod emulators;
 mod favorites;
+mod launches;
 mod updates;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -115,6 +117,8 @@ const SPECS: &[ConsoleSpec] = &[
 #[serde(rename_all = "camelCase")]
 struct EmulatorProfile {
     emulator_name: String,
+    #[serde(default)]
+    auto_detected: bool,
     emulator_path: String,
     #[serde(default)]
     launcher: emulators::Launcher,
@@ -122,6 +126,8 @@ struct EmulatorProfile {
     flatpak_id: String,
     #[serde(default)]
     flatpak_installation: String,
+    #[serde(default)]
+    flatpak_runtime_fonts: Option<bool>,
     #[serde(default)]
     extract_appimage: bool,
     /// Each entry is a literal argv token. {game} is the ONLY interpolation token.
@@ -170,6 +176,7 @@ struct Settings {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Bootstrap {
+    emulator_discovery: discovery::Report,
     favorites: BTreeMap<String, Vec<String>>,
     favorites_migrated: bool,
     artwork: ArtworkSettings,
@@ -297,7 +304,7 @@ fn detect_installed_emulator(id: &str) -> Option<PathBuf> {
         "ps3" => &["rpcs3"],
         "psp" => &["PPSSPPSDL", "ppsspp"],
         "n64" => &["RMG", "rmg"],
-        "gamecube" | "wii" => &["dolphin-emu", "dolphin"],
+        "gamecube" | "wii" => &["dolphin-emu"],
         "dreamcast" => &["flycast"],
         "wiiu" => &["cemu"],
         "gb" => &["sameboy"],
@@ -358,25 +365,8 @@ fn save_settings(settings: &Settings) -> Result<(), String> {
 fn bootstrap() -> Result<Bootstrap, String> {
     create_layout()?;
     let mut settings = load_settings()?;
-    let mut auto_detected = false;
-    for s in SPECS {
-        if settings.profiles.contains_key(s.id) {
-            continue;
-        }
-        if let Some(executable) = detect_emulator(s).or_else(|| detect_installed_emulator(s.id)) {
-            settings.profiles.insert(
-                s.id.to_string(),
-                EmulatorProfile {
-                    emulator_name: guessed_emulator(s.id).to_string(),
-                    emulator_path: executable.to_string_lossy().into_owned(),
-                    launch_args: default_args(s.id),
-                    ..Default::default()
-                },
-            );
-            auto_detected = true;
-        }
-    }
-    if auto_detected {
+    let emulator_discovery = discovery::discover(&mut settings)?;
+    if !emulator_discovery.linked.is_empty() {
         save_settings(&settings)?;
     }
     let root = matrix_root()?;
@@ -388,6 +378,7 @@ fn bootstrap() -> Result<Bootstrap, String> {
         );
     }
     Ok(Bootstrap {
+        emulator_discovery,
         favorites: settings.favorites,
         favorites_migrated: settings.favorites_migrated,
         root: root.to_string_lossy().into(),
@@ -644,6 +635,7 @@ fn save_emulator(
     flatpak_installation: Option<String>,
     allow_execute: Option<bool>,
     extract_appimage: Option<bool>,
+    flatpak_runtime_fonts: Option<bool>,
 ) -> Result<(), String> {
     spec(&id)?;
     let launcher = match launcher.as_deref().unwrap_or("executable") {
@@ -655,7 +647,9 @@ fn save_emulator(
     let profile = emulators::prepare(
         EmulatorProfile {
             emulator_name,
+            auto_detected: false,
             emulator_path,
+            flatpak_runtime_fonts,
             launcher,
             flatpak_id: flatpak_id.unwrap_or_default(),
             flatpak_installation: flatpak_installation.unwrap_or_default(),
@@ -729,8 +723,7 @@ fn open_console_folder(id: String) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
-fn launch_console_game(id: String, uid: String) -> Result<(), String> {
+fn launch_console_impl(id: String, uid: String) -> Result<launches::Info, String> {
     let _ = spec(&id)?;
     let game = scan_console_impl(&id)?
         .into_iter()
@@ -741,6 +734,7 @@ fn launch_console_game(id: String, uid: String) -> Result<(), String> {
         .profiles
         .get(&id)
         .ok_or("Configure an emulator for this console first")?;
+    launches::preflight(profile)?;
     let mut command = emulators::command(profile, &id)?;
     let args = if profile.launch_args.is_empty() {
         vec!["{game}".into()]
@@ -760,10 +754,33 @@ fn launch_console_game(id: String, uid: String) -> Result<(), String> {
         command.arg(&game.path);
     }
     command.current_dir(Path::new(&game.path).parent().ok_or("Invalid game path")?);
-    command
-        .spawn()
-        .map_err(|e| format!("Could not start emulator: {e}"))?;
-    Ok(())
+    launches::start(command, &id)
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn launch_console_game(id: String, uid: String) -> Result<launches::Info, String> {
+    tauri::async_runtime::spawn_blocking(move || launch_console_impl(id, uid))
+        .await
+        .map_err(|e| e.to_string())?
+}
+fn open_emulator_impl(id: String) -> Result<launches::Info, String> {
+    spec(&id)?;
+    let settings = load_settings()?;
+    let profile = settings
+        .profiles
+        .get(&id)
+        .ok_or("Set up an emulator for this console first.")?;
+    let mut command = emulators::command(profile, &id)?;
+    command.current_dir(home()?);
+    launches::start(command, &id)
+}
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn open_emulator(id: String) -> Result<launches::Info, String> {
+    tauri::async_runtime::spawn_blocking(move || open_emulator_impl(id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -1284,6 +1301,8 @@ fn main() {
             remove_windows_game,
             open_console_folder,
             launch_console_game,
+            open_emulator,
+            launches::get_launch_status,
             launch_steam_game,
             launch_windows_game,
             get_cover,

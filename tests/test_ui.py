@@ -21,6 +21,8 @@ MOCK = '''
 window.__calls = [];
 window.__update={currentVersion:'0.5.2',latestVersion:null,phase:'idle',message:'Check for updates',notes:'',received:0,total:0,installMode:'system'};
 window.__favorites={};window.__migrated=false;
+window.__failLaunch=false;window.__lastLaunch=null;
+window.__discovery={linked:[],ambiguous:[],notices:[],candidates:[{id:'flatpak|net.pcsx2.PCSX2|system',consoleIds:['ps2'],ready:true,source:'Flatpak (system)',profile:{emulatorName:'PCSX2',launcher:'flatpak',flatpakId:'net.pcsx2.PCSX2',flatpakInstallation:'system',launchArgs:['--','{game}']}}]};
 window.__artSaved = false;
 window.__artOptions={enabled:true,style:"default"};
 window.__windows = [{uid:'/games/My Windows Game.desktop',title:'My Windows Game',target:'/games/My Windows Game.desktop',runner:'desktop'}];
@@ -31,7 +33,7 @@ window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   if(name==='check_updates') return (window.__update={...window.__update,latestVersion:'0.6.0',phase:'available',message:'A newer Matrix Play release is available.',notes:'Console artwork and updates.'});
   if(name==='download_update') return (window.__update={...window.__update,phase:'downloaded',message:'Verified update downloaded.'});
   if(name==='install_update') return (window.__update={...window.__update,phase:'installed',message:'Update installed. Restart Matrix Play to finish.'});
-  if(name==='bootstrap') return {favorites:window.__favorites,favoritesMigrated:window.__migrated,artwork:window.__artOptions,root:'/home/example/Games/Matrix',folders:Object.fromEntries(ids.map(id=>[id,`/home/example/Games/Matrix/${id}/${id} Games`])),profiles:{ps2:{emulatorName:'PCSX2',emulatorPath:'/usr/bin/pcsx2',launchArgs:['{game}']}},windows:window.__windows};
+  if(name==='bootstrap') return {emulatorDiscovery:window.__discovery,favorites:window.__favorites,favoritesMigrated:window.__migrated,artwork:window.__artOptions,root:'/home/example/Games/Matrix',folders:Object.fromEntries(ids.map(id=>[id,`/home/example/Games/Matrix/${id}/${id} Games`])),profiles:{ps2:{emulatorName:'PCSX2',emulatorPath:'/usr/bin/pcsx2',launchArgs:['{game}']}},windows:window.__windows};
   if(name==='scan_console') return args.id==='ps2' ? [{uid:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',title:'Test Game',path:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',kind:'ps2'}] : [];
   if(name==='scan_steam') return [{uid:'12345',title:'Test Steam Game',kind:'steam',appId:'12345'}];
   if(name==='list_windows_games') return window.__windows;
@@ -43,7 +45,9 @@ window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   if(name==='save_cover') {window.__artSaved=true;return;}
   if(name==='import_favorites') {window.__migrated=true;return window.__favorites;}
   if(name==='set_favorite') {const set=new Set(window.__favorites[args.id] || []);if(args.favorite)set.add(args.uid);else set.delete(args.uid);return window.__favorites[args.id]=[...set];}
-  if(name==='list_flatpaks') return [{appId:'org.example.Emulator',name:'Example Emulator',installation:'user'}];
+  if(name==='list_flatpaks') return [{appId:'org.example.Emulator',name:'Example Emulator',installation:'user'},{appId:'net.pcsx2.PCSX2',name:'PCSX2',installation:'system'}];
+  if(name==='get_launch_status') return window.__lastLaunch;
+  if(name==='launch_console_game' || name==='open_emulator') return window.__lastLaunch={consoleId:args.id,phase:window.__failLaunch && name==='launch_console_game'?'error':'exited',message:window.__failLaunch && name==='launch_console_game'?'Emulator exited with exit status 17.':'Emulator launcher completed.',log:window.__failLaunch && name==='launch_console_game'?'bwrap: missing runtime <script>bad()</script>':'',logPath:'/tmp/test-launch.log'};
   if(name==='browse_emulator') return '/home/example/Apps/Example.AppImage';
   if(name==='save_emulator') return;
   return;
@@ -160,20 +164,42 @@ with sync_playwright() as p:
     assert native.locator('#library-path').get_attribute('readonly') is not None
     assert native.locator('#launch-args').count() == 1
     native.keyboard.press('Escape')
+    native.get_by_role('button',name='Find emulators',exact=True).click()
+    native.wait_for_function('window.__calls.filter(x=>x[0]==="bootstrap").length >= 3')
     native.get_by_role('button',name='Edit',exact=True).click()
+    native.locator('#detected-emulator').select_option('flatpak|net.pcsx2.PCSX2|system')
+    native.wait_for_function('document.querySelector("#flatpak-app").value==="net.pcsx2.PCSX2|system"')
+    assert native.locator('#runtime-fonts').is_checked()
+    assert native.locator('#launch-args').input_value()=='--\n{game}'
     native.locator('#emulator-launcher').select_option('appimage')
     native.get_by_role('button',name='Browse…').click()
     native.wait_for_function('document.querySelector("#emulator-path").value.includes("Example.AppImage")')
     assert native.locator('#allow-execute').is_checked()
     screenshot(native,'matrix-appimage-setup.png')
     native.locator('#emulator-launcher').select_option('flatpak')
-    native.wait_for_function('document.querySelector("#flatpak-app").options.length===2')
+    native.wait_for_function('document.querySelector("#flatpak-app").options.length===3')
     native.locator('#flatpak-app').select_option('org.example.Emulator|user')
     assert native.locator('#emulator-name').input_value()=='Example Emulator'
     assert native.locator('#emulator-path').is_hidden()
     screenshot(native,'matrix-flatpak-setup.png')
     native.get_by_role('button',name='Save emulator',exact=True).click()
     native.wait_for_function('window.__calls.some(x=>x[0]==="save_emulator" && x[1].launcher==="flatpak" && x[1].flatpakId==="org.example.Emulator" && x[1].flatpakInstallation==="user")')
+    native.get_by_role('button',name='Consoles',exact=True).click()
+    native.get_by_role('button',name='Browse PlayStation 2 library').click()
+    assert native.locator('.hero-open').is_visible()
+    native.evaluate('window.__failLaunch=true')
+    native.locator('.game-card').first.click()
+    native.wait_for_function('document.querySelector(".launch-error")?.textContent.includes("exit status 17")')
+    native.get_by_role('button',name='Launch details',exact=True).click()
+    assert '<script>bad()</script>' in native.locator('.launch-output').inner_text()
+    screenshot(native,'matrix-launch-error.png')
+    native.locator('.launch-dialog').get_by_role('button',name='Open emulator',exact=True).click()
+    native.wait_for_function('window.__calls.some(x=>x[0]==="open_emulator" && x[1].id==="ps2")')
+    native.wait_for_function('!document.querySelector(".launch-dialog")')
+    native.get_by_role('button',name='Edit emulator',exact=True).click()
+    native.get_by_role('button',name='Save and open emulator',exact=True).click()
+    native.wait_for_function('window.__calls.filter(x=>x[0]==="open_emulator").length>=2')
+
 
     mobile = browser.new_page(viewport={'width':390,'height':844},device_scale_factor=1,is_mobile=True,has_touch=True)
     mobile.evaluate(MOCK)

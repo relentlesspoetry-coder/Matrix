@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.5
+
+- Automatically discover and link known installed Flatpaks and recognizable AppImages to their supported console libraries. Scan common app folders and exported desktop paths, deduplicate canonical paths, preserve manual selections and require a choice for ambiguous matches.
+- Add Find emulators, Detected emulators, Open emulator and Save and open emulator controls. Preserve all 14 console libraries, favorites, Steam and Windows sections.
+- Work around the reproduced PCSX2 Flatpak fontconfig crash using a per-launch runtime-font configuration, enabled by default for PCSX2 and optional for other Flatpaks. Leave shared fonts/caches and persistent Flatpak overrides unchanged.
+- Explain unfinished PCSX2 setup/BIOS selection, capture bounded owner-only launch logs, report startup errors and show launch details. Check launcher status without claiming that spawning a process proves gameplay.
+- Add discovery, permission/deduplication, argument-identity, setup-preflight, log-bound and real native launch-failure tests. Preserve saving without launching; only Save and open starts the emulator.
+
 ## 0.5.4
 
 - Add guided emulator setup for AppImage, installed Flatpak and native executable profiles. Browse for emulator files, optionally grant only owner execute permission to a validated AppImage, and support extraction mode without FUSE.

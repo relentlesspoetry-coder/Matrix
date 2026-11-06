@@ -76,6 +76,14 @@ A game's emulator, firmware and any required keys must already be installed/conf
 - The compiled desktop window passed native IPC/scanning/launch-fixture tests, rendered all 14 console images and exposed the real updater status. Ordinary non-WebDriver startup painted successfully without injected graphics settings.
 - Rust cover and backend tests continue to pass. The release pipeline must also pass its Linux build and actual desktop checks before signing and publication.
 
+## Version 0.5.5 development checks
+
+Fifteen headless/native backend tests cover exact-ID matching, shared console capabilities, ambiguous installations, valid/executable AppImage matching, canonical deduplication, preservation of saved choices, and avoiding engine-specific arguments based only on a display label. They also cover PCSX2 setup messages and bounded output capture.
+
+The updated Chromium suite uses a mock bridge to verify detected choices, runtime-font selection, Open emulator, Save and open, escaped launch output and visible failure notices. Native fixtures exercise real discovery/IPC/launch dispatch, a failing Flatpak launcher with captured stderr, scoped runtime-font arguments, setup preflight and persistence. The fixture launchers are harmless scripts; they do not certify all real emulators.
+
+Locally, the actual installed PCSX2 Flatpak passed its configuration check but crashed in fontconfig while opening the first-run wizard. Display/style/cache trials alone did not resolve it. A temporary abort diagnostic identified the crashing library; that diagnostic is outside the product/source repository and is not shipped. A minimal runtime-font configuration allowed the real setup window to remain open, and subsequent PCSX2 logs showed completed BIOS setup and a real game boot/run. This verifies the targeted workaround on the affected machine; it is not universal emulator/game compatibility testing.
+
 ## Version 0.5.4 development checks
 
 Nine native/headless backend tests pass, including backward-compatible executable profiles, AppImage header validation and explicit execute-permission consent, installed-Flatpak parsing/scope, and favorites migration/deduplication/console boundaries. Mock-bridge Chromium tests exercise AppImage Browse dispatch, Flatpak selection/save, favorite add/remove, counts and empty states.

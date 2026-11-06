@@ -77,8 +77,12 @@ def main():
             target.write_text(launcher)
             target.chmod(0o755)
         flatpak=home/'bin/flatpak'
-        flatpak.write_text('#!/bin/sh\nif [ "$1" = "list" ]; then\n  printf "org.matrix.TestEmulator\\tMatrix Test Emulator\\tuser\\norg.matrix.TestEmulator\\tMatrix Test Emulator\\tsystem\\n"\n  exit 0\nfi\n'+launcher.split('\n',1)[1])
+        flatpak.write_text('#!/bin/sh\nif [ "$1" = "list" ]; then\n  printf "org.matrix.TestEmulator\\tMatrix Test Emulator\\tuser\\norg.matrix.TestEmulator\\tMatrix Test Emulator\\tsystem\\ncom.github.Rosalie241.RMG\\tRMG\\tsystem\\n"\n  exit 0\nfi\n'+launcher.split('\n',1)[1])
         flatpak.chmod(0o755)
+        appimage=home/'Applications/duckstation-linux.AppImage'
+        appimage.parent.mkdir();appimage.write_bytes(b'\x7fELF0000AI\x02synthetic non-playable AppImage');appimage.chmod(0o600)
+        shortcuts=home/'.local/share/applications';shortcuts.mkdir(parents=True)
+        (shortcuts/'duckstation.desktop').write_text('[Desktop Entry]\nExec="'+str(appimage)+'" %f\n')
         exe = home/'Windows Fixture.exe'
         exe.write_text('Synthetic registration fixture.')
         log = home/'launch.log'
@@ -143,6 +147,15 @@ def main():
             assert len([p for p in library.iterdir() if p.is_dir()]) == 14
             assert js('return document.title').startswith('Matrix Play')
             wait_for(lambda: js('return document.querySelector(".brand-logo")?.naturalWidth > 0'))
+            discovered=invoke('bootstrap')
+            assert discovered['profiles']['n64']['flatpakId']=='com.github.Rosalie241.RMG'
+            assert discovered['profiles']['n64']['autoDetected'] is True
+            image_candidates=[c for c in discovered['emulatorDiscovery']['candidates'] if c['profile'].get('emulatorPath')==str(appimage)]
+            assert len(image_candidates)==1 and image_candidates[0]['ready'] is False
+            assert appimage.stat().st_mode & 0o777 == 0o600
+            assert 'ps1' not in discovered['profiles']
+            appimage.chmod(0o700)
+            assert invoke('bootstrap')['profiles']['ps1']['launcher']=='appimage'
             diagnostics=invoke('graphics_diagnostics')
             assert diagnostics['XDG_CACHE_HOME'] == str(parent_cache/'matrix/runtime-v1')
             assert len(invoke('scan_console', {'id':'ps1'})) == 1
@@ -234,7 +247,7 @@ def main():
             click('[data-action="settings"]')
             click('[data-action="configure"][data-id="ps2"]')
             js('document.querySelector("#emulator-launcher").value="flatpak";document.querySelector("#emulator-launcher").dispatchEvent(new Event("change",{bubbles:true}))')
-            wait_for(lambda: js('return document.querySelector("#flatpak-app").options.length === 3'))
+            wait_for(lambda: js('return document.querySelector("#flatpak-app").options.length === 4'))
             js('document.querySelector("#flatpak-app").value="org.matrix.TestEmulator|user";document.querySelector("#flatpak-app").dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#config-form").requestSubmit()')
             wait_for(lambda: invoke('bootstrap')['profiles']['ps2'].get('launcher')=='flatpak')
             wait_for(lambda: js('return !document.querySelector("#config-form")'))
@@ -249,6 +262,30 @@ def main():
             wait_for(lambda: (home/'child-cache.log').read_text()==expected_child_cache)
             assert invoke('bootstrap')['profiles']['ps2']['flatpakInstallation']=='user'
             assert invoke('bootstrap')['favorites']['ps2']==[str(ps2game)]
+            click('[data-action="open-emulator"][data-id="ps2"]')
+            wait_for(lambda: log.read_text().splitlines()==expected[:-1])
+            healthy_flatpak=flatpak.read_text()
+            pcsx2_flatpak=healthy_flatpak.replace('com.github.Rosalie241.RMG\\tRMG\\tsystem\\n','com.github.Rosalie241.RMG\\tRMG\\tsystem\\nnet.pcsx2.PCSX2\\tPCSX2\\tsystem\\n')
+            flatpak.write_text(pcsx2_flatpak)
+            invoke('save_emulator',{'id':'ps2','emulatorName':'PCSX2','emulatorPath':'','launcher':'flatpak','flatpakId':'net.pcsx2.PCSX2','flatpakInstallation':'system','launchArgs':['--','{game}']})
+            opened=invoke('open_emulator',{'id':'ps2'})
+            assert opened['phase']!='error',opened
+            fontfile=home/'.local/share/matrix/compat/runtime-fonts-v1.conf'
+            assert fontfile.exists() and '/usr/share/fonts' in fontfile.read_text()
+            fontargs=['run','--system',f'--filesystem={ps2}:ro',f'--filesystem={fontfile}:ro',f'--env=FONTCONFIG_FILE={fontfile}','net.pcsx2.PCSX2']
+            wait_for(lambda: log.read_text().splitlines()==fontargs)
+            try:
+                invoke('launch_console_game',{'id':'ps2','uid':str(ps2game)})
+                raise AssertionError('Unfinished PCSX2 setup should be explained')
+            except RuntimeError as error: assert 'Open emulator' in str(error)
+            invoke('save_emulator',{'id':'ps2','emulatorName':'Matrix Test Emulator','emulatorPath':'','launcher':'flatpak','flatpakId':'org.matrix.TestEmulator','flatpakInstallation':'user','launchArgs':['{game}'],'flatpakRuntimeFonts':False})
+            flatpak.write_text(healthy_flatpak)
+            flatpak.write_text(healthy_flatpak.replace('printf "%s\\n" "$@" > "$MATRIX_NATIVE_TEST_LAUNCH_LOG"', 'echo "runtime failed to start" >&2; exit 17\n#'))
+            failed=invoke('launch_console_game',{'id':'ps2','uid':str(ps2game)})
+            assert failed['phase']=='error' and 'runtime failed to start' in failed['log'],failed
+            assert Path(failed['logPath']).read_text().strip()=='runtime failed to start'
+            assert invoke('get_launch_status',{'id':'ps2'})['phase']=='error'
+            flatpak.write_text(healthy_flatpak)
             invoke('set_favorite',{'id':'ps2','uid':str(ps2game),'favorite':False})
             assert invoke('bootstrap')['favorites']['ps2']==[]
             invoke('set_favorite',{'id':'ps2','uid':str(ps2game),'favorite':True})
@@ -261,6 +298,7 @@ def main():
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
             assert invoke('bootstrap')['profiles']['ps2']['launcher']=='flatpak'
+            print('PASS: automatic Flatpak/AppImage linking, canonical duplicate removal, execute-permission preservation, Open emulator and captured startup errors')
             print('PASS: native favorites survive process restart and webview reload, remain console-scoped, and preserve profiles; Flatpak discovery/setup/launch argv use harmless fixtures')
             print('PASS: real Tauri/WebKit window, native IPC, 14 libraries, PS1/PS2 scanning, manual/cache artwork, console boundaries, persisted settings, three launcher argument paths')
             if cfg.online:

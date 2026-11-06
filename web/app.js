@@ -9,6 +9,7 @@ const state = {
   configs: {}, imported: {}, favorites: new Set(), art: new Map(),
   native: Boolean(window.__TAURI__?.core?.invoke), root: '', folders: {},
   steam: [], windows: [],
+  discovery:{candidates:[],linked:[],ambiguous:[],notices:[]}, launches:{},launchBusy:{},launchGeneration:{},
   missingArt: new Set(), pendingArt: new Set(),
   artwork: {enabled:true, style:"default"}, coverStatus: new Map(), coverGeneration: 0, artRevision: 0,
 };
@@ -313,19 +314,20 @@ function renderConsole() {
   const hasImported = imported.length > 0;
   const subtitle = state.native ? `${imported.length} games · ${isConfigured(consoleInfo.id) ? 'Emulator linked' : 'Emulator not linked'}` : hasImported ? `${imported.length} folder preview titles · ${isConfigured(consoleInfo.id) ? 'Profile saved' : 'Emulator not linked'}` : `${consoleInfo.games.length} sample titles · ${isConfigured(consoleInfo.id) ? 'Profile saved' : 'Emulator not linked'}`;
   $('#screen').innerHTML = `<button type="button" class="back-link" data-action="home">${glyph('back')} All consoles</button>
-    <section class="console-hero" style="--tint:${consoleTone(consoleInfo)}"><div class="console-hero-copy"><div class="eyebrow">${escapeHtml(consoleInfo.brand)} · DEDICATED LIBRARY</div><h1>${escapeHtml(consoleInfo.name)}</h1><p>${subtitle}</p><button type="button" class="button button-ghost" data-action="configure" data-id="${consoleInfo.id}">${glyph('plus')} ${isConfigured(consoleInfo.id) ? 'Edit emulator' : 'Set up emulator'}</button><button type="button" class="button button-subtle hero-favorites" data-action="console-favorites">${glyph('heart')} My favorites (${favoriteCount(consoleInfo.id)})</button></div>${deviceArt(consoleInfo.id)}</section>
-    <div class="library-heading"><div><h2>Game library</h2><p>${state.native ? `Managed folder: ${escapeHtml(state.folders[consoleInfo.id] || '')}` : hasImported ? 'Showing filenames from your selected folder. Not playable from this browser.' : 'Sample games and placeholder covers for UI review.'}</p></div><div class="library-heading-actions"><button type="button" class="button button-subtle" data-action="${state.native ? 'open-folder' : 'preview-folder'}">${glyph('folder')} ${state.native ? 'Open games folder' : 'Preview game folder'}</button>${!state.native && hasImported ? `<button type="button" class="button button-ghost" data-action="clear-preview">${glyph('trash')} Clear preview</button>` : ''}</div></div>
+    <section class="console-hero" style="--tint:${consoleTone(consoleInfo)}"><div class="console-hero-copy"><div class="eyebrow">${escapeHtml(consoleInfo.brand)} · DEDICATED LIBRARY</div><h1>${escapeHtml(consoleInfo.name)}</h1><p>${subtitle}</p><button type="button" class="button button-ghost" data-action="configure" data-id="${consoleInfo.id}">${glyph('plus')} ${isConfigured(consoleInfo.id) ? 'Edit emulator' : 'Set up emulator'}</button>${state.native && isConfigured(consoleInfo.id) ? `<button type="button" class="button button-ghost hero-open" data-action="open-emulator" data-id="${consoleInfo.id}">Open emulator</button>` : ''}<button type="button" class="button button-subtle hero-favorites" data-action="console-favorites">${glyph('heart')} My favorites (${favoriteCount(consoleInfo.id)})</button></div>${deviceArt(consoleInfo.id)}</section>
+    <div id="launch-status"></div><div class="library-heading"><div><h2>Game library</h2><p>${state.native ? `Managed folder: ${escapeHtml(state.folders[consoleInfo.id] || '')}` : hasImported ? 'Showing filenames from your selected folder. Not playable from this browser.' : 'Sample games and placeholder covers for UI review.'}</p></div><div class="library-heading-actions"><button type="button" class="button button-subtle" data-action="${state.native ? 'open-folder' : 'preview-folder'}">${glyph('folder')} ${state.native ? 'Open games folder' : 'Preview game folder'}</button>${!state.native && hasImported ? `<button type="button" class="button button-ghost" data-action="clear-preview">${glyph('trash')} Clear preview</button>` : ''}</div></div>
     <div class="library-tools"><label class="search">${glyph('search')}<input type="search" id="game-search" autocomplete="off" placeholder="Search ${escapeHtml(consoleInfo.name)} games" aria-label="Search ${escapeHtml(consoleInfo.name)} games" value="${escapeHtml(state.query)}"></label>
       <div class="segmented" role="group" aria-label="Game filter">${['All','Favorites'].map(value => `<button type="button" data-action="filter-games" data-value="${value}" class="${state.gameFilter === value ? 'active' : ''}" aria-pressed="${state.gameFilter === value}">${value === 'All' ? 'All games' : `Favorites (${favoriteCount(consoleInfo.id)})`}</button>`).join('')}</div>
       <select id="sort-games" class="sort-select" aria-label="Sort games"><option value="default" ${state.sort === 'default' ? 'selected' : ''}>Default order</option><option value="az" ${state.sort === 'az' ? 'selected' : ''}>Title: A to Z</option><option value="recent" ${state.sort === 'recent' ? 'selected' : ''}>Newest first</option></select>
       <div class="segmented" role="group" aria-label="Library layout"><button type="button" data-action="view" data-value="grid" aria-label="Grid view" aria-pressed="${state.view === 'grid'}" class="${state.view === 'grid' ? 'active' : ''}">${glyph('grid')}</button><button type="button" data-action="view" data-value="list" aria-label="List view" aria-pressed="${state.view === 'list'}" class="${state.view === 'list' ? 'active' : ''}">${glyph('list')}</button></div>
     </div><div id="game-results"></div>
     <div class="notice">${glyph('info')}<span>${state.native ? 'Your ROM files are not moved or modified. Launch requires a configured emulator path; launch arguments vary by emulator.' : hasImported ? 'Only filenames and relative paths were read. Nothing was uploaded. Folder preview entries cannot launch games until the native app is implemented.' : 'This is a browser preview. The native app will create and scan console folders on first run.'}</span></div>`;
-  renderGameResults();
+  renderGameResults();renderLaunchStatus();
 }
 function renderSettings() {
   $('#screen').innerHTML = `<div class="settings-header"><div class="eyebrow">YOUR SETUP</div><h1 class="page-title">Emulators &amp; folders.</h1><p class="page-subtitle">Each console uses its own emulator and dedicated Games directory.</p>${state.native ? `<div class="root-path">${glyph('folder')} Managed folder <strong>${escapeHtml(state.root)}</strong></div>` : ''}</div>
     <div class="notice" style="margin:0 0 25px">${glyph('info')}<span>${state.native ? 'Choose Set up for a console, then select AppImage, Flatpak, or another executable. Browse for an AppImage anywhere, or choose an already-installed Flatpak from the list.' : 'Browser preview settings are not connected to your filesystem. Native folder creation and launching require the Matrix Play Linux application.'}</span></div>
+    ${state.native ? discoverySummary() : ''}
     <section class="artwork-settings"><h2>Cover artwork</h2>
     <p>PS1 and PS2 covers from xlenore, matched by serial within each console. Unknown or conflicting serials need your review. Local covers take priority.</p>
     <label><input type="checkbox" id="auto-covers" ${state.artwork.enabled ? 'checked' : ''} ${state.native ? '' : 'disabled'}> Download missing PS1/PS2 covers after library scans</label>
@@ -405,6 +407,70 @@ function dismissOverlay() {
   if (state.lastFocus?.isConnected) state.lastFocus.focus();
   state.lastFocus = null;
 }
+function renderLaunchStatus() {
+  const target=$('#launch-status');if (!target) return;
+  const id=state.consoleId, info=state.launches[id];
+  target.innerHTML=info ? `<div class="launch-notice ${['error','needs-setup'].includes(info.phase)?'launch-error':''}" role="status"><p>${escapeHtml(info.message)}</p><div class="launch-actions"><button type="button" class="button button-ghost" data-action="open-emulator" data-id="${id}">Open emulator</button>${info.log || info.logPath ? `<button type="button" class="button button-ghost" data-action="launch-details" data-id="${id}">Launch details</button>`:''}</div></div>` : '';
+}
+async function showLaunchDetails(id) {
+  try {const latest=state.native ? await nativeInvoke('get_launch_status',{id}) : null;if (latest) state.launches[id]=latest;} catch (_) { /* Retain the last available status. */ }
+  const info=state.launches[id];if (!info) return;
+  state.lastFocus=document.activeElement;state.overlay='launch-details';
+  $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog launch-dialog" role="dialog" aria-modal="true" aria-labelledby="launch-title"><button class="close" type="button" data-action="close" aria-label="Close launch details">${glyph('close')}</button><div class="eyebrow">${escapeHtml(byId[id].name)}</div><h2 id="launch-title">Emulator launch</h2><p class="muted">${escapeHtml(info.message)}</p><pre class="launch-output">${escapeHtml(info.log || 'No output was captured.')}</pre>${info.logPath ? `<p class="muted">Saved log: ${escapeHtml(info.logPath)}</p>`:''}<div class="dialog-actions"><button type="button" class="button button-primary" data-action="open-emulator" data-id="${id}">Open emulator</button></div></section></div>`;
+  $('#launch-title').closest('.dialog').querySelector('button').focus();
+}
+async function launchConsole(id,uid=null) {
+  if (!state.native) {toast('Open the Linux app to launch an emulator.');return;}
+  if (state.launchBusy[id]) return;
+  state.launchBusy[id]=true;
+  const generation=(state.launchGeneration[id] || 0)+1;state.launchGeneration[id]=generation;
+  try {
+    const info=await nativeInvoke(uid ? 'launch_console_game':'open_emulator',uid ? {id,uid}:{id});
+    state.launches[id]=info || {phase:'started',message:'Launch request sent to emulator.'};
+    if (state.overlay==='game' || state.overlay==='launch-details') dismissOverlay();
+    if (state.consoleId===id) renderLaunchStatus();
+    toast(state.launches[id].message);
+    let attempts=0;
+    const poll=async()=>{
+      if (state.launchGeneration[id]!==generation || ++attempts>30) return;
+      try {
+        const latest=await nativeInvoke('get_launch_status',{id});
+        if (!latest || state.launchGeneration[id]!==generation) return;
+        const changed=state.launches[id]?.phase!==latest.phase;state.launches[id]=latest;
+        if (changed && state.consoleId===id) renderLaunchStatus();
+        if (['error','exited'].includes(latest.phase)) {if (latest.phase==='error') toast(latest.message);return;}
+        setTimeout(poll,700);
+      } catch (_) { /* Launch details can still be requested manually. */ }
+    };
+    if (!['error','exited'].includes(state.launches[id].phase)) setTimeout(poll,700);
+  } catch(error) {
+    state.launches[id]={phase:'needs-setup',message:String(error)};
+    if (state.consoleId===id) renderLaunchStatus();toast(String(error));
+  } finally {state.launchBusy[id]=false;}
+}
+function discoverySummary() {
+  const report=state.discovery, total=report.candidates.length;
+  const auto=Object.values(state.configs).filter(p=>p.autoDetected).length;
+  return `<section class="discovery-box"><div><h2>Automatic emulator linking</h2><p>${total} detected installation${total===1?'':'s'} · ${auto} console${auto===1?'':'s'} automatically linked. Saved choices are kept.</p>${report.ambiguous.length ? `<p>Choose between multiple matches for: ${report.ambiguous.map(id=>escapeHtml(byId[id]?.name || id)).join(', ')}.</p>`:''}${report.candidates.some(c=>!c.ready) ? '<p>Some downloaded AppImages need execute permission. Choose one in Set up, then Save emulator.</p>':''}<small>Scans installed Flatpaks, common AppImage folders and application shortcuts. Unknown emulator names remain manual.</small></div><button type="button" class="button button-primary" data-action="find-emulators">Find emulators</button></section>`;
+}
+function chooseDetectedEmulator() {
+  const candidate=state.discovery.candidates.find(c=>c.id===$('#detected-emulator')?.value);if (!candidate) return;
+  const p=candidate.profile;
+  $('#emulator-launcher').value=p.launcher || 'executable';$('#emulator-path').value=p.emulatorPath || '';$('#emulator-name').value=p.emulatorName;
+  $('#launch-args').value=(p.launchArgs || ['{game}']).join('\n');
+  $('#flatpak-app').value='';$('#flatpak-app').dataset.saved=p.flatpakId ? p.flatpakId+'|'+p.flatpakInstallation:'';
+  $('#runtime-fonts').checked=p.flatpakRuntimeFonts ?? p.flatpakId==='net.pcsx2.PCSX2';
+  $('[name=extractAppimage]').checked=Boolean(p.extractAppimage);updateLauncherFields();
+}
+async function findEmulators(button) {
+  if (!state.native) {toast('Automatic discovery is available in the Linux app.');return;}
+  button.disabled=true;
+  try {
+    const config=await nativeInvoke('bootstrap');state.configs=config.profiles;state.discovery=config.emulatorDiscovery || {candidates:[],linked:[],ambiguous:[],notices:[]};state.folders=config.folders;
+    render();toast(`${state.discovery.linked.length} console profiles linked; ${state.discovery.candidates.length} emulator installations detected.`);
+  } catch(error) {toast(String(error));}finally {button.disabled=false;}
+}
+
 function defaultLaunchArgs(id) {
   return ['gamecube','wii'].includes(id) ? ['-b','-e','{game}'] : id === 'wiiu' ? ['-g','{game}'] : id === 'ps1' ? ['-batch','{game}'] : ['{game}'];
 }
@@ -439,12 +505,12 @@ function openConfigure(id) {
   const current=state.configs[id] || {};
   const launcher=current.launcher==='flatpak' ? 'flatpak' : current.launcher==='appimage' || /\.appimage$/i.test(current.emulatorPath || '') || !current.emulatorPath ? 'appimage' : 'executable';
   $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog emulator-dialog" role="dialog" aria-modal="true" aria-labelledby="config-title"><button type="button" class="close" data-action="close" aria-label="Close dialog">${glyph('close')}</button><div class="eyebrow">EMULATOR SETUP</div><h2 id="config-title">${escapeHtml(consoleInfo.name)}</h2><p class="muted">Link an emulator you already installed or downloaded.</p>
-    <form id="config-form" data-id="${id}"><div class="field"><label for="emulator-launcher">How is your emulator installed?</label><select id="emulator-launcher" name="launcher">${[['appimage','AppImage file'],['flatpak','Flatpak app'],['executable','Other executable']].map(([value,label])=>`<option value="${value}" ${launcher===value?'selected':''}>${label}</option>`).join('')}</select></div>
+    <form id="config-form" data-id="${id}">${state.discovery.candidates.some(c=>c.consoleIds.includes(id)) ? `<div class="field"><label for="detected-emulator">Detected emulators for ${escapeHtml(consoleInfo.name)}</label><select id="detected-emulator"><option value="">Choose a detected installation…</option>${state.discovery.candidates.filter(c=>c.consoleIds.includes(id)).map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.profile.emulatorName)} — ${escapeHtml(c.profile.emulatorPath || c.source)}${c.ready?'':' (allow execution when saving)'}</option>`).join('')}</select><small>Choosing an entry fills the setup fields. Save to use it for this console.</small></div>`:''}<div class="field"><label for="emulator-launcher">How is your emulator installed?</label><select id="emulator-launcher" name="launcher">${[['appimage','AppImage file'],['flatpak','Flatpak app'],['executable','Other executable']].map(([value,label])=>`<option value="${value}" ${launcher===value?'selected':''}>${label}</option>`).join('')}</select></div>
     <div id="file-fields"><div class="field"><label id="emulator-file-label" for="emulator-path">AppImage file</label><div class="file-choice"><input id="emulator-path" name="emulatorPath" placeholder="Choose a file or paste its full path" value="${escapeHtml(current.emulatorPath || '')}"><button type="button" class="button button-ghost" data-action="browse-emulator">Browse…</button></div><small id="emulator-file-hint"></small></div><div id="appimage-options" class="field"><label class="check-row"><input type="checkbox" id="allow-execute" name="allowExecute" checked> Allow this AppImage to run</label><small>Adds execute permission to the chosen AppImage if needed. Saving does not run it.</small><label class="check-row"><input type="checkbox" name="extractAppimage" ${current.extractAppimage?'checked':''}> Run without FUSE (extraction mode)</label><small>Use this if your AppImage reports that FUSE is unavailable.</small></div></div>
-    <div id="flatpak-fields" hidden><div class="field"><label for="flatpak-app">Installed Flatpak emulator</label><select id="flatpak-app" name="flatpakApp" data-saved="${escapeHtml(current.flatpakId ? current.flatpakId+'|'+current.flatpakInstallation : '')}"><option value="">Choose an installed app…</option></select><small id="flatpak-help"></small></div><button type="button" class="button button-ghost" data-action="reload-flatpaks">Reload apps</button><p class="muted">Flatpak apps are installed through Software. Downloaded .flatpakref files are not executable files to browse for.</p></div>
+    <div id="flatpak-fields" hidden><div class="field"><label for="flatpak-app">Installed Flatpak emulator</label><select id="flatpak-app" name="flatpakApp" data-saved="${escapeHtml(current.flatpakId ? current.flatpakId+'|'+current.flatpakInstallation : '')}"><option value="">Choose an installed app…</option></select><small id="flatpak-help"></small></div><button type="button" class="button button-ghost" data-action="reload-flatpaks">Reload apps</button><label class="check-row runtime-font-choice"><input type="checkbox" id="runtime-fonts" name="flatpakRuntimeFonts" ${(current.flatpakRuntimeFonts ?? current.flatpakId==='net.pcsx2.PCSX2')?'checked':''}> Use compatible runtime fonts</label><small>Recommended for PCSX2. Avoids crashes from host font configuration; applies only to emulator launches.</small><p class="muted">Flatpak apps are installed through Software. Downloaded .flatpakref files are not executable files to browse for.</p></div>
     <div class="field"><label for="emulator-name">Emulator name</label><input id="emulator-name" name="emulatorName" maxlength="120" value="${escapeHtml(current.emulatorName || consoleInfo.emulator)}" required></div>
     <details class="advanced-setup"><summary>Advanced launch options</summary><div class="field"><label for="launch-args">Launch arguments (one per line)</label><textarea id="launch-args" name="launchArgs" rows="3">${escapeHtml((current.launchArgs?.length ? current.launchArgs : defaultLaunchArgs(id)).join('\n'))}</textarea><small>{game} is the game file. Defaults vary by console; some emulators require different options. Each line is passed as one argument.</small></div></details>
-    <div class="field"><label for="library-path">Game library folder</label><input id="library-path" name="folderPath" value="${escapeHtml(state.native ? state.folders[id] || '' : current.folderPath || '')}" ${state.native?'readonly':'required'}><small>Place this console’s games here. Your emulator can stay wherever it is installed.</small></div><p id="config-error" class="config-error" role="alert"></p><div class="dialog-actions"><button class="button button-ghost" type="button" data-action="close">Cancel</button><button class="button button-primary" type="submit">Save emulator</button></div></form></section></div>`;
+    <div class="field"><label for="library-path">Game library folder</label><input id="library-path" name="folderPath" value="${escapeHtml(state.native ? state.folders[id] || '' : current.folderPath || '')}" ${state.native?'readonly':'required'}><small>Place this console’s games here. Your emulator can stay wherever it is installed.</small></div><p id="config-error" class="config-error" role="alert"></p><div class="dialog-actions"><button class="button button-ghost" type="button" data-action="close">Cancel</button><button class="button button-primary" type="submit">Save emulator</button><button class="button button-ghost" type="submit" data-open-after-save="true">Save and open emulator</button></div></form></section></div>`;
   updateLauncherFields();$('#emulator-launcher').focus();
 }
 function openGame(id, uid) {
@@ -616,6 +682,7 @@ async function initializeNative() {
     state.root = config.root; state.folders = config.folders;
     state.artwork = config.artwork || {enabled:true,style:'default'};
     state.configs = config.profiles;
+    state.discovery=config.emulatorDiscovery || state.discovery;
     await loadNativeFavorites(config);
     await refreshNative();
   } catch(error) { toast(`Matrix Play initialization failed: ${error}`); }
@@ -672,7 +739,7 @@ async function handleAction(button) {
   else if (action === 'steam' || action === 'windows') goExternal(action);
   else if (action === 'refresh') {
     if (!state.native) { toast('Browser preview — no filesystem access.'); return; }
-    try { const config = await nativeInvoke('bootstrap'); state.configs = config.profiles; state.folders = config.folders; state.artwork = config.artwork || state.artwork; await loadNativeFavorites(config); await refreshNative(); }
+    try { const config = await nativeInvoke('bootstrap'); state.configs = config.profiles; state.discovery=config.emulatorDiscovery || state.discovery; state.folders = config.folders; state.artwork = config.artwork || state.artwork; await loadNativeFavorites(config); await refreshNative(); }
     catch(error) { toast(String(error)); }
   }
   else if (action === 'open-folder') { try { await nativeInvoke('open_console_folder',{id:state.consoleId}); } catch (e) { toast(String(e)); } }
@@ -683,19 +750,13 @@ async function handleAction(button) {
   else if (action === 'close') dismissOverlay();
   else if (action === 'game') openGame(id,uid);
   else if (action === 'quick-launch') {
-    if (!state.native) { openGame(id,uid); return; }
-    try {
-      await nativeInvoke('launch_console_game', {id,uid});
-      toast('Game launch requested.');
-    } catch(error) { toast(`Unable to launch: ${error}`); }
+    if (!state.native) {openGame(id,uid);return;}
+    void launchConsole(id,uid);
   }
-  else if (action === 'play-console') {
-    if (!state.native) { toast('Browser preview cannot launch emulators.'); return; }
-    try {
-      await nativeInvoke('launch_console_game', {id:state.selectedGame.id,uid:state.selectedGame.uid});
-      dismissOverlay(); toast('Launch request sent to emulator.');
-    } catch(error) { toast(String(error)); }
-  }
+  else if (action === 'play-console') {if (state.selectedGame) void launchConsole(state.selectedGame.id,state.selectedGame.uid);}
+  else if (action === 'open-emulator') void launchConsole(id);
+  else if (action === 'launch-details') void showLaunchDetails(id);
+  else if (action === 'find-emulators') void findEmulators(button);
   else if (action === 'external-game') openExternalGame(button.dataset.kind,uid);
   else if (action === 'quick-external') {
     const kind = button.dataset.kind;
@@ -751,6 +812,8 @@ async function handleAction(button) {
 }
 function setupEvents() {
   document.addEventListener('change', event => {
+    if (event.target.id==='detected-emulator') chooseDetectedEmulator();
+    if (event.target.id==='flatpak-app') $('#runtime-fonts').checked=event.target.value.startsWith('net.pcsx2.PCSX2|');
     if (event.target.id==='emulator-launcher') updateLauncherFields();
     if (event.target.id==='flatpak-app' && event.target.selectedOptions[0]?.dataset.name) $('#emulator-name').value=event.target.selectedOptions[0].dataset.name;
     if (['auto-covers','cover-style'].includes(event.target.id)) void saveArtworkOptions();
@@ -798,13 +861,13 @@ function setupEvents() {
     const launcher=String(form.get('launcher') || 'executable');
     const [flatpakId='',flatpakInstallation='']=String(form.get('flatpakApp') || '').split('|');
     if (!emulatorName || !folderPath || (launcher==='flatpak' ? !flatpakId : !emulatorPath)) return;
-    const profile={emulatorName,emulatorPath,launchArgs,launcher,flatpakId,flatpakInstallation,extractAppimage:form.has('extractAppimage')};
+    const profile={emulatorName,emulatorPath,launchArgs,launcher,flatpakId,flatpakInstallation,extractAppimage:form.has('extractAppimage'),flatpakRuntimeFonts:form.has('flatpakRuntimeFonts')};
     if (state.native) {
-      const submit=event.target.querySelector('[type=submit]');submit.disabled=true;$('#config-error').textContent='';
+      const submit=event.submitter || event.target.querySelector('[type=submit]:not([data-open-after-save])');const openAfterSave=event.submitter?.dataset.openAfterSave==='true';submit.disabled=true;$('#config-error').textContent='';
       void nativeInvoke('save_emulator', {id,...profile,allowExecute:form.has('allowExecute')}).then(() => {
         state.configs[id]=profile;
         if (state.overlay==='configure' && $('#config-form')?.dataset.id===id) dismissOverlay();
-        render();toast(`${byId[id].name} emulator saved.`);
+        render();toast(`${byId[id].name} emulator saved.`);if (openAfterSave) void launchConsole(id);
       }).catch(error => {if ($('#config-form')?.dataset.id===id) $('#config-error').textContent=String(error);else toast(String(error));})
         .finally(()=>{submit.disabled=false;});
     } else {

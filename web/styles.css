@@ -252,3 +252,11 @@ button:disabled { opacity: .55; cursor: wait }
 .hero-favorites { margin: 10px 0 0 8px }
 [hidden] { display: none !important }
 @media(max-width:670px) { .hero-favorites { margin-left: 0 }.file-choice { flex-wrap: wrap }.file-choice input { flex-basis: 100% }.console-hero-copy { max-width: 68% } }
+.discovery-box { margin-bottom: 24px; padding: 22px; display: flex; gap: 20px; align-items: center; justify-content: space-between; background: #172338; border: 1px solid #91b6ff40; border-radius: 14px }
+.discovery-box h2 { font-size: 17px; margin-bottom: 8px }.discovery-box p,.discovery-box small { color: #a7bbd9; line-height: 1.6; font-size: 12px }
+.discovery-box .button { flex-shrink: 0 }.hero-open { margin: 10px 0 0 8px }
+.launch-notice { padding: 18px; border: 1px solid #8fb8ff50; background: #192942; border-radius: 12px; margin-bottom: 24px; line-height: 1.7; color: #d8e6ff }
+.launch-error { border-color: #eeb08866; background: #3a2a25; color: #ffe2cd }.launch-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px }
+.launch-dialog { width: min(760px,100%) }.launch-output { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; padding: 16px; margin-top: 20px; background: #0a101b; color: #c4d6ed; font-size: 11px; line-height: 1.6 }
+.launch-dialog .muted { overflow-wrap: anywhere }.emulator-dialog .dialog-actions { flex-wrap: wrap }.runtime-font-choice { margin-top: 20px }
+@media(max-width:670px) { .discovery-box { flex-direction: column; align-items: flex-start }.hero-open { margin-left: 0 } }
