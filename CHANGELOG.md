@@ -1,3 +1,14 @@
+# v0.5.1 — Resolve cache-dependent blank startup
+
+- Isolate Matrix's runtime cache before WebKit starts; retain existing data, configuration, artwork and shared caches.
+- Restore the original cache environment for every external launch.
+- Add bounded startup/load/process diagnostics and a visible interface startup error/retry panel.
+- Cover normal painted-window startup outside the project folder, Wayland without forced graphics settings, child-process environments and interface script failure.
+- Resolve WebKitWebDriver from PATH before starting the isolated native test, and shut down the complete test process group.
+- Fix the failed native test step in GitHub's initial v0.5.0 workflow and add Rust build caching.
+
+The affected user confirmed that the fresh-cache launch works. The rebuilt application also passed the formerly stalled existing-profile startup. The exact offending shared cache file remains unidentified; no shared cache files are deleted.
+
 # v0.5.0 — Automatic PS1/PS2 artwork
 
 Continues the supplied Matrix-v0.4-native-source.zip. Keeps all 14 managed console directories and the independent Steam and Windows sections.

@@ -9,7 +9,9 @@ import base64
 import json
 import os
 from pathlib import Path
+import signal
 import socket
+import shutil
 import subprocess
 import tempfile
 import time
@@ -43,9 +45,14 @@ def main():
     args.add_argument('--driver', default='tauri-driver')
     args.add_argument('--webkit-driver', default='WebKitWebDriver')
     args.add_argument('--online', action='store_true')
+    args.add_argument('--unset-parent-cache', action='store_true')
+    args.add_argument('--backend', choices=['session','x11','wayland'], default='session')
+    args.add_argument('--legacy-graphics-workaround', action='store_true', help='Reproduce the compatibility settings used in the original test')
     args.add_argument('--screenshots', type=Path)
     cfg = args.parse_args()
     binary = cfg.binary.resolve(strict=True)
+    cfg.driver = shutil.which(cfg.driver) or str(Path(cfg.driver).resolve(strict=True))
+    cfg.webkit_driver = shutil.which(cfg.webkit_driver) or str(Path(cfg.webkit_driver).resolve(strict=True))
     endpoint = f'http://127.0.0.1:{port()}'
     session = None
     with tempfile.TemporaryDirectory(prefix='matrix-native-test-') as tmp:
@@ -63,6 +70,7 @@ def main():
         manifest = home/'.local/share/Steam/steamapps/appmanifest_12345.acf'
         manifest.write_text('"AppState"\n{\n"appid" "12345"\n"name" "Native Steam Fixture"\n}\n')
         launcher = '#!/bin/sh\nprintf "%s\\n" "$@" > "$MATRIX_NATIVE_TEST_LAUNCH_LOG"\n'
+        launcher += 'printf "%s" "$XDG_CACHE_HOME" > "$MATRIX_NATIVE_TEST_CACHE_LOG"\n'
         for target in [library/'PS2/TestEmulator.AppImage', home/'bin/steam', home/'bin/wine']:
             target.write_text(launcher)
             target.chmod(0o755)
@@ -72,12 +80,20 @@ def main():
         env = os.environ.copy()
         env.update(HOME=str(home), XDG_CONFIG_HOME=str(home/'config'), XDG_DATA_HOME=str(home/'.local/share'),
                    XDG_CACHE_HOME=str(home/'cache'), XDG_STATE_HOME=str(home/'state'),
-                   PATH=str(home/'bin')+':'+env['PATH'], GDK_BACKEND='x11',
-                   MATRIX_NATIVE_TEST_LAUNCH_LOG=str(log), WEBKIT_DISABLE_DMABUF_RENDERER='1')
-        env.pop('WAYLAND_DISPLAY', None)
+                   PATH=str(home/'bin')+':'+env['PATH'], MATRIX_NATIVE_TEST_LAUNCH_LOG=str(log), MATRIX_NATIVE_TEST_CACHE_LOG=str(home/'child-cache.log'))
+        if cfg.unset_parent_cache:
+            env.pop('XDG_CACHE_HOME',None)
+        parent_cache = home/'.cache' if cfg.unset_parent_cache else home/'cache'
+        expected_child_cache = '' if cfg.unset_parent_cache else str(home/'cache')
+        if cfg.backend != 'session':
+            env['GDK_BACKEND'] = cfg.backend
+        if cfg.backend == 'x11':
+            env.pop('WAYLAND_DISPLAY', None)
+        if cfg.legacy_graphics_workaround:
+            env['WEBKIT_DISABLE_DMABUF_RENDERER'] = '1'
         driver_log = open(home/'driver.log', 'w+')
         driver = subprocess.Popen([cfg.driver, '--port', endpoint.rsplit(':',1)[1], '--native-port', str(port()),
-                                   '--native-driver', cfg.webkit_driver], env=env, stdout=driver_log, stderr=subprocess.STDOUT)
+                                   '--native-driver', cfg.webkit_driver], env=env, cwd=home, stdout=driver_log, stderr=subprocess.STDOUT, start_new_session=True)
 
         def request(method, path, data=None):
             req = urllib.request.Request(endpoint+path, data=None if data is None else json.dumps(data).encode(),
@@ -120,6 +136,8 @@ def main():
             request('POST', f'/session/{session}/timeouts', {'script':60000})
             wait_for(lambda: js('return document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelectorAll(".console-card").length === 14'))
             assert len([p for p in library.iterdir() if p.is_dir()]) == 14
+            diagnostics=invoke('graphics_diagnostics')
+            assert diagnostics['XDG_CACHE_HOME'] == str(parent_cache/'matrix/runtime-v1')
             assert len(invoke('scan_console', {'id':'ps1'})) == 1
             assert len(invoke('scan_console', {'id':'ps2'})) == 1
             assert len(invoke('scan_console', {'id':'ps3'})) == 0
@@ -134,6 +152,8 @@ def main():
             click('.game-card')
             wait_for(log.exists)
             assert log.read_text().splitlines() == [str(ps2game)]
+            wait_for(lambda: (home/'child-cache.log').exists())
+            assert (home/'child-cache.log').read_text() == expected_child_cache
             click('[data-action="game"]')
             wait_for(lambda: js('return Boolean(document.querySelector(".cover-tools"))'))
             # Native manual import round-trip and cross-console rejection.
@@ -152,6 +172,7 @@ def main():
             click('.game-card')
             wait_for(log.exists)
             assert log.read_text().splitlines() == ['-applaunch', '12345']
+            assert (home/'child-cache.log').read_text() == expected_child_cache
             invoke('add_windows_game', {'title':'Native Windows Fixture','target':str(exe),'runner':'wine'})
             click('[data-action="refresh"]')
             click('[data-action="windows"]')
@@ -160,6 +181,7 @@ def main():
             click('.game-card')
             wait_for(log.exists)
             assert log.read_text().splitlines() == [str(exe)]
+            assert (home/'child-cache.log').read_text() == expected_child_cache
             invoke('save_artwork_settings', {'enabled':False,'style':'3d'})
             boot=invoke('bootstrap')
             assert boot['artwork'] == {'enabled':False,'style':'3d'}
@@ -176,10 +198,14 @@ def main():
             if session:
                 try: request('DELETE', f'/session/{session}')
                 except Exception: pass
-            driver.terminate()
+            try: os.killpg(driver.pid, signal.SIGTERM)
+            except ProcessLookupError: pass
             try: driver.wait(timeout=10)
-            except subprocess.TimeoutExpired: driver.kill();driver.wait()
+            except subprocess.TimeoutExpired:
+                os.killpg(driver.pid, signal.SIGKILL)
+                driver.wait()
             driver_log.close()
+            time.sleep(.5)  # Let WebKit finish releasing its temporary disk caches.
 
 if __name__ == '__main__':
     main()

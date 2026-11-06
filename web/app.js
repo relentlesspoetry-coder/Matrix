@@ -705,4 +705,4 @@ function setupEvents() {
     }
   });
 }
-readPrefs(); setupEvents(); render(); void initializeArt(); void initializeNative();
+readPrefs(); setupEvents(); render(); window.matrixStartup?.complete(); void initializeArt(); void initializeNative();

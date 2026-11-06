@@ -7,10 +7,12 @@
   <meta name="description" content="Matrix — native Linux frontend for consoles, Steam, and Windows games.">
   <title>Matrix | Your game libraries</title>
   <link rel="stylesheet" href="./styles.css">
+  <script src="./startup.js" defer></script>
   <script src="./data.js" defer></script>
   <script src="./app.js" defer></script>
 </head>
 <body>
+  <div id="startup-status" class="startup-status" role="status"><strong>Starting Matrix…</strong><p>Loading your game libraries.</p><button type="button" hidden>Try again</button></div>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Main navigation">
       <button class="brand" data-action="home" type="button" aria-label="Matrix home">
@@ -36,7 +38,7 @@
       </nav>
       <div class="sidebar-spacer"></div>
       <div class="sidebar-help"><span class="signal-dot"></span> CONSOLE · STEAM · WINDOWS<br><small id="native-status">Browser preview — native backend not connected</small></div>
-      <div class="sidebar-version">MATRIX <span>v0.5</span></div>
+      <div class="sidebar-version">MATRIX <span>v0.5.1</span></div>
     </aside>
     <main class="content">
       <header class="topbar">

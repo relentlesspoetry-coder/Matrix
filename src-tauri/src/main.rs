@@ -697,7 +697,7 @@ fn remove_windows_game(uid: String) -> Result<(), String> {
 #[cfg_attr(feature = "desktop", tauri::command)]
 fn open_console_folder(id: String) -> Result<(), String> {
     let path = games_dir(&id)?;
-    Command::new("xdg-open")
+    launch_command("xdg-open")
         .arg(&path)
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -709,7 +709,7 @@ fn command_for_emulator(path: &str) -> Result<Command, String> {
     if !binary.is_file() {
         return Err("Emulator executable is missing; check Settings".into());
     }
-    Ok(Command::new(binary))
+    Ok(launch_command(binary))
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -758,11 +758,11 @@ fn launch_steam_game(uid: String) -> Result<(), String> {
         return Err("Steam app not found in installed libraries".into());
     }
     // Prefer the system Steam client; Flatpak Steam is supported as a fallback.
-    let system = Command::new("steam").arg("-applaunch").arg(&uid).spawn();
+    let system = launch_command("steam").arg("-applaunch").arg(&uid).spawn();
     if system.is_ok() {
         return Ok(());
     }
-    Command::new("flatpak")
+    launch_command("flatpak")
         .args(["run", "com.valvesoftware.Steam", "-applaunch", &uid])
         .spawn()
         .map_err(|e| format!("Steam could not be started: {e}"))?;
@@ -782,12 +782,12 @@ fn launch_windows_game(uid: String) -> Result<(), String> {
     }
     let mut command = match game.runner.as_str() {
         "wine" => {
-            let mut c = Command::new("wine");
+            let mut c = launch_command("wine");
             c.arg(&game.target);
             c
         }
         "desktop" => {
-            let mut c = Command::new("gio");
+            let mut c = launch_command("gio");
             c.arg("launch").arg(&game.target);
             c
         }
@@ -1081,7 +1081,7 @@ async fn download_cover(
 #[cfg_attr(feature = "desktop", tauri::command)]
 fn open_cover_project() -> Result<(), String> {
     // Explicit user action opens the official site; Matrix never scrapes it or bypasses challenges.
-    Command::new("xdg-open")
+    launch_command("xdg-open")
         .arg("https://www.thecoverproject.net/")
         .spawn()
         .map(|_| ())
@@ -1122,11 +1122,127 @@ fn save_cover(kind: String, uid: String, bytes: Vec<u8>) -> Result<(), String> {
     Ok(())
 }
 
+// WebKit/GStreamer/Mesa cache initialization can stall before any page loads.
+// Keep Matrix's runtime caches separate, without moving or deleting existing caches.
+static ORIGINAL_CACHE_HOME: std::sync::OnceLock<Option<std::ffi::OsString>> =
+    std::sync::OnceLock::new();
+fn isolate_runtime_cache() {
+    #[cfg(target_os = "linux")]
+    {
+        let original = std::env::var_os("XDG_CACHE_HOME");
+        if let Some(cache) = dirs::cache_dir() {
+            let runtime = cache.join("matrix").join("runtime-v1");
+            match fs::create_dir_all(&runtime) {
+                Ok(()) => {
+                    let _ = ORIGINAL_CACHE_HOME.set(original);
+                    // Called once from main(), before GTK/WebKit or background threads start.
+                    std::env::set_var("XDG_CACHE_HOME", &runtime);
+                    startup_log(&format!("Isolated runtime cache: {}", runtime.display()));
+                }
+                Err(error) => startup_log(&format!("Could not isolate runtime cache: {error}")),
+            }
+        }
+    }
+}
+
+fn launch_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut command = Command::new(program);
+    // The cache override belongs to Matrix, not to games or external applications.
+    if let Some(original) = ORIGINAL_CACHE_HOME.get() {
+        match original {
+            Some(value) => {
+                command.env("XDG_CACHE_HOME", value);
+            }
+            None => {
+                command.env_remove("XDG_CACHE_HOME");
+            }
+        }
+    }
+    command
+}
+
+static STARTUP_LOG: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+fn startup_log(message: &str) {
+    use std::io::Write;
+    eprintln!("[Matrix] {message}");
+    if let Some(path) = STARTUP_LOG.get() {
+        if fs::metadata(path).is_ok_and(|m| m.len() > 65536) {
+            return;
+        }
+        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(file, "{message}");
+        }
+    }
+}
+fn initialize_startup_log() {
+    if let Some(data) = dirs::data_local_dir() {
+        let path = data.join("matrix").join("startup.log");
+        if fs::create_dir_all(path.parent().unwrap()).is_ok() {
+            let _ = fs::write(&path, "");
+            let _ = STARTUP_LOG.set(path);
+        }
+    }
+    startup_log(&format!("Starting Matrix {}", env!("CARGO_PKG_VERSION")));
+    startup_log(&format!("Graphics: {:?}", graphics_diagnostics()));
+}
+#[cfg_attr(feature = "desktop", tauri::command)]
+fn report_startup(message: String) {
+    startup_log(&message.chars().take(4000).collect::<String>());
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+fn graphics_diagnostics() -> BTreeMap<String, String> {
+    let mut values = BTreeMap::new();
+    values.insert("version".into(), env!("CARGO_PKG_VERSION").into());
+    for key in [
+        "XDG_SESSION_TYPE",
+        "GDK_BACKEND",
+        "WAYLAND_DISPLAY",
+        "WEBKIT_DISABLE_DMABUF_RENDERER",
+        "WEBKIT_DISABLE_COMPOSITING_MODE",
+        "XDG_CACHE_HOME",
+    ] {
+        if let Ok(value) = std::env::var(key) {
+            values.insert(key.into(), value);
+        }
+    }
+    values
+}
+
 #[cfg(feature = "desktop")]
 fn main() {
+    initialize_startup_log();
+    isolate_runtime_cache();
     tauri::Builder::default()
+        .on_page_load(|_, page| {
+            startup_log(&format!("Page {:?}: {}", page.event(), page.url()));
+        })
+        .setup(|app| {
+            #[cfg(target_os = "linux")]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    window.with_webview(|webview| {
+                        use webkit2gtk::WebViewExt;
+                        let view = webview.inner();
+                        view.connect_load_failed(|_, stage, url, error| {
+                            startup_log(&format!(
+                                "WebKit load failed at {stage:?}, {url}: {error}"
+                            ));
+                            false
+                        });
+                        view.connect_web_process_terminated(|_, reason| {
+                            startup_log(&format!("WebKit process terminated: {reason:?}"));
+                        });
+                    })?;
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
+            graphics_diagnostics,
+            report_startup,
             scan_console,
             scan_steam,
             save_emulator,

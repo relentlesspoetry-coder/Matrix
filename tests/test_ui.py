@@ -7,7 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / 'web'
 HTML = (WEB / 'index.html').read_text().replace('<link rel="stylesheet" href="./styles.css">', '<style>' + (WEB / 'styles.css').read_text() + '</style>')
 HTML = HTML.replace('<script src="./data.js" defer></script>', '').replace('<script src="./app.js" defer></script>', '')
-HTML = HTML.replace('</body>', '<script>' + (WEB / 'data.js').read_text() + '</script><script>' + (WEB / 'app.js').read_text() + '</script></body>')
+HTML = HTML.replace('<script src="./startup.js" defer></script>', '')
+HTML = HTML.replace('</body>', '<script>' + (WEB / 'startup.js').read_text() + '</script>' + '<script>' + (WEB / 'data.js').read_text() + '</script><script>' + (WEB / 'app.js').read_text() + '</script></body>')
 SCREENS = ROOT / 'screenshots'
 SCREENS.mkdir(exist_ok=True)
 MOCK = '''
@@ -42,6 +43,7 @@ with sync_playwright() as p:
     preview.on('pageerror',lambda e: errors.append(str(e)))
     preview.set_content(HTML)
     assert preview.locator('.console-card').count()==14
+    assert preview.locator('#startup-status').is_hidden()
     assert 'MATRIX' in preview.locator('.brand').inner_text().replace('\n','')
     preview.get_by_role('button', name='Steam Games').click()
     assert 'No steam games detected' in preview.locator('.external-empty').inner_text()
@@ -51,6 +53,13 @@ with sync_playwright() as p:
     preview.keyboard.press('Escape')
     preview.get_by_role('button', name='Consoles').click()
     preview.screenshot(path=str(SCREENS/'matrix-console-preview.png'),full_page=True)
+
+    failed = browser.new_page(viewport={'width':1000,'height':800})
+    failed.set_content(HTML.replace((WEB/'app.js').read_text(), "throw new Error('Injected startup failure');"))
+    failed.wait_for_function('document.querySelector("#startup-status strong").textContent.includes("could not finish")')
+    assert 'Injected startup failure' in failed.locator('#startup-status').inner_text()
+    assert failed.get_by_role('button',name='Try again').is_visible()
+    failed.close()
 
     native = browser.new_page(viewport={'width':1440,'height':940})
     native.evaluate(MOCK)

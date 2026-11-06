@@ -1,6 +1,6 @@
 {
   "name": "matrix-linux-frontend",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Matrix Linux desktop build tools",
   "scripts": {

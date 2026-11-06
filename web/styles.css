@@ -216,3 +216,8 @@ h1,h2,h3,p { margin: 0 }
 .cover-tools small { display: block; margin: 8px 0; }
 .cover-tools .button { margin: 8px 6px 0 0; }
 .cover-result { overflow-wrap: anywhere; }
+
+.startup-status { position: fixed; z-index: 1000; top: 24px; left: 50%; transform: translateX(-50%); width: min(520px, calc(100% - 32px)); padding: 22px; border: 1px solid #465267; border-radius: 14px; color: #e5ebf3; background: #182230; box-shadow: 0 8px 28px #0008; }
+.startup-status[hidden] { display: none; }
+.startup-status p { margin: 10px 0; overflow-wrap: anywhere; }
+.startup-status button { padding: 10px 16px; cursor: pointer; }

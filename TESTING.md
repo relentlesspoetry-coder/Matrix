@@ -1,15 +1,15 @@
 # Test Matrix on Linux
 
-This is the first native testing release, version 0.5.0. The build was made on Zorin OS 18.1 (Ubuntu 24.04 base), for **x86-64 / amd64** computers. Other distributions and ARM systems have not been validated.
+This is the native testing release, version 0.5.1. The build was made on Zorin OS 18.1 (Ubuntu 24.04 base), for **x86-64 / amd64** computers. Other distributions and ARM systems have not been validated.
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04
 
-1. Open the [v0.5.0 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.0) while signed in to the account that owns this private repository.
-2. Download `Matrix_0.5.0_amd64.deb`.
+1. Open the [v0.5.1 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.1) while signed in to the account that owns this private repository.
+2. Download `Matrix_0.5.1_amd64.deb`.
 3. Open a terminal in the download folder and run:
 
    ```bash
-   sudo apt install ./Matrix_0.5.0_amd64.deb
+   sudo apt install ./Matrix_0.5.1_amd64.deb
    ```
 
 4. Open **Matrix** from the application menu. You can also run `matrix-frontend` in a terminal to capture diagnostics.
@@ -18,20 +18,26 @@ APT installs the GTK/WebKit runtime dependencies if needed. Rust, Node, the sour
 
 ## Portable AppImage alternative
 
-Download `Matrix_0.5.0_amd64.AppImage` from the same release. In its download folder run:
+Download `Matrix_0.5.1_amd64.AppImage` from the same release. In its download folder run:
 
 ```bash
-chmod +x Matrix_0.5.0_amd64.AppImage
-./Matrix_0.5.0_amd64.AppImage
+chmod +x Matrix_0.5.1_amd64.AppImage
+./Matrix_0.5.1_amd64.AppImage
 ```
 
 If FUSE is unavailable, run it in extraction mode:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix_0.5.0_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix_0.5.1_amd64.AppImage
 ```
 
 The AppImage's actual native window, IPC, scanning, local covers, settings and launcher dispatch passed the same isolated desktop test in extraction mode. Other Linux distributions and native FUSE mounting have not been validated. The DEB is recommended on Zorin/Ubuntu.
+
+## Upgrade from the blank-window build
+
+Close Matrix, then install the v0.5.1 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix normally; no special graphics or cache launch command should be needed.
+
+If a new startup problem occurs, attach `~/.local/share/matrix/startup.log` to the issue. This contains bounded startup stages and renderer/load errors, not game data. In this incident, graphics workarounds did not resolve the problem; a fresh cache directory did, which the affected user confirmed. The specific problematic shared cache file was not identified or deleted.
 
 ## First-run testing
 
@@ -53,6 +59,8 @@ A game's emulator, firmware and any required keys must already be installed/conf
 - That test checked actual IPC, creation of all 14 managed console libraries, PS1/PS2 scans, cross-console path rejection, local cover round-trip, preservation of emulator/Windows settings, Steam and Windows tab separation, and process argument dispatch to harmless test launchers.
 - The real desktop automatically downloaded one PS1 and one PS2 default cover using synthetic serial-labelled files. A separate Rust live test verified four sample provider URLs (both default and 3D).
 - Twelve Rust cover-engine tests and five headless-backend tests passed. The simulated-native Chromium UI suite and folder-layout tests passed during source development. See README for current build checks.
+
+**Additional v0.5.1 checks:** the rebuilt app reached Interface ready in the same existing-profile Wayland launch that previously stalled. Ordinary non-WebDriver X11 startup was checked by capturing the actual desktop pixels. Native tests cover both an explicitly provided and an unset parent cache directory, and ensure test launchers receive the original environment.
 
 **Not verified:** real emulator gameplay, launching a user's Steam games or real Wine installations, controller support, ARM builds, other Linux releases, every disc format/serial, or universal cover availability. Launch fixtures validate command dispatch, not emulator compatibility. There is no automatic application updater in this release.
 

@@ -1,10 +1,20 @@
-# Matrix v0.5 — Native Linux game frontend
+# Matrix v0.5.1 — Native Linux game frontend
 
 **Matrix** is a native **Linux** game launcher written in **Rust + Tauri 2**, with a responsive HTML/CSS/JavaScript interface running inside its desktop window. It has **three intentionally separate sections**: Consoles, Steam Games, Windows Games. There is no merged “All Games” library.
 
+## v0.5.1 startup fix
+
+A cache-dependent stall could leave v0.5.0's window blank before the first page loaded. Giving only the process a fresh cache directory reproduced a successful startup with the original data/configuration, and the affected user confirmed the workaround. The exact offending shared cache file was not identified.
+
+Matrix now isolates its runtime cache under `$XDG_CACHE_HOME/matrix/runtime-v1/` (normally `~/.cache/matrix/runtime-v1/`) before creating WebKit. It does not delete shared caches, migrate game files, or replace the browser data/profile. Launched emulators, Steam, Flatpak, Wine, desktop launchers and browser/folder openers receive the original cache environment.
+
+Startup stages and WebKit failures are logged to `$XDG_DATA_HOME/matrix/startup.log` (normally `~/.local/share/matrix/startup.log`); each launch resets that bounded diagnostic file. A visible error/retry panel handles interface script failures. This cannot replace native diagnostics when the entire web process cannot load a page.
+
+Regression checks now include an actual painted, non-WebDriver window, normal launch from outside the project directory, Wayland without injected graphics workarounds, and restoration of launched programs' cache environments. The native driver lookup failure in the initial GitHub workflow is also corrected.
+
 ## Install the Linux test release
 
-Download **Matrix_0.5.0_amd64.deb** from the [v0.5.0 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.0), then run `sudo apt install ./Matrix_0.5.0_amd64.deb` in its download folder. Open **Matrix** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
+Download **Matrix_0.5.1_amd64.deb** from the [v0.5.1 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.1), then run `sudo apt install ./Matrix_0.5.1_amd64.deb` in its download folder. Open **Matrix** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
 
 ![Real compiled Matrix window in an isolated test display](screenshots/matrix-linux-home.png)
 
