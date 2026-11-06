@@ -4,9 +4,11 @@
 
 The emulator setup dialog's focus trap omitted both the Advanced launch options
 summary and its multiline arguments field. Five new fixture cases failed before
-the repair. All six keyboard cases and all 43 production-JavaScript fixture tests
+the repair. All ten keyboard cases and all 47 production-JavaScript fixture tests
 pass after it, along with the folder, release/signing and DEB packaging fixtures.
-The native desktop suite now uses WebDriver key actions to verify Tab/Shift+Tab
+Native testing also reproduced GTK/WebKit reporting Shift+Tab as an unidentified
+key, allowing focus to escape behind the dialog; the trap now recognizes Tab
+through its physical key code or legacy key code too. The native desktop suite uses WebDriver key actions to verify Tab/Shift+Tab
 through expanded and collapsed advanced settings, hidden Flatpak/file controls,
 and the dialog boundaries. The release pipeline must pass these native checks
 on its exact commit before publication.

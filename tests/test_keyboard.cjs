@@ -19,13 +19,13 @@ function fixture() {
   vm.runInContext(source.replace(startup, '') + '\nstate.overlay="configure"; setupEvents();', context);
   function add(tag, props = {}) {
     const node = { tag, tabIndex: 0, visibility: 'visible', focus() { document.activeElement = node; },
-      closest() { return node.hidden || node.inert ? {} : null; },
+      closest(selector) { return selector === 'details:not([open])' ? node.closedDetails || null : node.hidden || node.inert ? {} : null; },
       getClientRects() { return node.noLayout ? [] : [{}]; }, matches() { return !!node.disabled; }, ...props };
     controls.push(node); return node;
   }
-  function tab(node, shiftKey = false) {
-    node.focus(); let prevented = false;
-    for (const handler of listeners.keydown) handler({ key: 'Tab', shiftKey, preventDefault() { prevented = true; } });
+  function tab(node, shiftKey = false, key = {}) {
+    document.activeElement = node; let prevented = false;
+    for (const handler of listeners.keydown) handler({ key: 'Tab', shiftKey, ...key, preventDefault() { prevented = true; } });
     return { prevented, active: document.activeElement };
   }
   return { add, tab };
@@ -48,4 +48,23 @@ test('focus outside the dialog is recovered in the requested direction', () => {
   const outside = { focus() {} };
   assert.equal(f.tab(outside).active, first);
   assert.equal(f.tab(outside, true).active, last);
+});
+
+for (const key of [{key:'Unidentified',code:'Tab'}, {key:'Unidentified',keyCode:9}]) {
+  test(`GTK shifted Tab wraps using ${key.code ? 'code' : 'legacy keyCode'}`, () => {
+    const f = fixture(); const first = f.add('button'), last = f.add('button');
+    const result = f.tab(first, true, key);
+    assert.equal(result.prevented, true); assert.equal(result.active, last);
+  });
+}
+test('unrelated unidentified keys do not move dialog focus', () => {
+  const f = fixture(); const first = f.add('button'); f.add('button');
+  const result = f.tab(first, true, {key:'Unidentified',code:'KeyQ',keyCode:0});
+  assert.equal(result.prevented, false); assert.equal(result.active, first);
+});
+test('closed details descendants are skipped even when WebKit retains their layout rectangles', () => {
+  const f = fixture(); const first = f.add('button'), summary = f.add('summary');
+  const details = { querySelector() { return summary; } }; summary.closedDetails = details;
+  f.add('textarea', { closedDetails: details });
+  assert.equal(f.tab(first, true).active, summary);
 });

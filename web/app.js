@@ -980,11 +980,14 @@ function setupEvents() {
       if (state.overlay) dismissOverlay();
       else if (state.page === 'console') goHome();
     }
-    if (state.overlay && event.key === 'Tab') {
+    // GTK/WebKit can label shifted Tab as Unidentified (ISO_Left_Tab).
+    const isTab = event.key === 'Tab' || event.code === 'Tab' || event.keyCode === 9;
+    if (state.overlay && isTab) {
       // Match real sequential focus: advanced summaries and multiline arguments
       // belong in the dialog, while hidden launcher fields and closed details do not.
       const options = [...$('#overlay-root').querySelectorAll('button,input,select,textarea,summary,a[href],[tabindex]')]
         .filter(node => node.tabIndex >= 0 && !node.matches(':disabled') && !node.closest('[hidden],[inert]')
+          && (!node.closest('details:not([open])') || node.closest('details:not([open])').querySelector('summary') === node)
           && node.getClientRects().length && window.getComputedStyle(node).visibility !== 'hidden');
       if (!options.length) return;
       const first = options[0], last = options.at(-1);

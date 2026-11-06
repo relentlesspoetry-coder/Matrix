@@ -312,7 +312,7 @@ def main():
             click('[data-action="configure"][data-id="ps2"]')
             js('document.querySelector("#emulator-launcher").value="flatpak";document.querySelector("#emulator-launcher").dispatchEvent(new Event("change",{bubbles:true}))')
             wait_for(lambda: js('return document.querySelector("#flatpak-app").options.length === 4'))
-            js('window.__keyEvents=[];document.addEventListener("keydown",event=>{const entry={key:event.key,shift:event.shiftKey,target:event.target.outerHTML};queueMicrotask(()=>{entry.prevented=event.defaultPrevented;entry.active=document.activeElement.outerHTML;window.__keyEvents.push(entry)})})')
+            js('window.__keyEvents=[];document.addEventListener("keydown",event=>{const entry={key:event.key,code:event.code,keyCode:event.keyCode,shift:event.shiftKey,target:event.target.outerHTML};queueMicrotask(()=>{entry.prevented=event.defaultPrevented;entry.active=document.activeElement.outerHTML;window.__keyEvents.push(entry)})})')
             # Native WebKit keyboard navigation, not simulated focus handling.
             # Hidden file/AppImage controls must not steal Flatpak tab order.
             js('document.querySelector("#emulator-launcher").focus()')
@@ -341,6 +341,7 @@ def main():
             assert focused('[data-open-after-save]')
             key('\ue004')
             assert focused('.emulator-dialog .close')
+            print('PASS: native keyboard forward/reverse Tab, expanded/collapsed advanced settings and dialog wrapping')
             js('document.querySelector("#flatpak-app").value="org.matrix.TestEmulator|user";document.querySelector("#flatpak-app").dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#config-form").requestSubmit()')
             wait_for(lambda: invoke('bootstrap')['profiles']['ps2'].get('launcher')=='flatpak')
             wait_for(lambda: js('return !document.querySelector("#config-form")'))

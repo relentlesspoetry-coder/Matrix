@@ -3,7 +3,8 @@
 ## 0.5.9
 
 - Fix emulator setup keyboard navigation: Tab and Shift+Tab now continue through Advanced launch options and multiline arguments instead of jumping to Close. Skip hidden, disabled and non-tabbable controls when wrapping dialog focus.
-- Add six production-handler regressions and real WebKit keyboard checks for forward/reverse navigation, collapsed advanced settings, hidden Flatpak/file fields and dialog focus wrapping.
+- Handle Linux WebKit shifted Tab key events so reverse keyboard navigation cannot escape behind the dialog.
+- Add ten production-handler regressions and real WebKit keyboard checks for forward/reverse navigation, collapsed advanced settings, hidden Flatpak/file fields and dialog focus wrapping.
 - This is a focused keyboard repair, not new gamepad support. Real Steam/Wine gameplay, emulator save creation and a privileged package upgrade remain separate integration checks.
 
 ## 0.5.8
