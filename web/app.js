@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.6 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.7 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const byId = Object.fromEntries(consoles.map(consoleInfo => [consoleInfo.id, consoleInfo]));
