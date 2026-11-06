@@ -82,6 +82,14 @@ Nine native/headless backend tests pass, including backward-compatible executabl
 
 The compiled desktop test passed favorites persistence across a webview reload and a complete frontend process restart. It selected a Flatpak through the real setup form, persisted its installation scope and launched it with expected discrete arguments and console-specific read access. That launch uses a harmless fixture `flatpak` executable; it does not test real emulator gameplay. Ordinary non-WebDriver painted-window startup also passed without forced graphics settings. The native picker uses Tauri's dialog plugin; the browser test simulates its selected-path response.
 
+## Published v0.5.4 verification — 2026-11-05
+
+The automatic [Linux build and signed release](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42147273955) passed. The published DEB and AppImage matched the pinned-key signed manifest and all downloaded release checksums passed.
+
+A real GTK emulator picker was opened in an isolated X11 display and cancelled; it returned no selected path. The published AppImage passed the native favorites/Flatpak fixture suite, including favorites persistence across a full process restart and correct AppImage self-update identity. Selecting a file in the UI test uses a simulated returned path; AppImage permission/header handling is tested against synthetic files. Actual emulator gameplay remains unverified.
+
+The installed 0.5.3 application's real Update controls downloaded, verified and installed signed 0.5.4 through the system package installer. Its Restart control launched installed 0.5.4 and reached Interface ready. This was an intentional local upgrade with an isolated test home/display, not a privileged step in the ordinary test harness or GitHub workflow. A complete AppImage replacement/restart cycle remains unverified; its replacement/backup logic uses synthetic fixtures.
+
 ## Published release and installed-app verification — 2026-11-05
 
 The public GitHub Actions run [42143081462](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42143081462) passed both build/test and signing/publication jobs for v0.5.3. Its six published assets include DEB, AppImage, source ZIP, checksums and the signed update manifest. Downloaded asset hashes were checked against SHA256SUMS.
