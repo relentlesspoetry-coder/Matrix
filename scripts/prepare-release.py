@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -16,6 +17,10 @@ def prepare(out, key):
     native = json.loads((ROOT/'src-tauri/tauri.conf.json').read_text())['version']
     if native != version:
         raise ValueError('Application versions disagree')
+    # This signer always publishes a DEB. Tauri 2.12.4 has no DEB version
+    # override and writes the raw application version to its control file.
+    if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
+        raise ValueError('DEB releases require a numeric X.Y.Z version; use GitHub testing/prerelease status instead of a version suffix')
     out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()):
         raise ValueError('Use an empty release output folder')

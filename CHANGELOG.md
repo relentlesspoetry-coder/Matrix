@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Reject stale artwork results after refresh or cover replacement, and interrupt update downloads during stalled network waits without publishing partial packages.
+- Verify signed DEB metadata and package bytes independently in a packaged privileged helper, using protected staging instead of mutable user download paths.
+- Serialize settings changes across cooperating processes and merge discovery into the latest saved configuration.
+- Preserve emulator configuration arguments in setup mode, validate PS4 eboot favorites/artwork consistently, and retain recent launch diagnostics through GUI closure and log-write failures.
+- Correct semantic version ordering and reject Debian-incompatible prerelease suffixes before combined installer builds, release changes or signing.
+- Add regression tests and inspect built DEB helper ownership, permissions and architecture. Test fix-branch pushes without running the main-only publication job. Require Rust 1.90 for the locked Tauri dependencies.
+
 ## 0.5.6
 
 - Start recognized console emulators fullscreen when a game card is clicked, using engine-specific no-GUI/batch/hidden-menu options where supported. Keep Open emulator in normal setup mode. Apply presets to existing recognized profiles without requiring them to be saved again; preserve literal custom-launcher arguments.

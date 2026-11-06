@@ -4,7 +4,8 @@
   "version": "0.5.6",
   "identifier": "com.matrix.frontend",
   "build": {
-    "frontendDist": "../web"
+    "frontendDist": "../web",
+    "beforeBuildCommand": "cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default-features --bin matrix-install-update"
   },
   "app": {
     "withGlobalTauri": true,
@@ -45,7 +46,10 @@
         ],
         "provides": [
           "matrix"
-        ]
+        ],
+        "files": {
+          "/usr/lib/matrix-play/matrix-install-update": "target/release/matrix-install-update"
+        }
       }
     }
   }

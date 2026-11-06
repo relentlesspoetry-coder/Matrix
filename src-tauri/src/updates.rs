@@ -156,20 +156,24 @@ impl Service {
             Err(e) => self.fail(e),
         }
     }
-    fn download(&self) -> Result<Info, String> {
-        let release = {
-            let mut s = self.inner.lock().map_err(|_| "Update state unavailable")?;
-            if s.info.phase != "available" {
-                return Err("Check for an available update first".into());
-            }
-            let release = s.release.clone().ok_or("No verified release selected")?;
-            s.info.phase = "downloading".into();
-            s.info.message = "Downloading and verifying the update…".into();
-            s.info.received = 0;
-            s.info.total = release.asset.size;
-            release
-        };
+    fn begin_download(&self) -> Result<core::VerifiedRelease, String> {
+        let mut s = self.inner.lock().map_err(|_| "Update state unavailable")?;
+        if s.info.phase != "available" {
+            return Err("Check for an available update first".into());
+        }
+        let release = s.release.clone().ok_or("No verified release selected")?;
+        // Reset the previous attempt before publishing the cancellable phase.
+        // A caller observing "downloading" through status() acquires this same
+        // mutex, so its cancellation can never be overwritten by this reset.
         self.cancel.store(false, Ordering::Relaxed);
+        s.info.phase = "downloading".into();
+        s.info.message = "Downloading and verifying the update…".into();
+        s.info.received = 0;
+        s.info.total = release.asset.size;
+        Ok(release)
+    }
+    fn download(&self) -> Result<Info, String> {
+        let release = self.begin_download()?;
         let result = (|| {
             let root = dirs::data_local_dir()
                 .ok_or("Cannot locate the update download folder")?
@@ -231,7 +235,19 @@ impl Service {
                 return core::install_appimage(&download, &target).map(Some);
             }
             if install_mode == "system" {
-                let status=super::launch_command("pkexec").arg("/usr/bin/apt-get").arg("install").arg("-y").arg(&download.path).current_dir("/").status().map_err(|_|"Could not open the system installer. The verified installer is saved in your Matrix Play update folder.")?;
+                let mut child = super::launch_command("/usr/bin/pkexec")
+                    .arg("/usr/lib/matrix-play/matrix-install-update")
+                    .stdin(std::process::Stdio::piped())
+                    .current_dir("/")
+                    .spawn()
+                    .map_err(|_| "Could not open the secure system installer. Install the update manually if this installation predates the secure helper.")?;
+                let sent = core::deb::write_request(
+                    &download,
+                    &mut child.stdin.take().ok_or("Installer input unavailable")?,
+                );
+                // Always reap the helper, including a rejected/truncated request.
+                let status = child.wait().map_err(|e| e.to_string())?;
+                sent?;
                 if !status.success() {
                     return Err("Installation was cancelled or the system installer could not complete it. Your current Matrix Play remains available.".into());
                 }
@@ -342,6 +358,55 @@ pub(crate) fn open_update_releases() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cancellation_after_downloading_is_published_is_not_lost() {
+        let service = Service::default();
+        let asset = core::Asset {
+            name: "fixture.deb".into(),
+            size: 14,
+            sha256: "0".repeat(64),
+        };
+        // This fixture exercises the state transition only, never verification,
+        // network access or installation.
+        {
+            let mut runtime = service.inner.lock().unwrap();
+            runtime.info.phase = "available".into();
+            runtime.release = Some(core::VerifiedRelease {
+                manifest: core::Manifest {
+                    schema: 1,
+                    repository: core::REPOSITORY.into(),
+                    version: "99.0.0".into(),
+                    tag: "v99.0.0".into(),
+                    notes: String::new(),
+                    assets: std::collections::BTreeMap::new(),
+                },
+                asset,
+                kind: "deb".into(),
+                signed_manifest: Vec::new(),
+                signature: Vec::new(),
+            });
+        }
+        service.cancel.store(true, Ordering::Relaxed);
+        let worker_service = service.clone();
+        let (published, observed) = std::sync::mpsc::channel();
+        let (resume, cancelled) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            worker_service.begin_download().unwrap();
+            assert!(!worker_service.cancel.load(Ordering::Relaxed));
+            published.send(()).unwrap();
+            cancelled.recv().unwrap();
+            assert!(worker_service.cancel.load(Ordering::Relaxed));
+        });
+        observed.recv().unwrap();
+        assert_eq!(service.status().unwrap().phase, "downloading");
+        service.cancel.store(true, Ordering::Relaxed);
+        // A concurrent duplicate Download must not reset a pending cancellation.
+        assert!(service.begin_download().is_err());
+        assert!(service.cancel.load(Ordering::Relaxed));
+        resume.send(()).unwrap();
+        worker.join().unwrap();
+    }
+
     #[test]
     fn inherited_appimage_cannot_select_another_app_for_replacement() {
         let root = tempfile::tempdir().unwrap();

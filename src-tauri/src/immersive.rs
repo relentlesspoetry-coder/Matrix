@@ -1,6 +1,112 @@
 //! Launch-time options only: never rewrite the emulator's persistent settings.
 use super::*;
 
+/// Open the same emulator configuration as game launches, without booting a game
+/// or applying gameplay-only fullscreen/headless options. Do not call game_args:
+/// its injected options deliberately hide the configuration interface.
+pub(crate) fn setup_args(profile: &EmulatorProfile, console: &str) -> Vec<String> {
+    let engine = discovery::identity(profile, console).unwrap_or("");
+    let (flags, pairs): (&[&str], &[&str]) = match engine {
+        "PCSX2" => (
+            &[
+                "-batch",
+                "-nogui",
+                "-fullscreen",
+                "-nofullscreen",
+                "-bigpicture",
+                "-fastboot",
+                "-slowboot",
+                "-resume",
+            ],
+            &["-state"],
+        ),
+        "DuckStation" => (
+            &[
+                "-batch",
+                "-nogui",
+                "-fullscreen",
+                "-nofullscreen",
+                "-bigpicture",
+                "-fastboot",
+                "-slowboot",
+                "-resume",
+            ],
+            &["-state"],
+        ),
+        "RPCS3" => (&["--no-gui", "--fullscreen"], &[]),
+        "RMG" => (
+            &[
+                "-f",
+                "--fullscreen",
+                "-n",
+                "--nogui",
+                "-q",
+                "--quit-after-emulation",
+            ],
+            &[],
+        ),
+        "Dolphin" => (&["-b", "--batch"], &["-e", "--exec", "-n", "--nand_title"]),
+        "Cemu" => (&["-f", "--fullscreen"], &["-g"]),
+        "Eden" => (&["-f", "--fullscreen"], &["-g", "--game"]),
+        "SameBoy" | "mGBA" | "melonDS" | "Ryujinx" | "Azahar" => {
+            (&["-f", "--fullscreen", "--windowed"], &[])
+        }
+        "PPSSPP" => (&["--fullscreen", "--windowed"], &[]),
+        "Vita3K" => (
+            &["--fullscreen", "-F", "--keep-config", "-w"],
+            &["--run", "-r", "--frontend"],
+        ),
+        "shadPS4" => (&[], &["--fullscreen", "-g", "--game"]),
+        "shadPS4 QtLauncher" => (&["-d"], &["-g", "--game"]),
+        _ => (&[], &[]),
+    };
+    let mut result = Vec::new();
+    let mut args = profile.launch_args.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--" {
+            // The suffix is the game operand (or QtLauncher's core-only argv),
+            // never settings for the setup interface.
+            break;
+        }
+        if pairs.contains(&arg.as_str()) {
+            args.next();
+            continue;
+        }
+        if arg == "{game}" || flags.contains(&arg.as_str()) {
+            continue;
+        }
+        if (engine == "Dolphin" && (arg == "-C" || arg == "--config"))
+            || (engine == "Flycast" && arg == "-config")
+        {
+            if let Some(value) = args.next() {
+                let fullscreen = if engine == "Dolphin" {
+                    "Dolphin.Display.Fullscreen="
+                } else {
+                    "window:fullscreen="
+                };
+                if !value.starts_with(fullscreen) {
+                    result.extend([arg.clone(), value.clone()]);
+                }
+            }
+            continue;
+        }
+        // Preserve configuration paths as literal tokens, even if a pathname
+        // happens to look like an option. These select the settings being edited.
+        if matches!(
+            arg.as_str(),
+            "-datapath" | "--config" | "--configdir" | "--config-dir" | "--user" | "-u"
+        ) {
+            result.push(arg.clone());
+            if let Some(value) = args.next() {
+                result.push(value.clone());
+            }
+            continue;
+        }
+        result.push(arg.clone());
+    }
+    result
+}
+
 /// Identify the actual launcher, not its user-editable display label or the console alone.
 /// Unknown/custom launchers keep their literal argv; users can supply their own fullscreen options.
 pub(crate) fn game_args(profile: &EmulatorProfile, console: &str) -> Vec<String> {
@@ -168,6 +274,98 @@ mod tests {
             launch_args: args.iter().map(|s| (*s).into()).collect(),
             ..Default::default()
         }
+    }
+    #[test]
+    fn setup_keeps_the_saved_configuration_and_removes_game_only_arguments() {
+        let p = profile(
+            "/usr/bin/pcsx2-qt",
+            &[
+                "-portable",
+                "-datapath",
+                "/tmp/My settings",
+                "-nogui",
+                "-fullscreen",
+                "--",
+                "{game}",
+            ],
+        );
+        assert_eq!(
+            setup_args(&p, "ps2"),
+            ["-portable", "-datapath", "/tmp/My settings"]
+        );
+        assert_eq!(p.launch_args.last().unwrap(), "{game}");
+        assert_eq!(
+            setup_args(
+                &profile(
+                    "/usr/bin/dolphin-emu",
+                    &[
+                        "-u",
+                        "/tmp/Dolphin user",
+                        "-C",
+                        "Dolphin.Display.Fullscreen=True",
+                        "-b",
+                        "-e",
+                        "{game}"
+                    ]
+                ),
+                "wii"
+            ),
+            ["-u", "/tmp/Dolphin user"]
+        );
+        assert_eq!(
+            setup_args(
+                &profile(
+                    "/usr/bin/cemu",
+                    &["--config", "/tmp/config.xml", "-g", "{game}"]
+                ),
+                "wiiu"
+            ),
+            ["--config", "/tmp/config.xml"]
+        );
+        assert_eq!(
+            setup_args(
+                &profile(
+                    "/apps/shadPS4QtLauncher",
+                    &["-d", "-g", "{game}", "--", "--fullscreen", "true"]
+                ),
+                "ps4"
+            ),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            setup_args(
+                &profile(
+                    "/apps/Vita3K.AppImage",
+                    &["--frontend", "sdl", "--fullscreen", "{game}"]
+                ),
+                "vita"
+            ),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn setup_supports_flatpak_and_preserves_custom_configuration_tokens() {
+        let mut p = profile(
+            "",
+            &["-datapath", "/tmp/Flatpak settings", "-portable", "{game}"],
+        );
+        p.launcher = emulators::Launcher::Flatpak;
+        p.flatpak_id = "net.pcsx2.PCSX2".into();
+        assert_eq!(
+            setup_args(&p, "ps2"),
+            ["-datapath", "/tmp/Flatpak settings", "-portable"]
+        );
+        assert_eq!(
+            setup_args(
+                &profile(
+                    "/tmp/custom.sh",
+                    &["--custom-config", "/tmp/settings", "{game}"]
+                ),
+                "ps2"
+            ),
+            ["--custom-config", "/tmp/settings"]
+        );
     }
     #[test]
     fn fullscreen_uses_engine_identity_and_preserves_custom_launchers() {

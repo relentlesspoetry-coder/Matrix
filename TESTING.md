@@ -1,5 +1,39 @@
 # Test Matrix Play on Linux
 
+## Reviewed-fix verification
+
+The integrated fixes were checked locally with Rust 1.99.1: updater-core passed
+13 tests, cover-core passed 12 tests (its opt-in live-provider test was not run),
+and the headless native backend passed 32 tests. The production launch-log
+harness passed all three tests, the release-mode privileged helper compiled,
+and the artwork suite passed seven tests. Rust formatting, folder layout,
+release/signing fixtures and syntax checks also passed. These tests use synthetic
+data and do not perform a privileged package upgrade or real emulator gameplay.
+
+The local desktop build stopped at missing GLib/GTK/WebKit development packages.
+The browser test could not start because the environment restricts local IPC
+sockets. Native desktop and built-installer verification therefore run in the
+Linux CI job on the fix branch; check that exact commit's job before treating
+those checks as passed. CI inspects the built DEB helper's path, root ownership,
+executable permissions and ELF architecture without installing the package.
+The publish job is restricted to main and does not run for fix-branch pushes.
+
+## Backend regression checks
+
+The headless backend suite includes separate-process concurrent settings writers,
+discovery merging after another window saves, failed-transaction preservation,
+PS4 eboot favorites/artwork, and setup argument preservation. Every settings
+writer uses the same persistent lock sidecar and unique atomic-replace temporary;
+discovery scans outside the lock and applies candidates to the latest settings.
+This protects cooperating current-version processes, not older versions that do
+not use the lock.
+
+The update-core suite also checks the signed privileged-install protocol, changed
+package bytes and protected staging. `python3 tests/test_launch_log_lifetime.py`
+checks output after the launching process exits and log-write failure using
+synthetic subprocesses. Run the normal Rust suites and desktop tests as well;
+these checks do not replace a real emulator test or privileged DEB upgrade test.
+
 This is the native testing release, version 0.5.6. The build was made on Zorin OS 18.1 (Ubuntu 24.04 base), for **x86-64 / amd64** computers. Other distributions and ARM systems have not been validated.
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04

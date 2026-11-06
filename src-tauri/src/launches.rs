@@ -1,8 +1,9 @@
 use super::*;
 use std::{
-    io::{Read, Write},
+    io::Write,
+    os::unix::{fs::FileExt, io::OwnedFd, process::CommandExt},
     process::Stdio,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{mpsc, Arc, Mutex, OnceLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 #[derive(Clone, Serialize)]
@@ -40,33 +41,82 @@ fn append(record: &Arc<Mutex<Record>>, text: &str) {
         }
     }
 }
-fn drain(
-    mut pipe: impl Read + Send + 'static,
-    record: Arc<Mutex<Record>>,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        let mut buf = [0; 2048];
-        while let Ok(n) = pipe.read(&mut buf) {
-            if n == 0 {
-                break;
-            }
-            append(&record, &String::from_utf8_lossy(&buf[..n]));
+// A separate copy of this executable drains output even after the GUI exits.
+fn capture_output(command: &mut Command, file: &fs::File) -> std::io::Result<mpsc::Receiver<()>> {
+    // Re-exec the running inode even if a package update replaced/unlinked its
+    // original path. This also prevents accidentally executing a newer binary.
+    #[cfg(not(test))]
+    let mut helper = Command::new("/proc/self/exe");
+    #[cfg(test)]
+    let mut helper = Command::new(std::env::current_exe()?);
+    #[cfg(not(test))]
+    helper.arg("--matrix-launch-log-sink");
+    #[cfg(test)]
+    helper
+        .args(["--exact", &launch_log::fixture_name(), "--nocapture"])
+        .env("MATRIX_TEST_LOG_SINK", "1");
+    let mut sink = helper
+        .stdin(Stdio::piped())
+        .stdout(Stdio::from(file.try_clone()?))
+        .stderr(Stdio::null())
+        .process_group(0)
+        .spawn()?;
+    let output: OwnedFd = sink.stdin.take().expect("piped sink stdin").into();
+    let error_output = match output.try_clone() {
+        Ok(fd) => fd,
+        Err(e) => {
+            drop(output);
+            let _ = sink.wait();
+            return Err(e);
         }
-    })
+    };
+    command
+        .stdout(Stdio::from(output))
+        .stderr(Stdio::from(error_output));
+    // Reap while Matrix is alive, without making emulator status wait for any
+    // grandchildren that inherited its output. Dropping Child does not kill it.
+    let (finished, completion) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sink.wait();
+        let _ = finished.send(());
+    });
+    Ok(completion)
 }
-pub(crate) fn start(mut command: Command, id: &str) -> Result<Info, String> {
+fn refresh_log(record: &mut Record) {
+    // Positional reads do not move the shared write offset of the sink's file.
+    let mut bytes = vec![0; 65536];
+    let mut n = 0;
+    while n < bytes.len() {
+        match record.file.read_at(&mut bytes[n..], n as u64) {
+            Ok(0) => break,
+            Ok(read) => n += read,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+    }
+    let text = String::from_utf8_lossy(&bytes[..n]);
+    let mut start = text.len().saturating_sub(8192);
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    record.info.log = text[start..].to_owned();
+}
+pub(crate) fn start(command: Command, id: &str) -> Result<Info, String> {
     spec(id)?;
     let root = dirs::data_local_dir()
         .ok_or("Cannot locate Matrix Play launch logs")?
         .join("matrix/launches");
-    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    start_in_root(command, id, &root)
+}
+fn start_in_root(mut command: Command, id: &str, root: &Path) -> Result<Info, String> {
+    fs::create_dir_all(root).map_err(|e| e.to_string())?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
         .as_nanos();
     let path = root.join(format!("{id}-{stamp}-{}.log", std::process::id()));
     let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
+    options.read(true).write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -106,7 +156,21 @@ pub(crate) fn start(mut command: Command, id: &str) -> Result<Info, String> {
     for entry in old.into_iter().take(count) {
         let _ = fs::remove_file(entry.path());
     }
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let capture = {
+        let r = record.lock().map_err(|_| "Launch status unavailable")?;
+        capture_output(&mut command, &r.file)
+    };
+    let capture_done = match capture {
+        Ok(done) => done,
+        Err(e) => {
+            let message = format!("Cannot start independent launch log capture: {e}");
+            append(&record, &message);
+            let mut r = record.lock().map_err(|_| "Launch status unavailable")?;
+            r.info.phase = "error".into();
+            r.info.message = message;
+            return Ok(r.info.clone());
+        }
+    };
     let mut child = match command.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -117,26 +181,17 @@ pub(crate) fn start(mut command: Command, id: &str) -> Result<Info, String> {
             return Ok(r.info.clone());
         }
     };
-    let out = drain(
-        child
-            .stdout
-            .take()
-            .ok_or("Cannot capture emulator output")?,
-        record.clone(),
-    );
-    let err = drain(
-        child
-            .stderr
-            .take()
-            .ok_or("Cannot capture emulator errors")?,
-        record.clone(),
-    );
+    // Command retains its configured Stdio handles after spawn. Close our copies
+    // now, so short-lived launchers can deliver EOF and flush their diagnostics.
+    drop(command);
     let watcher = record.clone();
     std::thread::spawn(move || {
         let status = child.wait();
-        let _ = out.join();
-        let _ = err.join();
+        // A descendant may keep stdout open indefinitely. Allow a bounded flush
+        // window, then publish status even if that descendant is still running.
+        let _ = capture_done.recv_timeout(Duration::from_millis(200));
         if let Ok(mut r) = watcher.lock() {
+            refresh_log(&mut r);
             match status {
                 Ok(s) if s.success() => {
                     r.info.phase = "exited".into();
@@ -172,6 +227,7 @@ pub(crate) fn start(mut command: Command, id: &str) -> Result<Info, String> {
         r.info.phase = "started".into();
         r.info.message = "Emulator process started.".into();
     }
+    refresh_log(&mut r);
     Ok(r.info.clone())
 }
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -181,7 +237,10 @@ pub(crate) fn get_launch_status(id: String) -> Result<Option<Info>, String> {
     list.get(&id)
         .map(|r| {
             r.lock()
-                .map(|r| r.info.clone())
+                .map(|mut r| {
+                    refresh_log(&mut r);
+                    r.info.clone()
+                })
                 .map_err(|_| "Launch status unavailable".into())
         })
         .transpose()
@@ -257,11 +316,91 @@ mod tests {
         );
     }
     #[test]
-    fn captured_output_is_drained_and_bounded() {
-        // Test subprocess capture directly, without touching another test's HOME.
+    fn launcher_exit_fixture() {
+        let Some(root) = std::env::var_os("MATRIX_TEST_EXIT_LAUNCHER") else {
+            return;
+        };
+        let root = PathBuf::from(root);
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(root.join("output.log"))
+            .unwrap();
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "for i in $(seq 1 500); do [ -e \"$1\" ] && break; sleep 0.01; done; [ -e \"$1\" ] || exit 1; /usr/bin/head -c 200000 /dev/zero; /usr/bin/head -c 200000 /dev/zero >&2; printf 'late diagnostic' >&2; touch \"$2\"", "fixture"])
+            .arg(root.join("ready")).arg(root.join("done"));
+        let _completion = capture_output(&mut command, &file).unwrap();
+        let _child = command.spawn().unwrap();
+        drop(command);
+        std::process::exit(0);
+    }
+
+    #[test]
+    fn output_survives_launcher_exit() {
         let root = tempfile::tempdir().unwrap();
-        let file = fs::File::create(root.path().join("output.log")).unwrap();
-        let record = Arc::new(Mutex::new(Record {
+        let (_, module) = module_path!().split_once("::").unwrap();
+        let fixture = format!("{module}::launcher_exit_fixture");
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &fixture, "--nocapture"])
+            .env("MATRIX_TEST_EXIT_LAUNCHER", root.path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(
+            root.path().join("output.log").is_file(),
+            "launcher fixture did not run"
+        );
+        // Only release the writer after its launcher process has exited.
+        fs::write(root.path().join("ready"), b"").unwrap();
+        for _ in 0..500 {
+            let data = fs::read(root.path().join("output.log")).unwrap();
+            if root.path().join("done").exists() && data.ends_with(b"late diagnostic") {
+                assert_eq!(data.len(), 65536);
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("writer failed or blocked after launcher exited");
+    }
+
+    #[test]
+    fn short_failure_returns_its_diagnostics() {
+        let root = tempfile::tempdir().unwrap();
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg("printf 'fixture failure\\n' >&2; exit 7");
+        let info = start_in_root(command, "short-failure-fixture", root.path()).unwrap();
+        assert_eq!(info.phase, "error");
+        assert!(
+            info.log.contains("fixture failure"),
+            "missing diagnostics: {}",
+            info.log
+        );
+    }
+    #[test]
+    fn captured_output_is_drained_and_bounded() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("output.log");
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg("/usr/bin/head -c 200000 /dev/zero; printf stderr >&2");
+        let done = capture_output(&mut command, &file).unwrap();
+        let mut child = command.spawn().unwrap();
+        drop(command);
+        assert!(child.wait().unwrap().success());
+        done.recv_timeout(Duration::from_secs(5)).unwrap();
+        let mut record = Record {
             info: Info {
                 console_id: "ps2".into(),
                 phase: "starting".into(),
@@ -271,16 +410,10 @@ mod tests {
             },
             file,
             written: 0,
-        }));
-        let data = vec![b'x'; 200000];
-        let thread = drain(std::io::Cursor::new(data), record.clone());
-        thread.join().unwrap();
-        let r = record.lock().unwrap();
-        assert_eq!(r.written, 65536);
-        assert_eq!(r.info.log.len(), 8192);
-        assert_eq!(
-            fs::metadata(root.path().join("output.log")).unwrap().len(),
-            65536
-        );
+        };
+        refresh_log(&mut record);
+        assert_eq!(fs::metadata(&path).unwrap().len(), 65536);
+        assert_eq!(record.info.log.len(), 8192);
+        assert!(record.info.log.ends_with("stderr"));
     }
 }

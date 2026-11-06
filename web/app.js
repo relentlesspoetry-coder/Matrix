@@ -10,7 +10,7 @@ const state = {
   native: Boolean(window.__TAURI__?.core?.invoke), root: '', folders: {},
   steam: [], windows: [],
   discovery:{candidates:[],linked:[],ambiguous:[],notices:[]}, launches:{},launchBusy:{},launchGeneration:{},
-  missingArt: new Set(), pendingArt: new Set(),
+  missingArt: new Set(), pendingArt: new Map(),
   artwork: {enabled:true, style:"default"}, coverStatus: new Map(), coverGeneration: 0, artRevision: 0,
 };
 const $ = selector => document.querySelector(selector);
@@ -219,9 +219,10 @@ async function requestNativeCover(element) {
   const { artKey: key, artKind: kind, artUid: uid } = element.dataset;
   if (!key) return;
   if (state.art.has(key)) { updateVisibleCover(key, state.art.get(key)); return; }
-  if (state.missingArt.has(key) || state.pendingArt.has(key)) return;
-  state.pendingArt.add(key);
   const revision = state.artRevision;
+  if (state.missingArt.has(key) || state.pendingArt.get(key) === revision) return;
+  // An invalidated request must not block a new card rendered by a rescan.
+  state.pendingArt.set(key, revision);
   try {
     const uri = await nativeInvoke('get_cover', { kind, uid });
     if (revision !== state.artRevision) return;
@@ -229,8 +230,18 @@ async function requestNativeCover(element) {
       state.art.set(key, uri);
       updateVisibleCover(key, uri);
     } else state.missingArt.add(key);
-  } catch { state.missingArt.add(key); /* Missing/corrupt image keeps a useful placeholder. */ }
-  finally { state.pendingArt.delete(key); if (revision !== state.artRevision) void requestNativeCover(element); }
+  } catch {
+    // Errors from an old request must not mark the current artwork missing.
+    if (revision === state.artRevision) state.missingArt.add(key);
+  } finally {
+    if (state.pendingArt.get(key) === revision) state.pendingArt.delete(key);
+    if (revision !== state.artRevision) {
+      // The original card may have been removed while this request was pending.
+      document.querySelectorAll('.game-cover[data-art-key]').forEach(node => {
+        if (node.dataset.artKey === key) void requestNativeCover(node);
+      });
+    }
+  }
 }
 
 function hydrateNativeCovers() {
@@ -586,6 +597,7 @@ async function loadCover(file) {
     try {
       const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
       await nativeInvoke('save_cover', { kind: selected.id, uid: selected.uid, bytes });
+      state.artRevision++; // In-flight native reads must not replace this local cover.
       const previous = state.art.get(key);
       if (previous?.startsWith('blob:')) URL.revokeObjectURL(previous);
       state.art.set(key, URL.createObjectURL(file));

@@ -305,7 +305,7 @@ fn desktop_paths(text: &str) -> Vec<PathBuf> {
     }
     result
 }
-fn auto_link(settings: &mut Settings, report: &mut Report) {
+pub(crate) fn auto_link(settings: &mut Settings, report: &mut Report) {
     for spec in SPECS {
         if library_only(spec.id) {
             continue;
@@ -355,7 +355,7 @@ fn auto_link(settings: &mut Settings, report: &mut Report) {
         }
     }
 }
-pub(crate) fn discover(settings: &mut Settings) -> Result<Report, String> {
+pub(crate) fn discover() -> Result<Report, String> {
     let mut report = Report::default();
     let mut map = BTreeMap::new();
     match emulators::list_flatpaks() {
@@ -471,12 +471,64 @@ pub(crate) fn discover(settings: &mut Settings) -> Result<Report, String> {
         }
     }
     report.candidates = map.into_values().collect();
-    auto_link(settings, &mut report);
     Ok(report)
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn discovery_merge_preserves_saves_made_during_the_scan() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("frontend.json");
+        let mut map = BTreeMap::new();
+        add_flatpaks(
+            &mut map,
+            &[FlatpakApp {
+                app_id: "net.pcsx2.PCSX2".into(),
+                name: "PCSX2".into(),
+                installation: "system".into(),
+            }],
+        );
+        let mut report = Report {
+            candidates: map.into_values().collect(),
+            ..Default::default()
+        };
+        // A different window saves while the candidate scan is in flight.
+        settings::update(&path, |current| {
+            current.profiles.insert(
+                "ps2".into(),
+                EmulatorProfile {
+                    emulator_name: "Manual selection".into(),
+                    auto_detected: false,
+                    ..Default::default()
+                },
+            );
+            current
+                .favorites
+                .insert("ps2".into(), vec!["/games/keep.iso".into()]);
+            current.artwork.enabled = false;
+            current.windows.push(WindowsGame {
+                uid: "keep".into(),
+                title: "Keep this game".into(),
+                target: "/games/keep.exe".into(),
+                runner: "wine".into(),
+            });
+            Ok(())
+        })
+        .unwrap();
+        settings::update(&path, |current| {
+            auto_link(current, &mut report);
+            Ok(())
+        })
+        .unwrap();
+        let saved = settings::load(&path).unwrap();
+        assert_eq!(saved.profiles["ps2"].emulator_name, "Manual selection");
+        assert_eq!(saved.favorites["ps2"], ["/games/keep.iso"]);
+        assert!(!saved.artwork.enabled);
+        assert_eq!(saved.windows[0].uid, "keep");
+        assert!(report.linked.is_empty());
+    }
+
     #[test]
     fn exact_ids_and_shared_console_capabilities() {
         let apps = vec![

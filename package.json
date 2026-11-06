@@ -5,6 +5,7 @@
   "description": "Matrix Play Linux desktop build tools",
   "scripts": {
     "tauri": "tauri",
+    "prebuild:linux": "python3 scripts/release.py --check-deb-version",
     "build:linux": "tauri build --bundles deb,appimage",
     "test:core": "cargo test --locked --manifest-path cover-core/Cargo.toml"
   },

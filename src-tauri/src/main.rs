@@ -1,10 +1,15 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows", feature = "desktop"),
+    windows_subsystem = "windows"
+)]
 
 mod discovery;
 mod emulators;
 mod favorites;
 mod immersive;
+mod launch_log;
 mod launches;
+mod settings;
 mod updates;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -184,7 +189,7 @@ impl Default for ArtworkSettings {
     }
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 struct Settings {
     #[serde(default)]
     favorites: BTreeMap<String, Vec<String>>,
@@ -383,33 +388,26 @@ fn create_layout() -> Result<(), String> {
 }
 
 fn load_settings() -> Result<Settings, String> {
-    let path = config_file()?;
-    if !path.exists() {
-        return Ok(Settings::default());
-    }
-    let contents =
-        fs::read_to_string(&path).map_err(|e| format!("Read {}: {e}", path.display()))?;
-    serde_json::from_str(&contents).map_err(|e| format!("Invalid {}: {e}", path.display()))
+    settings::load(&config_file()?)
 }
 
-fn save_settings(settings: &Settings) -> Result<(), String> {
-    let file = config_file()?;
-    let parent = file.parent().ok_or("Invalid configuration directory")?;
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let bytes = serde_json::to_vec_pretty(settings).map_err(|e| e.to_string())?;
-    let temporary = file.with_extension("json.tmp");
-    fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
-    fs::rename(&temporary, &file).map_err(|e| e.to_string())
+/// Every writer must read and mutate the latest document while holding this lock.
+fn update_settings<T>(
+    change: impl FnOnce(&mut Settings) -> Result<T, String>,
+) -> Result<T, String> {
+    settings::update(&config_file()?, change)
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
 fn bootstrap() -> Result<Bootstrap, String> {
     create_layout()?;
-    let mut settings = load_settings()?;
-    let emulator_discovery = discovery::discover(&mut settings)?;
-    if !emulator_discovery.linked.is_empty() {
-        save_settings(&settings)?;
-    }
+    // Discovery may be slow. Merge its candidates into the latest settings only
+    // after it finishes, so another window's saves and manual choices win.
+    let mut emulator_discovery = discovery::discover()?;
+    let settings = update_settings(|settings| {
+        discovery::auto_link(settings, &mut emulator_discovery);
+        Ok(settings.clone())
+    })?;
     let root = matrix_root()?;
     let mut folders = BTreeMap::new();
     for s in SPECS {
@@ -441,6 +439,39 @@ fn prettify(stem: &str) -> String {
         .next()
         .unwrap_or(&name);
     simplified.trim().to_string()
+}
+
+fn is_ps3_eboot(id: &str, path: &Path) -> bool {
+    id == "ps3"
+        && path
+            .file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("EBOOT.BIN"))
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|n| n.eq_ignore_ascii_case("USRDIR"))
+}
+
+fn is_ps4_eboot(id: &str, path: &Path) -> bool {
+    id == "ps4"
+        && path
+            .file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("eboot.bin"))
+        && path
+            .parent()
+            .is_some_and(|p| p.join("sce_sys/param.sfo").is_file())
+}
+
+fn supported_console_file(s: &ConsoleSpec, path: &Path) -> bool {
+    let extension = path
+        .extension()
+        .and_then(|v| v.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    // PS3 packages need installation, and PS4 packages are never boot targets.
+    (s.extensions.contains(&extension.as_str()) && !(s.id == "ps3" && extension == "pkg"))
+        || is_ps3_eboot(s.id, path)
+        || is_ps4_eboot(s.id, path)
 }
 
 fn scan_console_impl(id: &str) -> Result<Vec<Game>, String> {
@@ -475,24 +506,9 @@ fn scan_console_impl(id: &str) -> Result<Vec<Game>, String> {
             .and_then(|v| v.to_str())
             .unwrap_or("")
             .to_lowercase();
-        let ps3_eboot = id == "ps3"
-            && path
-                .file_name()
-                .and_then(|v| v.to_str())
-                .is_some_and(|n| n.eq_ignore_ascii_case("EBOOT.BIN"))
-            && path
-                .parent()
-                .and_then(|v| v.file_name())
-                .and_then(|v| v.to_str())
-                .is_some_and(|n| n.eq_ignore_ascii_case("USRDIR"));
-        let ps4_eboot = id == "ps4"
-            && path
-                .file_name()
-                .is_some_and(|n| n.eq_ignore_ascii_case("eboot.bin"))
-            && path
-                .parent()
-                .is_some_and(|p| p.join("sce_sys/param.sfo").is_file());
-        if !ps3_eboot && !ps4_eboot && !s.extensions.contains(&ext.as_str()) {
+        let ps3_eboot = is_ps3_eboot(id, path);
+        let ps4_eboot = is_ps4_eboot(id, path);
+        if !supported_console_file(s, path) {
             continue;
         }
         // Avoid a standalone ISO entry when the same PS1 track is described by a .cue.
@@ -717,9 +733,10 @@ fn save_emulator(
         },
         allow_execute.unwrap_or(false),
     )?;
-    let mut settings = load_settings()?;
-    settings.profiles.insert(id, profile);
-    save_settings(&settings)
+    update_settings(|settings| {
+        settings.profiles.insert(id, profile);
+        Ok(())
+    })
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -741,19 +758,19 @@ fn add_windows_game(title: String, target: String, runner: String) -> Result<Win
     }
     let canonical = path.canonicalize().map_err(|e| e.to_string())?;
     let uid = canonical.to_string_lossy().to_string();
-    let mut settings = load_settings()?;
-    if settings.windows.iter().any(|g| g.uid == uid) {
-        return Err("Game already in Windows library".into());
-    }
     let game = WindowsGame {
         uid,
         title: title.trim().into(),
         target: canonical.to_string_lossy().into(),
         runner,
     };
-    settings.windows.push(game.clone());
-    save_settings(&settings)?;
-    Ok(game)
+    update_settings(|settings| {
+        if settings.windows.iter().any(|g| g.uid == game.uid) {
+            return Err("Game already in Windows library".into());
+        }
+        settings.windows.push(game.clone());
+        Ok(game)
+    })
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -763,9 +780,10 @@ fn list_windows_games() -> Result<Vec<WindowsGame>, String> {
 
 #[cfg_attr(feature = "desktop", tauri::command)]
 fn remove_windows_game(uid: String) -> Result<(), String> {
-    let mut settings = load_settings()?;
-    settings.windows.retain(|entry| entry.uid != uid);
-    save_settings(&settings)
+    update_settings(|settings| {
+        settings.windows.retain(|entry| entry.uid != uid);
+        Ok(())
+    })
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -823,6 +841,7 @@ fn open_emulator_impl(id: String) -> Result<launches::Info, String> {
         .get(&id)
         .ok_or("Set up an emulator for this console first.")?;
     let mut command = emulators::command(profile, &id)?;
+    command.args(immersive::setup_args(profile, &id));
     command.current_dir(home()?);
     launches::start(command, &id)
 }
@@ -945,28 +964,11 @@ fn validate_game(kind: &str, uid: &str) -> Result<Game, String> {
     if !game_path.starts_with(&root) || !game_path.is_file() {
         return Err("Game is outside this console's library".into());
     }
-    let extension = game_path
-        .extension()
-        .and_then(|v| v.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let ps3_eboot = kind == "ps3"
-        && game_path
-            .file_name()
-            .and_then(|v| v.to_str())
-            .is_some_and(|v| v.eq_ignore_ascii_case("EBOOT.BIN"))
-        && game_path
-            .parent()
-            .and_then(|v| v.file_name())
-            .and_then(|v| v.to_str())
-            .is_some_and(|v| v.eq_ignore_ascii_case("USRDIR"));
-    if !ps3_eboot && !s.extensions.contains(&extension.as_str()) {
+    if !supported_console_file(s, &game_path) {
         return Err("Unsupported game format".into());
     }
-    // Package installers are not games that can be launched directly.
-    if kind == "ps3" && extension == "pkg" {
-        return Err("PS3 package needs installation first".into());
-    }
+    let ps3_eboot = is_ps3_eboot(kind, &game_path);
+    let ps4_eboot = is_ps4_eboot(kind, &game_path);
     let name = game_path
         .file_stem()
         .and_then(|v| v.to_str())
@@ -979,6 +981,14 @@ fn validate_game(kind: &str, uid: &str) -> Result<Game, String> {
                 .and_then(|p| p.file_name())
                 .and_then(|v| v.to_str())
                 .unwrap_or("PS3 Game"),
+        )
+    } else if ps4_eboot {
+        prettify(
+            game_path
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|v| v.to_str())
+                .unwrap_or("PS4 Game"),
         )
     } else {
         prettify(name)
@@ -1110,10 +1120,10 @@ fn save_artwork_settings(enabled: bool, style: String) -> Result<ArtworkSettings
     if !["default", "3d"].contains(&style.as_str()) {
         return Err("Unsupported cover style".into());
     }
-    let mut settings = load_settings()?;
-    settings.artwork = ArtworkSettings { enabled, style };
-    save_settings(&settings)?;
-    Ok(settings.artwork)
+    update_settings(|settings| {
+        settings.artwork = ArtworkSettings { enabled, style };
+        Ok(settings.artwork.clone())
+    })
 }
 
 fn download_cover_impl(
@@ -1299,6 +1309,14 @@ fn graphics_diagnostics() -> BTreeMap<String, String> {
 
 #[cfg(feature = "desktop")]
 fn main() {
+    // The log reader is a separate process that must outlive the GUI. Dispatch
+    // before initializing WebKit, application state or startup/cache files.
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--matrix-launch-log-sink")
+    {
+        std::process::exit(if launch_log::run().is_ok() { 0 } else { 1 });
+    }
     initialize_startup_log();
     isolate_runtime_cache();
     tauri::Builder::default()
@@ -1458,6 +1476,26 @@ mod tests {
         let ps4games = scan_console_impl("ps4").unwrap();
         assert_eq!(ps4games.len(), 1);
         assert_eq!(ps4games[0].title, "Example PS4");
+        let ps4_uid = ps4games[0].uid.clone();
+        assert_eq!(validate_game("ps4", &ps4_uid).unwrap().title, "Example PS4");
+        assert_eq!(
+            favorites::set_favorite("ps4".into(), ps4_uid.clone(), true).unwrap(),
+            [ps4_uid.clone()]
+        );
+        assert!(get_cover("ps4".into(), ps4_uid.clone()).unwrap().is_none());
+        let ps4_cover = include_bytes!("../../tests/fixtures/demo-cover.png").to_vec();
+        save_cover("ps4".into(), ps4_uid.clone(), ps4_cover).unwrap();
+        assert!(get_cover("ps4".into(), ps4_uid.clone())
+            .unwrap()
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
+        assert!(validate_game("ps3", &ps4_uid).is_err());
+        assert!(validate_game("ps4", ps4.join("unrelated.bin").to_str().unwrap()).is_err());
+        assert!(validate_game("ps4", ps4.join("install.pkg").to_str().unwrap()).is_err());
+        fs::remove_file(ps4.join("Example PS4/sce_sys/param.sfo")).unwrap();
+        assert!(validate_game("ps4", &ps4_uid).is_err());
+        assert!(scan_console_impl("ps4").unwrap().is_empty());
+        fs::write(ps4.join("Example PS4/sce_sys/param.sfo"), b"synthetic").unwrap();
         fs::write(games_dir("vita").unwrap().join("Example.vpk"), b"synthetic").unwrap();
         assert_eq!(scan_console_impl("vita").unwrap().len(), 1);
         for (id, filename) in [("ps5", "Collection.pkg"), ("switch2", "Collection.xci")] {
@@ -1489,7 +1527,11 @@ mod tests {
                 ..Default::default()
             },
         );
-        save_settings(&settings).unwrap();
+        update_settings(|current| {
+            *current = settings;
+            Ok(())
+        })
+        .unwrap();
         let legacy = BTreeMap::from([
             ("ps2".into(), vec![uid.clone(), "demo-0".into()]),
             ("ps1".into(), vec![uid.clone()]),

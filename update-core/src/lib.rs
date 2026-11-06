@@ -5,11 +5,14 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs::{self, File},
+    future::Future,
     io::{Read, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
+
+pub mod deb;
 
 pub const REPOSITORY: &str = "relentlesspoetry-coder/Matrix";
 pub const API_URL: &str =
@@ -47,6 +50,9 @@ pub struct VerifiedRelease {
     pub manifest: Manifest,
     pub asset: Asset,
     pub kind: String,
+    // Preserve the exact signed bytes for independent privileged verification.
+    pub signed_manifest: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 #[derive(Clone, Debug)]
 pub struct Downloaded {
@@ -147,15 +153,35 @@ fn verify_with_key(
         manifest,
         asset,
         kind: kind.into(),
+        signed_manifest: bytes.to_vec(),
+        signature: signature.to_vec(),
     })
 }
 
 pub trait Transport {
     fn small(&mut self, url: &str, limit: usize) -> Result<Vec<u8>, String>;
-    fn package(&mut self, url: &str) -> Result<Box<dyn Read>, String>;
+    /// Stream a package, observing cancellation during connection and body waits.
+    /// Stop immediately if the consumer rejects a chunk (for example, its size).
+    fn package(
+        &mut self,
+        url: &str,
+        cancel: &AtomicBool,
+        consume: &mut dyn FnMut(&[u8]) -> Result<(), String>,
+    ) -> Result<(), String>;
 }
 pub struct Http {
-    client: reqwest::blocking::Client,
+    client: reqwest::Client,
+    runtime: Option<tokio::runtime::Runtime>,
+}
+impl Drop for Http {
+    fn drop(&mut self) {
+        if let Some(runtime) = self.runtime.take() {
+            // The OS DNS resolver can be a blocking task that cannot be aborted.
+            // Do not let runtime shutdown delay a cancelled download while that
+            // lookup finishes. Dropped HTTP futures no longer consume its result.
+            runtime.shutdown_background();
+        }
+    }
 }
 impl Http {
     pub fn new() -> Result<Self, String> {
@@ -178,7 +204,7 @@ impl Http {
                 attempt.follow()
             }
         });
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest::Client::builder()
             .https_only(true)
             .redirect(policy)
             .connect_timeout(Duration::from_secs(10))
@@ -186,14 +212,22 @@ impl Http {
             .user_agent("Matrix-Play-Updater/1")
             .build()
             .map_err(|e| e.to_string())?;
-        Ok(Self { client })
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())?;
+        Ok(Self {
+            client,
+            runtime: Some(runtime),
+        })
     }
-    fn response(&self, url: &str, timeout: u64) -> Result<reqwest::blocking::Response, String> {
+    async fn response(&self, url: &str, timeout: u64) -> Result<reqwest::Response, String> {
         let r = self
             .client
             .get(url)
             .timeout(Duration::from_secs(timeout))
             .send()
+            .await
             .map_err(|e| format!("Could not reach GitHub: {e}"))?;
         if !r.status().is_success() {
             return Err(format!(
@@ -206,21 +240,66 @@ impl Http {
 }
 impl Transport for Http {
     fn small(&mut self, url: &str, limit: usize) -> Result<Vec<u8>, String> {
-        let r = self.response(url, 45)?;
-        if r.content_length().is_some_and(|n| n > limit as u64) {
-            return Err("Update metadata is too large".into());
-        }
-        let mut bytes = Vec::new();
-        r.take((limit + 1) as u64)
-            .read_to_end(&mut bytes)
-            .map_err(|e| e.to_string())?;
-        if bytes.len() > limit {
-            return Err("Update metadata is too large".into());
-        }
-        Ok(bytes)
+        self.runtime
+            .as_ref()
+            .expect("Http runtime is alive")
+            .block_on(async {
+                let mut response = self.response(url, 45).await?;
+                if response.content_length().is_some_and(|n| n > limit as u64) {
+                    return Err("Update metadata is too large".into());
+                }
+                let mut bytes = Vec::new();
+                while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+                    if chunk.len() > limit.saturating_sub(bytes.len()) {
+                        return Err("Update metadata is too large".into());
+                    }
+                    bytes.extend_from_slice(&chunk);
+                }
+                Ok(bytes)
+            })
     }
-    fn package(&mut self, url: &str) -> Result<Box<dyn Read>, String> {
-        Ok(Box::new(self.response(url, 900)?))
+    fn package(
+        &mut self,
+        url: &str,
+        cancel: &AtomicBool,
+        consume: &mut dyn FnMut(&[u8]) -> Result<(), String>,
+    ) -> Result<(), String> {
+        self.runtime
+            .as_ref()
+            .expect("Http runtime is alive")
+            .block_on(until_cancelled(cancel, async {
+                let mut response = self.response(url, 900).await?;
+                while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+                    check_cancelled(cancel)?;
+                    consume(&chunk)?;
+                }
+                Ok(())
+            }))
+    }
+}
+
+fn check_cancelled(cancel: &AtomicBool) -> Result<(), String> {
+    if cancel.load(Ordering::Relaxed) {
+        Err("Update download cancelled".into())
+    } else {
+        Ok(())
+    }
+}
+
+async fn until_cancelled<T>(
+    cancel: &AtomicBool,
+    operation: impl Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    let mut operation = std::pin::pin!(operation);
+    loop {
+        check_cancelled(cancel)?;
+        // Timeout borrows the pinned future, so ordinary polling does not restart
+        // the request. Cancellation drops it, aborting header/body network waits
+        // without a blocked response reader or partially written installer.
+        if let Ok(result) = tokio::time::timeout(Duration::from_millis(100), &mut operation).await {
+            check_cancelled(cancel)?;
+            return result;
+        }
     }
 }
 
@@ -293,10 +372,12 @@ pub fn download(
     cancel: &AtomicBool,
     mut progress: impl FnMut(u64, u64),
 ) -> Result<Downloaded, String> {
+    check_cancelled(cancel)?;
     let dir = root.join(&release.manifest.version);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let target = dir.join(&release.asset.name);
     if validate_file(&target, &release.asset, &release.kind).is_ok() {
+        check_cancelled(cancel)?;
         progress(release.asset.size, release.asset.size);
         return Ok(Downloaded {
             release: release.clone(),
@@ -304,27 +385,26 @@ pub fn download(
         });
     }
     let mut temp = tempfile::NamedTempFile::new_in(&dir).map_err(|e| e.to_string())?;
-    let mut stream = transport.package(&asset_url(&release.manifest.tag, &release.asset.name)?)?;
     let mut count = 0;
-    let mut buf = [0; 65536];
-    loop {
-        if cancel.load(Ordering::Relaxed) {
-            return Err("Update download cancelled".into());
-        }
-        let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
-        if n == 0 {
-            break;
-        }
-        count += n as u64;
-        if count > release.asset.size {
-            return Err("Update download exceeded its signed size".into());
-        }
-        temp.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-        progress(count, release.asset.size);
-    }
+    transport.package(
+        &asset_url(&release.manifest.tag, &release.asset.name)?,
+        cancel,
+        &mut |chunk| {
+            check_cancelled(cancel)?;
+            if chunk.len() as u64 > release.asset.size.saturating_sub(count) {
+                return Err("Update download exceeded its signed size".into());
+            }
+            count += chunk.len() as u64;
+            temp.write_all(chunk).map_err(|e| e.to_string())?;
+            progress(count, release.asset.size);
+            Ok(())
+        },
+    )?;
+    check_cancelled(cancel)?;
     temp.flush().map_err(|e| e.to_string())?;
     temp.as_file().sync_all().map_err(|e| e.to_string())?;
     validate_file(temp.path(), &release.asset, &release.kind)?;
+    check_cancelled(cancel)?;
     temp.persist(&target).map_err(|e| e.to_string())?;
     Ok(Downloaded {
         release: release.clone(),

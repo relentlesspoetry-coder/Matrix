@@ -188,7 +188,7 @@ sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
     libxdo-dev libssl-dev libdbus-1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev pkg-config
 ```
 
-Install Rust from <https://rustup.rs> and Node.js 20 or later. Then install the pinned Tauri CLI from this repository:
+Install Rust 1.90 or later from <https://rustup.rs> and Node.js 20 or later. The locked Tauri dependencies require Rust 1.90. Then install the pinned Tauri CLI from this repository:
 
 ```bash
 npm ci
