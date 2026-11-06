@@ -76,6 +76,14 @@ A game's emulator, firmware and any required keys must already be installed/conf
 - The compiled desktop window passed native IPC/scanning/launch-fixture tests, rendered all 14 console images and exposed the real updater status. Ordinary non-WebDriver startup painted successfully without injected graphics settings.
 - Rust cover and backend tests continue to pass. The release pipeline must also pass its Linux build and actual desktop checks before signing and publication.
 
+## Published release and installed-app verification — 2026-11-05
+
+The public GitHub Actions run [42143081462](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42143081462) passed both build/test and signing/publication jobs for v0.5.3. Its six published assets include DEB, AppImage, source ZIP, checksums and the signed update manifest. Downloaded asset hashes were checked against SHA256SUMS.
+
+The real updater engine verified the public signed manifest and complete AppImage download. An updater-capable temporary 0.5.2 test build used its actual desktop Update controls to download and verify the newer public 0.5.3 DEB, without running installation from the test harness. The published AppImage passed the native window/IPC/launch-fixture test in extraction mode and identified its own mounted/extracted location for self-update. A complete in-app AppImage install/restart cycle has not been exercised.
+
+The affected user's normal launcher was still using installed `matrix` 0.5.0; the previously tested cache fix had not replaced it. The signed 0.5.3 DEB was verified and installed through the system package installer, replacing only `matrix` with `matrix-play`. Normal startup in the existing user's Wayland session reached Interface ready with no XDG_CACHE_HOME or graphics workaround supplied. The user then closed/reopened **Matrix Play from the application menu** and confirmed: **“Yes, it opens normally.”** The normal-launch problem is resolved on that tested installation. Other machines and real emulator gameplay remain separate testing work.
+
 ## Report a problem
 
 Create a GitHub issue with your distribution/version, package version, console, file format, what you clicked, the result and relevant terminal output. Include the serial and artwork style for cover problems. You do not need to upload a game or firmware file.
