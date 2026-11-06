@@ -45,7 +45,7 @@ The application menu now shows **Matrix Play** with the supplied logo. APT repla
 
 ## First-run testing
 
-Matrix Play creates `~/Games/Matrix Play/` and 14 console subfolders. Place your legally obtained game files inside the appropriate nested `* Games` folder, such as `PS2/PS2 Games`. Existing Steam and Windows games stay in their existing locations.
+Matrix Play creates `~/Games/Matrix Play/` and 18 console subfolders. Place your legally obtained game files inside the appropriate nested `* Games` folder, such as `PS2/PS2 Games`. Existing Steam and Windows games stay in their existing locations.
 
 1. Open a console library, choose **Edit emulator**, and verify the executable and argument tokens. Matrix Play can detect one executable/AppImage in a console's parent folder, plus selected system-installed emulators.
 2. Select **Refresh** to rescan libraries. PS1/PS2 artwork downloads run in the background. Under **Emulators & folders → Cover artwork**, choose Default or 3D, or disable automatic downloads.
@@ -66,7 +66,7 @@ A game's emulator, firmware and any required keys must already be installed/conf
 
 **Additional v0.5.1 checks:** the rebuilt app reached Interface ready in the same existing-profile Wayland launch that previously stalled. Ordinary non-WebDriver X11 startup was checked by capturing the actual desktop pixels. Native tests cover both an explicitly provided and an unset parent cache directory, and ensure test launchers receive the original environment.
 
-**Not verified:** real emulator gameplay, launching a user's Steam games or real Wine installations, controller support, ARM builds, other Linux releases, every disc format/serial, or universal cover availability. Launch fixtures validate command dispatch, not emulator compatibility. The update button checks and downloads signed GitHub releases. Privileged DEB installation has not been executed by the automated tests; AppImage replacement is tested with synthetic fixtures.
+**Not verified across the emulator lineup:** fullscreen gameplay on every engine (one real PCSX2 launch was confirmed in v0.5.5), launching a user's Steam games or real Wine installations, controller support, ARM builds, other Linux releases, every disc format/serial, or universal cover availability. Launch fixtures validate command dispatch, not emulator compatibility. The update button checks and downloads signed GitHub releases. Privileged DEB installation has not been executed by the automated tests; AppImage replacement is tested with synthetic fixtures.
 
 ## Version 0.5.3 checks
 
@@ -75,6 +75,20 @@ A game's emulator, firmware and any required keys must already be installed/conf
 - The mock-bridge Chromium test exercised check → download → install → restart controls and all 14 decoded console images. Its installer responses are simulated, not system package installation.
 - The compiled desktop window passed native IPC/scanning/launch-fixture tests, rendered all 14 console images and exposed the real updater status. Ordinary non-WebDriver startup painted successfully without injected graphics settings.
 - Rust cover and backend tests continue to pass. The release pipeline must also pass its Linux build and actual desktop checks before signing and publication.
+
+## Version 0.5.6 checks
+
+Nineteen backend tests pass, including engine identity/capability boundaries, fullscreen and no-GUI argv, current shadPS4 core versus QtLauncher syntax, per-launch configuration options, and rejection of launches from the PS5/Switch 2 library-only collections. The isolated-home test scans PS4 extracted eboot content, excludes PS4 PKG installation packages, scans Vita content archives and verifies favorites on the new collection libraries.
+
+The native Tauri/WebKit fixture suite passed with 18 folders and decoded console images. It checked actual PCSX2 Flatpak dispatch of `-nogui -fullscreen -- <game path>` with the runtime-font workaround intact, RMG fullscreen/hidden-menu options, normal Open emulator arguments without game-only options, and library-only launch rejection. Launch paths containing spaces remain one argv token. These launchers are harmless scripts, not real emulators; this validates Matrix's dispatch, not fullscreen behavior on every emulator version.
+
+Chromium UI checks passed using a mock native bridge, including the PS5 library-only notice, no Play/Setup action, collection favorites, Vita setup guidance and all 18 supplied images. Ordinary painted native startup passed in an isolated X11 display without graphics workaround variables. Cover-core (12) and updater-core (5) tests and release packaging tests passed. Live cover-provider checks from earlier versions were not repeated for this launch/library change.
+
+PS4/Vita adapters are researched against current upstream source but have not been tested with real PS4/Vita games. PS5 and Switch 2 have no Matrix launch adapter. Emulator errors, first-run requirements and overlays can still appear; unknown custom launchers need their own fullscreen options.
+
+## Published v0.5.5 verification — 2026-11-05
+
+The automatic [Linux build and signed release](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42152895832) passed. Downloaded DEB and AppImage hashes matched the manifest verified with the pinned signing key. Installed Matrix Play 0.5.5 was verified, and the affected user explicitly confirmed that clicking their PS2 game now launches it. Other emulator/game combinations remain unverified.
 
 ## Version 0.5.5 development checks
 

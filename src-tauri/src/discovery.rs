@@ -82,10 +82,34 @@ const ENGINES: &[Engine] = &[
         consoles: &["3ds"],
     },
     Engine {
+        name: "Eden",
+        flatpak: "dev.eden_emu.eden",
+        prefixes: &["eden"],
+        consoles: &["switch"],
+    },
+    Engine {
         name: "Ryujinx",
         flatpak: "org.ryujinx.Ryujinx",
         prefixes: &["ryujinx"],
         consoles: &["switch"],
+    },
+    Engine {
+        name: "shadPS4 QtLauncher",
+        flatpak: "net.shadps4.shadPS4",
+        prefixes: &["shadps4qtlauncher", "shadps4-qtlauncher"],
+        consoles: &["ps4"],
+    },
+    Engine {
+        name: "shadPS4",
+        flatpak: "",
+        prefixes: &["shadps4"],
+        consoles: &["ps4"],
+    },
+    Engine {
+        name: "Vita3K",
+        flatpak: "",
+        prefixes: &["vita3k"],
+        consoles: &["vita"],
     },
 ];
 #[derive(Clone, Serialize)]
@@ -114,6 +138,19 @@ fn engine_for_name(name: &str) -> Option<&'static Engine> {
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with(['-', '_', '.', ' ']))
         })
     })
+}
+pub(crate) fn identity(profile: &EmulatorProfile, console: &str) -> Option<&'static str> {
+    let engine = if profile.launcher == Launcher::Flatpak {
+        ENGINES
+            .iter()
+            .find(|e| !e.flatpak.is_empty() && e.flatpak == profile.flatpak_id)
+    } else {
+        Path::new(&profile.emulator_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(engine_for_name)
+    }?;
+    engine.consoles.contains(&console).then_some(engine.name)
 }
 fn args(engine: &Engine, id: &str) -> Vec<String> {
     if engine.flatpak == "net.pcsx2.PCSX2" {
@@ -270,6 +307,9 @@ fn desktop_paths(text: &str) -> Vec<PathBuf> {
 }
 fn auto_link(settings: &mut Settings, report: &mut Report) {
     for spec in SPECS {
+        if library_only(spec.id) {
+            continue;
+        }
         // Manual choices win. Replace a missing auto-link only when a single
         // ready replacement exists; never change a working selected install.
         if let Some(profile) = settings.profiles.get(spec.id) {
@@ -375,6 +415,9 @@ pub(crate) fn discover(settings: &mut Settings) -> Result<Report, String> {
         }
     }
     for spec in SPECS {
+        if library_only(spec.id) {
+            continue;
+        }
         let dir = matrix_root()?.join(spec.dir);
         for entry in fs::read_dir(&dir).into_iter().flatten().flatten().take(100) {
             if entry.path().is_file() {

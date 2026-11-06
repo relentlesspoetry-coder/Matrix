@@ -6,7 +6,19 @@ A native Linux game-library and emulator frontend. Browse games by console, conn
 
 Matrix Play organizes and launches your existing setup. Emulators, game files, firmware, keys and Wine are supplied and configured separately.
 
-Built with Rust and Tauri 2, Matrix Play keeps **14 console libraries**, **Steam Games**, and **Windows Games** separate. It is a library frontend, not an emulator or game store. Actual game compatibility depends on your installed emulator or Windows runner.
+Built with Rust and Tauri 2, Matrix Play keeps **18 console libraries**, **Steam Games**, and **Windows Games** separate. It is a library frontend, not an emulator or game store. Actual game compatibility depends on your installed emulator or Windows runner.
+
+## Fullscreen game launches and extra libraries
+
+Click a game card to start a recognized emulator fullscreen. Matrix Play applies its engine-specific game-only options where available, including PCSX2/DuckStation no-GUI mode, RPCS3 no-GUI mode, RMG hidden menus, and Dolphin batch mode. **Open emulator** still opens configuration normally. Existing recognized profiles receive these options automatically without re-saving them. Custom/unknown launchers retain their advanced arguments; add that launcher's own fullscreen/menu-hiding options. Firmware/setup dialogs, emulator errors and emulator-specific overlays may still appear. See [EMULATOR-LAUNCHES.md](EMULATOR-LAUNCHES.md) for exact options, source references and limits.
+
+The original 14 libraries remain separate. The supplied PS4, PS5, PS Vita and Switch 2 artwork now appears in four additional libraries, each with its own folder, local covers and favorites:
+
+- **PS4:** experimental shadPS4 core and current QtLauncher/Flatpak support. Extracted games need `eboot.bin` with `sce_sys/param.sfo`; ELF files are also scanned. PKG installation is performed in the emulator, not by clicking a PKG in Matrix Play. Open emulator first to configure firmware and select/download a core.
+- **PS Vita:** experimental current Vita3K AppImage/native support using its SDL frontend. VPK/ZIP content in the managed folder is passed to Vita3K to install and run. Complete firmware, user and license setup first; older builds without `--frontend sdl` are not supported by this preset.
+- **PS5 and Switch 2:** explicitly **library only**. Stored collection files can be viewed, covered and favorited; Matrix Play blocks launch/setup requests because it has no verified Linux launch adapter for these consoles. Artwork and file extensions do not establish emulation support.
+
+Steam and Windows retain their independent tabs and existing launch behavior. Their fullscreen settings belong to each game/launcher.
 
 ## Matrix Play branding
 
@@ -42,7 +54,7 @@ Download **Matrix-Play_0.5.5_amd64.deb** from the [v0.5.5 release](https://githu
 
 ## What works in the current source
 
-- First-run directory creation for **14 systems**, under `$HOME/Games/Matrix Play/`, plus per-console folders named `* Games`.
+- First-run directory creation for **18 systems**, under `$HOME/Games/Matrix Play/`, plus per-console folders named `* Games`.
 - Independent game scanning for each console using recognized disc/ROM extensions and selected extracted layouts.
 - Select an emulator executable/AppImage stored in its console directory; when unambiguous Matrix Play detects it. It can also detect several conventional emulator binaries already installed on `PATH`. Emulator setup now includes a native file browser for AppImages/executables and an installed-Flatpak chooser.
 - **Single-click launching:** in a native Matrix Play build, clicking a game card immediately invokes its assigned emulator, `steam -applaunch` or a registered Wine/desktop launcher. The small information button opens details without launching.
@@ -80,7 +92,7 @@ Flatpak profiles remember both the app ID and its user/system/custom installatio
 
 ## Favorites for each console
 
-Select a game's **heart**, then choose **My favorites** or **Favorites (count)** inside that console. Each of the 14 consoles has its own saved list. Select the heart again to remove a favorite. Empty lists explain how to add games.
+Select a game's **heart**, then choose **My favorites** or **Favorites (count)** inside that console. Each of the 18 consoles has its own saved list. Select the heart again to remove a favorite. Empty lists explain how to add games.
 
 Native favorites are saved with Matrix Play settings in `$XDG_CONFIG_HOME/matrix/frontend.json`, independent of the browser cache. Compatible favorites from older UI storage are imported once; removing a favorite does not cause it to return on the next launch. Unavailable games retain their saved entries and reappear as favorites when their exact paths return. Browser preview favorites still use browser storage.
 
@@ -100,12 +112,12 @@ Verified in source development (CI results are visible in the Actions tab):
 
 - `cargo test --manifest-path cover-core/Cargo.toml`: **12 passed**, one live test skipped by default. These execute the actual Rust cover engine with synthetic, non-proprietary disc fixtures and an injected transport for deterministic HTTP outcomes.
 - `cargo test --manifest-path cover-core/Cargo.toml live_provider_templates -- --ignored --nocapture`: **1 passed**. The real HTTPS transport retrieved and decoded default/3D covers for one PS1 and one PS2 serial; all four sample URLs worked. Temporary images were removed.
-- `cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib`: **15 passed**. This compiles and executes the same native backend functions with desktop-specific Tauri wiring excluded. The isolated-home lifecycle test verifies library separation, path validation, persisted cover settings without profile loss, loading the real online cache, local cover priority and invalid-image rejection.
-- `python3 tests/test_structure.py`: all 14 console folder pairs and repeated creation preserve existing files.
-- `python3 tests/test_ui.py`: Chromium integration test passed with a **mock Tauri bridge**. It covers the 14 consoles, independent Steam/Windows tabs, launch dispatch, cover controls/status, explicit serial submission, manual save, TheCoverProject button, style/disable persistence requests, responsive layout and no page script errors.
+- `cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib`: **19 passed**. This compiles and executes the same native backend functions with desktop-specific Tauri wiring excluded. The isolated-home lifecycle test verifies library separation, path validation, persisted cover settings without profile loss, loading the real online cache, local cover priority and invalid-image rejection.
+- `python3 tests/test_structure.py`: all 18 console folder pairs and repeated creation preserve existing files.
+- `python3 tests/test_ui.py`: Chromium integration test passed with a **mock Tauri bridge**. It covers the 18 consoles, independent Steam/Windows tabs, launch dispatch, cover controls/status, explicit serial submission, manual save, TheCoverProject button, style/disable persistence requests, responsive layout and no page script errors.
 - `node --check web/app.js` and Rust formatting/parser checks passed.
 
-**Native testing release:** full desktop `cargo check` and an optimized native build succeeded. DEB and AppImage packages were generated. The DEB was extracted and tested through its actual Tauri/WebKit window in an isolated temporary home/X11 display. `tests/test_native.py --online` passed, covering actual IPC, folders/scanning, persistent settings, local/downloaded artwork, console boundaries and launch argument dispatch to harmless test executables. Actual automatic PS1 and PS2 downloads worked in that window. The AppImage also passed the real desktop test in extraction mode, and native binary unit tests passed. Real emulator, Steam and Wine execution with user games and other Linux platforms remain unverified; see [TESTING.md](TESTING.md).
+**Native testing release:** full desktop `cargo check` and an optimized native build succeeded. DEB and AppImage packages were generated. The DEB was extracted and tested through its actual Tauri/WebKit window in an isolated temporary home/X11 display. `tests/test_native.py --online` passed, covering actual IPC, folders/scanning, persistent settings, local/downloaded artwork, console boundaries and launch argument dispatch to harmless test executables. Actual automatic PS1 and PS2 downloads worked in that window. The AppImage also passed the real desktop test in extraction mode, and native binary unit tests passed. The affected user confirmed real PCSX2 Flatpak game launching in installed v0.5.5. Fullscreen presets and other engines are covered by source/argument tests, not universal gameplay certification; Steam/Wine execution and other Linux platforms remain unverified; see [TESTING.md](TESTING.md).
 
 To rerun UI tests, install Python Playwright and Chromium (`python3 -m pip install playwright`, `python3 -m playwright install chromium`). Set `MATRIX_CHROMIUM=/path/to/chrome` if using an existing Chromium binary. Run tests from the extracted folder; no proprietary ROMs are required. Standard Rust tests are offline after dependencies have been fetched; the explicit ignored smoke test requires internet access.
 
@@ -139,8 +151,16 @@ To rerun UI tests, install Python Playwright and Chromium (`python3 -m pip insta
 │   └── GBA Games/
 ├── Nintendo DS/
 │   └── Nintendo DS Games/
-└── Nintendo 3DS/
-    └── Nintendo 3DS Games/
+├── Nintendo 3DS/
+│   └── Nintendo 3DS Games/
+├── PS4/
+│   └── PS4 Games/
+├── PS5/
+│   └── PS5 Games/
+├── PS Vita/
+│   └── PS Vita Games/
+└── Switch 2/
+    └── Switch 2 Games/
 ```
 
 Each nested `* Games` folder belongs **inside** its console's parent folder. For example:

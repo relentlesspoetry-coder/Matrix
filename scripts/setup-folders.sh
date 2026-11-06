@@ -25,5 +25,9 @@ Game Boy|Game Boy Games
 GBA|GBA Games
 Nintendo DS|Nintendo DS Games
 Nintendo 3DS|Nintendo 3DS Games
+PS4|PS4 Games
+PS5|PS5 Games
+PS Vita|PS Vita Games
+Switch 2|Switch 2 Games
 LIBRARIES
 printf 'Matrix Play folders ready: %s\n' "$root"

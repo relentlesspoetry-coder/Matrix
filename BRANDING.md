@@ -8,6 +8,6 @@ To reproduce the icons, run `npm ci` and `python3 scripts/prepare-icons.py` from
 
 ## Console artwork
 
-The user supplied 18 PNG files in Consoles.zip. Unchanged originals are stored in `branding/console-originals/`. `branding/consoles.json` maps 14 images to the existing console library IDs. The runtime WebP copies in `web/assets/consoles/` retain the full image and wordmark, fit within 1024×768, and use quality 88. Total runtime images are about 946 KiB.
+The user supplied 18 PNG files in Consoles.zip. Unchanged originals are stored in `branding/console-originals/`. `branding/consoles.json` maps all 18 images to their console library IDs. The runtime WebP copies in `web/assets/consoles/` retain the full image and wordmark, fit within 1024×768, and use quality 88. Total runtime images are about 1245 KiB.
 
-PS4, PS5, PlayStation Vita and Switch 2 originals are retained but not displayed as libraries; their artwork does not imply implementation. Product and console artwork is supplied branding; the source-code MIT license does not grant rights to third-party console trademarks or game covers.
+PS4 and PlayStation Vita libraries have experimental launch adapters; PS5 and Switch 2 are explicitly library-only. Artwork does not establish emulator compatibility. Product and console artwork is supplied branding; the source-code MIT license does not grant rights to third-party console trademarks or game covers.

@@ -28,12 +28,13 @@ window.__artOptions={enabled:true,style:"default"};
 window.__windows = [{uid:'/games/My Windows Game.desktop',title:'My Windows Game',target:'/games/My Windows Game.desktop',runner:'desktop'}];
 window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   window.__calls.push([name,args]);
-  const ids = ['switch','ps1','ps2','ps3','psp','n64','gamecube','dreamcast','wii','wiiu','gb','gba','nds','3ds'];
+  const ids = ['switch','ps1','ps2','ps3','psp','n64','gamecube','dreamcast','wii','wiiu','gb','gba','nds','3ds','ps4','ps5','vita','switch2'];
   if(name==='update_status') return window.__update;
   if(name==='check_updates') return (window.__update={...window.__update,latestVersion:'0.6.0',phase:'available',message:'A newer Matrix Play release is available.',notes:'Console artwork and updates.'});
   if(name==='download_update') return (window.__update={...window.__update,phase:'downloaded',message:'Verified update downloaded.'});
   if(name==='install_update') return (window.__update={...window.__update,phase:'installed',message:'Update installed. Restart Matrix Play to finish.'});
   if(name==='bootstrap') return {emulatorDiscovery:window.__discovery,favorites:window.__favorites,favoritesMigrated:window.__migrated,artwork:window.__artOptions,root:'/home/example/Games/Matrix',folders:Object.fromEntries(ids.map(id=>[id,`/home/example/Games/Matrix/${id}/${id} Games`])),profiles:{ps2:{emulatorName:'PCSX2',emulatorPath:'/usr/bin/pcsx2',launchArgs:['{game}']}},windows:window.__windows};
+  if(name==='scan_console' && args.id==='ps5') return [{uid:'/collection/PS5/Collection.pkg',title:'PS5 Collection',path:'/collection/PS5/Collection.pkg',kind:'ps5'}];
   if(name==='scan_console') return args.id==='ps2' ? [{uid:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',title:'Test Game',path:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',kind:'ps2'}] : [];
   if(name==='scan_steam') return [{uid:'12345',title:'Test Steam Game',kind:'steam',appId:'12345'}];
   if(name==='list_windows_games') return window.__windows;
@@ -66,7 +67,7 @@ with sync_playwright() as p:
     preview = browser.new_page(viewport={'width':1440,'height':940})
     preview.on('pageerror',lambda e: errors.append(str(e)))
     preview.set_content(HTML)
-    assert preview.locator('.console-card').count()==14
+    assert preview.locator('.console-card').count()==18
     assert preview.locator('#startup-status').is_hidden()
     assert preview.get_by_role('button',name='Matrix Play home').count()==1
     assert preview.locator('.brand-logo').get_attribute('alt')=='Matrix Play'
@@ -92,9 +93,26 @@ with sync_playwright() as p:
     native.on('pageerror',lambda e: errors.append(str(e)))
     native.set_content(HTML)
     native.wait_for_function('document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelector(".console-card__bottom small")?.textContent?.includes("games")')
-    assert native.locator('.console-card').count()==14
-    native.wait_for_function('[...document.querySelectorAll(".console-image")].length === 14 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)')
+    assert native.locator('.console-card').count()==18
+    native.wait_for_function('[...document.querySelectorAll(".console-image")].length === 18 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)')
     screenshot(native,'matrix-native-home.png')
+    native.get_by_role('button',name='Browse PlayStation 5 library').click()
+    assert 'Library only' in native.locator('.console-hero').inner_text()
+    assert native.locator('.platform-notice').is_visible()
+    assert native.locator('.console-hero [data-action="configure"]').count()==0
+    before=native.evaluate('window.__calls.filter(c=>["launch_console_game","open_emulator"].includes(c[0])).length')
+    native.locator('.game-card').click()
+    assert native.locator('[data-action="play-console"]').count()==0
+    native.get_by_role('button',name='Favorite',exact=True).click()
+    assert native.evaluate('window.__favorites.ps5.length')==1
+    assert native.evaluate('window.__calls.filter(c=>["launch_console_game","open_emulator"].includes(c[0])).length')==before
+    screenshot(native,'matrix-library-only.png')
+    native.keyboard.press('Escape')
+    native.get_by_role('button',name='All consoles',exact=True).click()
+    native.get_by_role('button',name='Browse PlayStation Vita library').click()
+    assert 'SDL frontend' in native.locator('.platform-notice').inner_text()
+    native.get_by_role('button',name='All consoles',exact=True).click()
+
     native.get_by_role('button',name='Update Matrix Play').click()
     native.get_by_role('button',name='Download update').click()
     native.get_by_role('button',name='Install update').click()
@@ -209,5 +227,5 @@ with sync_playwright() as p:
     screenshot(mobile,'matrix-mobile.png')
     assert mobile.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Mobile horizontal overflow'
     assert not errors, errors
-    print('PASS: 14 consoles, 3 libraries, launch dispatch, artwork status/serial/styles/disable/manual import, Windows registration, mobile layout (mock native bridge)')
+    print('PASS: 18 consoles, 3 libraries, launch dispatch, artwork status/serial/styles/disable/manual import, Windows registration, mobile layout (mock native bridge)')
     browser.close()

@@ -143,13 +143,31 @@ def main():
             result=request('POST','/session',{'capabilities':{'alwaysMatch':{'tauri:options':{'application':str(binary)}}}})
             session=result['sessionId']
             request('POST', f'/session/{session}/timeouts', {'script':60000})
-            wait_for(lambda: js('return document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelectorAll(".console-card").length === 14'))
-            assert len([p for p in library.iterdir() if p.is_dir()]) == 14
+            wait_for(lambda: js('return document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelectorAll(".console-card").length === 18'))
+            assert len([p for p in library.iterdir() if p.is_dir()]) == 18
             assert js('return document.title').startswith('Matrix Play')
             wait_for(lambda: js('return document.querySelector(".brand-logo")?.naturalWidth > 0'))
             discovered=invoke('bootstrap')
             assert discovered['profiles']['n64']['flatpakId']=='com.github.Rosalie241.RMG'
             assert discovered['profiles']['n64']['autoDetected'] is True
+            n64game=library/'N64/N64 Games/Fullscreen Test.z64'
+            n64game.write_text('Synthetic, non-playable ROM fixture')
+            invoke('launch_console_game',{'id':'n64','uid':str(n64game)})
+            n64base=['run','--system',f'--filesystem={n64game.parent}:ro','com.github.Rosalie241.RMG']
+            wait_for(lambda: log.read_text().splitlines()==n64base+['--fullscreen','--nogui','--quit-after-emulation',str(n64game)])
+            invoke('open_emulator',{'id':'n64'})
+            wait_for(lambda: log.read_text().splitlines()==n64base)
+            stored=library/'PS5/PS5 Games/Collection.pkg'
+            stored.write_text('Stored collection fixture, never executable')
+            for command,params in [('launch_console_game',{'id':'ps5','uid':str(stored)}),('open_emulator',{'id':'ps5'})]:
+                try:
+                    invoke(command,params)
+                    raise AssertionError('Library-only console accepted launch')
+                except RuntimeError as error: assert 'Library only' in str(error)
+            assert log.read_text().splitlines()==n64base
+            assert invoke('set_favorite',{'id':'ps5','uid':str(stored),'favorite':True})==[str(stored)]
+            log.unlink()
+
             image_candidates=[c for c in discovered['emulatorDiscovery']['candidates'] if c['profile'].get('emulatorPath')==str(appimage)]
             assert len(image_candidates)==1 and image_candidates[0]['ready'] is False
             assert appimage.stat().st_mode & 0o777 == 0o600
@@ -161,7 +179,7 @@ def main():
             assert len(invoke('scan_console', {'id':'ps1'})) == 1
             assert len(invoke('scan_console', {'id':'ps2'})) == 1
             assert len(invoke('scan_console', {'id':'ps3'})) == 0
-            wait_for(lambda: js('return [...document.querySelectorAll(".console-image")].length === 14 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)'))
+            wait_for(lambda: js('return [...document.querySelectorAll(".console-image")].length === 18 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)'))
             update=invoke('update_status')
             assert update['phase'] == 'idle' and update['currentVersion'] == diagnostics['version']
             if cfg.check_updates or cfg.download_update:
@@ -199,14 +217,13 @@ def main():
                 raise AssertionError('Cross-console favorite accepted')
             except RuntimeError: pass
             request('POST',f'/session/{session}/refresh',{})
-            wait_for(lambda: js('return document.querySelectorAll(".console-card").length === 14 && document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"'))
+            wait_for(lambda: js('return document.querySelectorAll(".console-card").length === 18 && document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"'))
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
             screenshot('matrix-linux-ps2.png')
             click('.game-card')
             wait_for(log.exists)
             assert log.read_text().splitlines() == [str(ps2game)]
-            wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
             wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
             click('[data-action="game"]')
             wait_for(lambda: js('return Boolean(document.querySelector(".cover-tools"))'))
@@ -278,6 +295,12 @@ def main():
                 invoke('launch_console_game',{'id':'ps2','uid':str(ps2game)})
                 raise AssertionError('Unfinished PCSX2 setup should be explained')
             except RuntimeError as error: assert 'Open emulator' in str(error)
+            ini=home/'.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini'
+            ini.parent.mkdir(parents=True)
+            ini.write_text('[UI]\nSetupWizardIncomplete=false\n[Filenames]\nBIOS=synthetic-not-a-real-bios.bin\n')
+            invoke('launch_console_game',{'id':'ps2','uid':str(ps2game)})
+            wait_for(lambda: log.read_text().splitlines()==fontargs+['-nogui','-fullscreen','--',str(ps2game)])
+
             invoke('save_emulator',{'id':'ps2','emulatorName':'Matrix Test Emulator','emulatorPath':'','launcher':'flatpak','flatpakId':'org.matrix.TestEmulator','flatpakInstallation':'user','launchArgs':['{game}'],'flatpakRuntimeFonts':False})
             flatpak.write_text(healthy_flatpak)
             flatpak.write_text(healthy_flatpak.replace('printf "%s\\n" "$@" > "$MATRIX_NATIVE_TEST_LAUNCH_LOG"', 'echo "runtime failed to start" >&2; exit 17\n#'))
@@ -294,13 +317,13 @@ def main():
             time.sleep(.5)
             session=request('POST','/session',{'capabilities':{'alwaysMatch':{'tauri:options':{'application':str(binary)}}}})['sessionId']
             request('POST',f'/session/{session}/timeouts',{'script':60000})
-            wait_for(lambda: js('return document.querySelectorAll(".console-card").length === 14 && document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"'))
+            wait_for(lambda: js('return document.querySelectorAll(".console-card").length === 18 && document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"'))
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
             assert invoke('bootstrap')['profiles']['ps2']['launcher']=='flatpak'
             print('PASS: automatic Flatpak/AppImage linking, canonical duplicate removal, execute-permission preservation, Open emulator and captured startup errors')
             print('PASS: native favorites survive process restart and webview reload, remain console-scoped, and preserve profiles; Flatpak discovery/setup/launch argv use harmless fixtures')
-            print('PASS: real Tauri/WebKit window, native IPC, 14 libraries, PS1/PS2 scanning, manual/cache artwork, console boundaries, persisted settings, three launcher argument paths')
+            print('PASS: real Tauri/WebKit window, native IPC, 18 libraries, PS1/PS2 scanning, manual/cache artwork, console boundaries, persisted settings, three launcher argument paths')
             if cfg.online:
                 print('PASS: real desktop automatic PS1 and PS2 cover downloads (synthetic serial-labelled game fixtures)')
         except Exception:

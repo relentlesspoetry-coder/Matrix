@@ -3,6 +3,7 @@
 mod discovery;
 mod emulators;
 mod favorites;
+mod immersive;
 mod launches;
 mod updates;
 
@@ -110,6 +111,30 @@ const SPECS: &[ConsoleSpec] = &[
         dir: "Nintendo 3DS",
         games: "Nintendo 3DS Games",
         extensions: &["3ds", "cci", "cxi"],
+    },
+    ConsoleSpec {
+        id: "ps4",
+        dir: "PS4",
+        games: "PS4 Games",
+        extensions: &["elf"],
+    },
+    ConsoleSpec {
+        id: "ps5",
+        dir: "PS5",
+        games: "PS5 Games",
+        extensions: &["pkg", "iso"],
+    },
+    ConsoleSpec {
+        id: "vita",
+        dir: "PS Vita",
+        games: "PS Vita Games",
+        extensions: &["vpk", "zip"],
+    },
+    ConsoleSpec {
+        id: "switch2",
+        dir: "Switch 2",
+        games: "Switch 2 Games",
+        extensions: &["nsp", "xci"],
     },
 ];
 
@@ -234,6 +259,17 @@ fn games_dir(id: &str) -> Result<PathBuf, String> {
     Ok(matrix_root()?.join(s.dir).join(s.games))
 }
 
+fn library_only(id: &str) -> bool {
+    matches!(id, "ps5" | "switch2")
+}
+fn require_launch_adapter(id: &str) -> Result<(), String> {
+    spec(id)?;
+    if library_only(id) {
+        return Err("Library only: Matrix Play has no verified Linux launch adapter for this console. Files and favorites can be organized here.".into());
+    }
+    Ok(())
+}
+
 fn guessed_emulator(id: &str) -> &'static str {
     match id {
         "switch" => "Eden",
@@ -249,6 +285,8 @@ fn guessed_emulator(id: &str) -> &'static str {
         "gba" => "mGBA",
         "nds" => "melonDS",
         "3ds" => "Azahar",
+        "ps4" => "shadPS4",
+        "vita" => "Vita3K",
         _ => "Emulator",
     }
 }
@@ -299,6 +337,7 @@ fn detect_emulator(s: &ConsoleSpec) -> Option<PathBuf> {
 /// Flatpak and atypical installations can be configured manually.
 fn detect_installed_emulator(id: &str) -> Option<PathBuf> {
     let names: &[&str] = match id {
+        "switch" => &["eden", "ryujinx"],
         "ps1" => &["duckstation-qt", "duckstation"],
         "ps2" => &["pcsx2-qt", "pcsx2"],
         "ps3" => &["rpcs3"],
@@ -311,6 +350,8 @@ fn detect_installed_emulator(id: &str) -> Option<PathBuf> {
         "gba" => &["mgba-qt", "mgba"],
         "nds" => &["melonDS", "melonds"],
         "3ds" => &["azahar"],
+        "ps4" => &["shadPS4QtLauncher", "shadPS4"],
+        "vita" => &["Vita3K", "vita3k"],
         _ => &[],
     };
     let paths = std::env::var_os("PATH")?;
@@ -444,7 +485,14 @@ fn scan_console_impl(id: &str) -> Result<Vec<Game>, String> {
                 .and_then(|v| v.file_name())
                 .and_then(|v| v.to_str())
                 .is_some_and(|n| n.eq_ignore_ascii_case("USRDIR"));
-        if !ps3_eboot && !s.extensions.contains(&ext.as_str()) {
+        let ps4_eboot = id == "ps4"
+            && path
+                .file_name()
+                .is_some_and(|n| n.eq_ignore_ascii_case("eboot.bin"))
+            && path
+                .parent()
+                .is_some_and(|p| p.join("sce_sys/param.sfo").is_file());
+        if !ps3_eboot && !ps4_eboot && !s.extensions.contains(&ext.as_str()) {
             continue;
         }
         // Avoid a standalone ISO entry when the same PS1 track is described by a .cue.
@@ -475,6 +523,13 @@ fn scan_console_impl(id: &str) -> Result<Vec<Game>, String> {
                             .file_name()
                             .and_then(|v| v.to_str())
                             .unwrap_or("PS3 Game"),
+                    )
+                } else if ps4_eboot {
+                    prettify(
+                        path.parent()
+                            .and_then(Path::file_name)
+                            .and_then(|v| v.to_str())
+                            .unwrap_or("PS4 Game"),
                     )
                 } else {
                     prettify(
@@ -637,7 +692,7 @@ fn save_emulator(
     extract_appimage: Option<bool>,
     flatpak_runtime_fonts: Option<bool>,
 ) -> Result<(), String> {
-    spec(&id)?;
+    require_launch_adapter(&id)?;
     let launcher = match launcher.as_deref().unwrap_or("executable") {
         "executable" => emulators::Launcher::Executable,
         "appimage" => emulators::Launcher::Appimage,
@@ -724,7 +779,7 @@ fn open_console_folder(id: String) -> Result<(), String> {
 }
 
 fn launch_console_impl(id: String, uid: String) -> Result<launches::Info, String> {
-    let _ = spec(&id)?;
+    require_launch_adapter(&id)?;
     let game = scan_console_impl(&id)?
         .into_iter()
         .find(|g| g.uid == uid)
@@ -736,11 +791,7 @@ fn launch_console_impl(id: String, uid: String) -> Result<launches::Info, String
         .ok_or("Configure an emulator for this console first")?;
     launches::preflight(profile)?;
     let mut command = emulators::command(profile, &id)?;
-    let args = if profile.launch_args.is_empty() {
-        vec!["{game}".into()]
-    } else {
-        profile.launch_args.clone()
-    };
+    let args = immersive::game_args(profile, &id);
     let mut substituted = false;
     for arg in args {
         if arg == "{game}" {
@@ -765,7 +816,7 @@ async fn launch_console_game(id: String, uid: String) -> Result<launches::Info, 
         .map_err(|e| e.to_string())?
 }
 fn open_emulator_impl(id: String) -> Result<launches::Info, String> {
-    spec(&id)?;
+    require_launch_adapter(&id)?;
     let settings = load_settings()?;
     let profile = settings
         .profiles
@@ -1327,7 +1378,7 @@ mod tests {
             assert!(directories.insert(s.dir));
             assert!(s.games.ends_with(" Games"));
         }
-        assert_eq!(SPECS.len(), 14);
+        assert_eq!(SPECS.len(), 18);
     }
     #[test]
     fn parse_vdf_tokens() {
@@ -1391,13 +1442,43 @@ mod tests {
         std::env::set_var("XDG_CONFIG_HOME", temp.path().join("config"));
         std::env::set_var("XDG_DATA_HOME", temp.path().join("data"));
         create_layout().unwrap();
-        assert_eq!(SPECS.len(), 14);
+        assert_eq!(SPECS.len(), 18);
         let root = games_dir("ps2").unwrap();
         let path = root.join("SLUS-20312.chd");
         fs::write(&path, b"synthetic fixture").unwrap();
         let uid = path.canonicalize().unwrap().to_string_lossy().into_owned();
         assert_eq!(scan_console_impl("ps2").unwrap().len(), 1);
         assert!(scan_console_impl("ps1").unwrap().is_empty());
+        let ps4 = games_dir("ps4").unwrap();
+        fs::create_dir_all(ps4.join("Example PS4/sce_sys")).unwrap();
+        fs::write(ps4.join("Example PS4/eboot.bin"), b"synthetic").unwrap();
+        fs::write(ps4.join("Example PS4/sce_sys/param.sfo"), b"synthetic").unwrap();
+        fs::write(ps4.join("install.pkg"), b"not bootable").unwrap();
+        fs::write(ps4.join("unrelated.bin"), b"not bootable").unwrap();
+        let ps4games = scan_console_impl("ps4").unwrap();
+        assert_eq!(ps4games.len(), 1);
+        assert_eq!(ps4games[0].title, "Example PS4");
+        fs::write(games_dir("vita").unwrap().join("Example.vpk"), b"synthetic").unwrap();
+        assert_eq!(scan_console_impl("vita").unwrap().len(), 1);
+        for (id, filename) in [("ps5", "Collection.pkg"), ("switch2", "Collection.xci")] {
+            fs::write(games_dir(id).unwrap().join(filename), b"stored file only").unwrap();
+            let stored = scan_console_impl(id).unwrap().remove(0);
+            assert!(launch_console_impl(id.into(), stored.uid.clone())
+                .err()
+                .unwrap()
+                .contains("Library only"));
+            assert_eq!(
+                favorites::set_favorite(id.into(), stored.uid, true)
+                    .unwrap()
+                    .len(),
+                1
+            );
+            assert!(open_emulator_impl(id.into())
+                .err()
+                .unwrap()
+                .contains("Library only"));
+        }
+
         assert!(validate_game("ps1", &uid).is_err());
         assert!(get_cover("ps2".into(), uid.clone()).unwrap().is_none());
         let mut settings = Settings::default();

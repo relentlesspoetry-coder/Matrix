@@ -34,10 +34,10 @@ def main():
                 while time.monotonic()<deadline:
                     if proc.poll() is not None:
                         raise AssertionError('Matrix exited before startup: '+logfile.read_text())
-                    if 'Interface ready' in logfile.read_text() and len(list((home/'Games/Matrix Play').glob('*/* Games')))==14:break
+                    if 'Interface ready' in logfile.read_text() and len(list((home/'Games/Matrix Play').glob('*/* Games')))==18:break
                     time.sleep(.1)
                 else:raise AssertionError('Interface never became ready: '+logfile.read_text())
-                assert len(list((home/'Games/Matrix Play').glob('*/* Games')))==14
+                assert len(list((home/'Games/Matrix Play').glob('*/* Games')))==18
                 deadline=time.monotonic()+15
                 while time.monotonic()<deadline:
                     screenshot=ImageGrab.grab(xdisplay=os.environ['DISPLAY'])
@@ -49,7 +49,7 @@ def main():
                     time.sleep(.25)
                 else:raise AssertionError('The actual desktop window appears blank: '+logfile.read_text())
                 assert (home/'data/matrix/startup.log').read_text().count('Interface ready')>=1
-                print('PASS: ordinary non-WebDriver startup, visible painted interface, startup diagnostics, 14 console libraries')
+                print('PASS: ordinary non-WebDriver startup, visible painted interface, startup diagnostics, 18 console libraries')
             finally:
                 try:os.killpg(proc.pid,signal.SIGTERM)
                 except ProcessLookupError:pass

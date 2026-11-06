@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.6
+
+- Start recognized console emulators fullscreen when a game card is clicked, using engine-specific no-GUI/batch/hidden-menu options where supported. Keep Open emulator in normal setup mode. Apply presets to existing recognized profiles without requiring them to be saved again; preserve literal custom-launcher arguments.
+- Add the four remaining supplied artwork libraries: PlayStation 4, PlayStation 5, PlayStation Vita and Nintendo Switch 2. Preserve the original 14 console libraries, independent Steam/Windows tabs, existing paths, covers and favorites.
+- Add experimental shadPS4 core/current QtLauncher (including its Flatpak) and current Vita3K SDL launch adapters. Scan PS4 extracted eboot/ELF content and Vita VPK/ZIP content. Discover recognizable PS4/Vita AppImages/native executables and the shadPS4 Flatpak.
+- Mark PS5 and Switch 2 as library-only collections, supporting folders, local covers and favorites while rejecting launch/setup requests. Never link PS4/Switch emulators to their successor consoles.
+- Add native fullscreen argv, collection launch-blocking/favorites and expanded folder/artwork tests; document researched capabilities separately from fixture tests and real gameplay evidence.
+
 ## 0.5.5
 
 - Automatically discover and link known installed Flatpaks and recognizable AppImages to their supported console libraries. Scan common app folders and exported desktop paths, deduplicate canonical paths, preserve manual selections and require a choice for ambiguous matches.
