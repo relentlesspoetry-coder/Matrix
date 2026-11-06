@@ -84,6 +84,10 @@ The native Tauri/WebKit fixture suite passed with 18 folders and decoded console
 
 Chromium UI checks passed using a mock native bridge, including the PS5 library-only notice, no Play/Setup action, collection favorites, Vita setup guidance and all 18 supplied images. Ordinary painted native startup passed in an isolated X11 display without graphics workaround variables. Cover-core (12) and updater-core (5) tests and release packaging tests passed. Live cover-provider checks from earlier versions were not repeated for this launch/library change.
 
+The first cloud run (42155969970) stopped publication because the native test clicked Open emulator before the preceding asynchronous game request settled. The test now waits for that request to finish; it passed locally with the cloud software-rendering environment. Application launch code did not change for this correction.
+
+After installing Matrix Play 0.5.6 and closing/reopening it, the affected user explicitly confirmed: **“Yes, fullscreen with no menus”** when clicking their actual PS2 game. This verifies the PCSX2 Flatpak fullscreen/no-GUI path on that machine, in addition to the fixture dispatch tests.
+
 PS4/Vita adapters are researched against current upstream source but have not been tested with real PS4/Vita games. PS5 and Switch 2 have no Matrix launch adapter. Emulator errors, first-run requirements and overlays can still appear; unknown custom launchers need their own fullscreen options.
 
 ## Published v0.5.5 verification — 2026-11-05

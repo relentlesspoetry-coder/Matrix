@@ -279,6 +279,9 @@ def main():
             wait_for(lambda: (home/'child-cache.log').read_text()==expected_child_cache)
             assert invoke('bootstrap')['profiles']['ps2']['flatpakInstallation']=='user'
             assert invoke('bootstrap')['favorites']['ps2']==[str(ps2game)]
+            # The child writes argv before the asynchronous UI launch request settles.
+            # Wait for completion before testing a second click; busy launches reject duplicates.
+            wait_for(lambda: js('return !state.launchBusy.ps2'))
             click('[data-action="open-emulator"][data-id="ps2"]')
             wait_for(lambda: log.read_text().splitlines()==expected[:-1])
             healthy_flatpak=flatpak.read_text()
