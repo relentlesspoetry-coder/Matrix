@@ -143,6 +143,9 @@ def main():
             assert len(invoke('scan_console', {'id':'ps1'})) == 1
             assert len(invoke('scan_console', {'id':'ps2'})) == 1
             assert len(invoke('scan_console', {'id':'ps3'})) == 0
+            wait_for(lambda: js('return [...document.querySelectorAll(".console-image")].length === 14 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)'))
+            update=invoke('update_status')
+            assert update['phase'] == 'idle' and update['currentVersion'] == diagnostics['version']
             screenshot('matrix-linux-home.png')
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelectorAll(".game-item").length === 1'))
@@ -154,8 +157,8 @@ def main():
             click('.game-card')
             wait_for(log.exists)
             assert log.read_text().splitlines() == [str(ps2game)]
-            wait_for(lambda: (home/'child-cache.log').exists())
-            assert (home/'child-cache.log').read_text() == expected_child_cache
+            wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
+            wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
             click('[data-action="game"]')
             wait_for(lambda: js('return Boolean(document.querySelector(".cover-tools"))'))
             # Native manual import round-trip and cross-console rejection.
@@ -174,7 +177,7 @@ def main():
             click('.game-card')
             wait_for(log.exists)
             assert log.read_text().splitlines() == ['-applaunch', '12345']
-            assert (home/'child-cache.log').read_text() == expected_child_cache
+            wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
             invoke('add_windows_game', {'title':'Native Windows Fixture','target':str(exe),'runner':'wine'})
             click('[data-action="refresh"]')
             click('[data-action="windows"]')
@@ -183,7 +186,7 @@ def main():
             click('.game-card')
             wait_for(log.exists)
             assert log.read_text().splitlines() == [str(exe)]
-            assert (home/'child-cache.log').read_text() == expected_child_cache
+            wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
             invoke('save_artwork_settings', {'enabled':False,'style':'3d'})
             boot=invoke('bootstrap')
             assert boot['artwork'] == {'enabled':False,'style':'3d'}

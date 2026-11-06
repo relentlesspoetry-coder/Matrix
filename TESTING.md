@@ -4,7 +4,7 @@ This is the native testing release, version 0.5.2. The build was made on Zorin O
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04
 
-1. Open the [v0.5.2 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.2) while signed in to the account that owns this private repository.
+1. Open the [v0.5.2 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.2) — the repository and installers are public.
 2. Download `Matrix-Play_0.5.2_amd64.deb`.
 3. Open a terminal in the download folder and run:
 
@@ -66,7 +66,14 @@ A game's emulator, firmware and any required keys must already be installed/conf
 
 **Additional v0.5.1 checks:** the rebuilt app reached Interface ready in the same existing-profile Wayland launch that previously stalled. Ordinary non-WebDriver X11 startup was checked by capturing the actual desktop pixels. Native tests cover both an explicitly provided and an unset parent cache directory, and ensure test launchers receive the original environment.
 
-**Not verified:** real emulator gameplay, launching a user's Steam games or real Wine installations, controller support, ARM builds, other Linux releases, every disc format/serial, or universal cover availability. Launch fixtures validate command dispatch, not emulator compatibility. There is no automatic application updater in this release.
+**Not verified:** real emulator gameplay, launching a user's Steam games or real Wine installations, controller support, ARM builds, other Linux releases, every disc format/serial, or universal cover availability. Launch fixtures validate command dispatch, not emulator compatibility. The update button checks and downloads signed GitHub releases. Privileged DEB installation has not been executed by the automated tests; AppImage replacement is tested with synthetic fixtures.
+
+## Version 0.5.3 checks
+
+- Five updater-core tests passed: semantic version selection, signatures and repository/package identity, corruption/size limits, cancellation and cached downloads, package headers/symlinks, and staged AppImage replacement with backup using synthetic files.
+- The mock-bridge Chromium test exercised check → download → install → restart controls and all 14 decoded console images. Its installer responses are simulated, not system package installation.
+- The compiled desktop window passed native IPC/scanning/launch-fixture tests, rendered all 14 console images and exposed the real updater status. Ordinary non-WebDriver startup painted successfully without injected graphics settings.
+- Rust cover and backend tests continue to pass. The release pipeline must also pass its Linux build and actual desktop checks before signing and publication.
 
 ## Report a problem
 

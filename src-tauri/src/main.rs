@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod updates;
+
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -1224,6 +1226,7 @@ fn main() {
     initialize_startup_log();
     isolate_runtime_cache();
     tauri::Builder::default()
+        .manage(updates::Service::default())
         .on_page_load(|_, page| {
             startup_log(&format!("Page {:?}: {}", page.event(), page.url()));
         })
@@ -1251,6 +1254,13 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
+            updates::update_status,
+            updates::check_updates,
+            updates::download_update,
+            updates::install_update,
+            updates::cancel_update,
+            updates::restart_updated,
+            updates::open_update_releases,
             graphics_diagnostics,
             report_startup,
             scan_console,

@@ -36,8 +36,10 @@ const glyph = name => {
   return `<svg viewBox="0 0 24 24" aria-hidden="true">${symbols[name] || symbols.info}</svg>`;
 };
 
-// Simplified, original hardware silhouettes: no external brand art or assets required.
+const consoleImages = {"switch": "./assets/consoles/switch.webp", "ps1": "./assets/consoles/ps1.webp", "ps2": "./assets/consoles/ps2.webp", "ps3": "./assets/consoles/ps3.webp", "psp": "./assets/consoles/psp.webp", "n64": "./assets/consoles/n64.webp", "gamecube": "./assets/consoles/gamecube.webp", "dreamcast": "./assets/consoles/dreamcast.webp", "wii": "./assets/consoles/wii.webp", "wiiu": "./assets/consoles/wiiu.webp", "gb": "./assets/consoles/gb.webp", "gba": "./assets/consoles/gba.webp", "nds": "./assets/consoles/nds.webp", "3ds": "./assets/consoles/3ds.webp"};
+// Supplied console artwork; original silhouettes remain a fallback.
 function deviceArt(id) {
+  if (consoleImages[id]) return `<img class="device-illustration console-image" src="${consoleImages[id]}" alt="" decoding="async">`;
   const handheld = (twoScreens = false) => twoScreens
     ? '<rect x="27" y="11" width="85" height="99" rx="13"/><rect x="38" y="19" width="63" height="33" rx="3"/><path d="M30 61h79"/><rect x="38" y="69" width="63" height="30" rx="3"/><circle cx="20" cy="84" r="3"/><circle cx="118" cy="84" r="3"/>'
     : '<rect x="10" y="33" width="120" height="55" rx="25"/><rect x="37" y="40" width="66" height="41" rx="4"/><path d="M24 53v15m-7-7h14"/><circle cx="115" cy="54" r="3"/><circle cx="120" cy="66" r="3"/>';
@@ -554,9 +556,54 @@ async function initializeNative() {
     await refreshNative();
   } catch(error) { toast(`Matrix Play initialization failed: ${error}`); }
 }
+function renderUpdater() {
+  if (state.overlay !== 'updates') return;
+  const info = state.update || {phase:'checking',message:'Checking GitHub…'};
+  const busy = ['checking','downloading','installing'].includes(info.phase);
+  const action = {available:['download-update','Download update'], downloaded:['install-update',info.installMode === 'download' ? 'Open installer' : 'Install update'],installed:['restart-update','Restart Matrix Play']}[info.phase];
+  const percent = info.total ? Math.min(100,Math.round(info.received / info.total * 100)) : 0;
+  const hint = info.installMode === 'system' ? 'Installation uses your Linux system installer and may ask for your password.' : info.installMode === 'appimage' ? 'Your AppImage will be replaced in its current folder. A .previous backup is kept.' : 'The downloaded Linux installer opens in your system installer.';
+  $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title"><button type="button" class="close" data-action="close" aria-label="Close updates">${glyph('close')}</button><div class="eyebrow">MATRIX PLAY</div><h2 id="update-title">App updates</h2><p class="muted">Installed <strong>${escapeHtml(info.currentVersion || '—')}</strong>${info.latestVersion ? ` · Latest <strong>${escapeHtml(info.latestVersion)}</strong>` : ''}</p><p class="update-message" role="status">${escapeHtml(info.message)}</p>${info.phase === 'downloading' ? `<progress max="100" value="${percent}" aria-label="Update download"></progress><p class="muted">${percent}% · ${(info.received/1048576).toFixed(1)} / ${(info.total/1048576).toFixed(1)} MB</p>` : ''}${info.notes ? `<div class="update-notes">${escapeHtml(info.notes)}</div>` : ''}<p class="muted">${escapeHtml(hint)} Downloads are checked against a signed release before installation.</p><div class="dialog-actions"><button type="button" class="button button-ghost" data-action="update-releases">GitHub releases</button>${info.phase === 'downloading' ? '<button type="button" class="button button-ghost" data-action="cancel-update">Cancel download</button>' : action ? `<button type="button" class="button button-primary" data-action="${action[0]}">${action[1]}</button>` : `<button type="button" class="button button-primary" data-action="check-updates" ${busy ? 'disabled' : ''}>${busy ? 'Please wait…' : 'Check again'}</button>`}</div></section></div>`;
+}
+async function runUpdate(command) {
+  if (!state.native) { toast('App updates are available in the Linux application.'); return; }
+  if (state.updateBusy) return;
+  state.updateBusy = true;
+  if (state.update) {
+    state.update.phase = {check_updates:'checking',download_update:'downloading',install_update:'installing'}[command] || state.update.phase;
+    state.update.message = 'Please wait…';
+  }
+  renderUpdater();
+  let polling = false;
+  const timer = setInterval(async () => {
+    if (polling) return;
+    polling = true;
+    try { const info = await nativeInvoke('update_status'); if (state.updateBusy) { state.update = info; renderUpdater(); } } catch (_) { /* The operation reports its own error. */ }
+    finally { polling = false; }
+  }, 500);
+  try { state.update = await nativeInvoke(command); }
+  catch(error) { state.update = {...state.update, phase:'error',message:String(error)}; }
+  finally { clearInterval(timer); state.updateBusy = false; renderUpdater(); }
+}
+async function openUpdater() {
+  if (!state.native) { toast('App updates are available in the Linux application.'); return; }
+  state.lastFocus = document.activeElement; state.overlay = 'updates';
+  try { state.update = await nativeInvoke('update_status'); } catch(error) { state.update = {phase:'error',message:String(error)}; }
+  renderUpdater();
+  $('#update-title')?.closest('.dialog').querySelector('button')?.focus();
+  if (!state.updateBusy && ['idle','current','error'].includes(state.update?.phase)) void runUpdate('check_updates');
+}
+
 async function handleAction(button) {
   const { action, id, uid, value } = button.dataset;
-  if (action === 'home') goHome();
+  if (action === 'updates') void openUpdater();
+  else if (action === 'check-updates') void runUpdate('check_updates');
+  else if (action === 'download-update') void runUpdate('download_update');
+  else if (action === 'install-update') void runUpdate('install_update');
+  else if (action === 'cancel-update') { try { await nativeInvoke('cancel_update'); } catch(error) { toast(String(error)); } }
+  else if (action === 'restart-update') { try { await nativeInvoke('restart_updated'); } catch(error) { toast(String(error)); } }
+  else if (action === 'update-releases') { try { await nativeInvoke('open_update_releases'); } catch(error) { toast(String(error)); } }
+  else if (action === 'home') goHome();
   else if (action === 'settings') goSettings();
   else if (action === 'steam' || action === 'windows') goExternal(action);
   else if (action === 'refresh') {

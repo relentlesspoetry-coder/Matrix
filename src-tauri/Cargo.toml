@@ -24,6 +24,7 @@ walkdir = "2"
 sha2 = "0.10"
 base64 = "0.22"
 matrix-cover-core = { path = "../cover-core" }
+matrix-update-core = { path = "../update-core" }
 
 [dev-dependencies]
 tempfile = "3"

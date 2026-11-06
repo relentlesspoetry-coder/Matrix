@@ -1,4 +1,4 @@
-name: Linux test build
+name: Linux test and release
 on:
   push:
     branches: [main]
@@ -28,11 +28,13 @@ jobs:
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
         with:
           workspaces: |
+            update-core -> target
             cover-core -> target
             src-tauri -> target
       - run: npm ci
       - name: Test Rust and managed folders
         run: |
+          cargo test --locked --manifest-path update-core/Cargo.toml
           cargo test --locked --manifest-path cover-core/Cargo.toml
           cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --lib
           cargo test --locked --manifest-path src-tauri/Cargo.toml --bin matrix-frontend
@@ -70,3 +72,48 @@ jobs:
           name: Matrix-Play-startup-diagnostics
           path: test-artifacts/
           if-no-files-found: warn
+
+  publish:
+    needs: linux
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check version publication
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if draft=$(gh release view "v$version" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" = "true" ]; then
+              echo "An incomplete draft exists for this version. Inspect it before retrying publication."
+              exit 1
+            fi
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: steps.release.outputs.needed == 'true'
+        with:
+          name: Matrix-Play-linux-x86_64
+          path: src-tauri/target/release/bundle
+      - name: Sign validated installers
+        if: steps.release.outputs.needed == 'true'
+        env:
+          MATRIX_UPDATE_SIGNING_KEY: ${{ secrets.MATRIX_UPDATE_SIGNING_KEY }}
+        run: python3 scripts/prepare-release.py
+      - name: Publish immutable testing release
+        if: steps.release.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          gh release create "v$VERSION" release-out/*.deb release-out/*.AppImage release-out/*-source.zip release-out/SHA256SUMS release-out/update-manifest.json release-out/update-manifest.sig --target "$GITHUB_SHA" --title "Matrix Play $VERSION" --notes-file release-out/release-notes.md --draft --prerelease
+          gh release edit "v$VERSION" --draft=false

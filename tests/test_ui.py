@@ -11,17 +11,25 @@ HTML = HTML.replace('<script src="./startup.js" defer></script>', '')
 for name in ['matrix-play-logo.png','matrix-play-icon.png']:
     uri='data:image/png;base64,'+base64.b64encode((WEB/'assets'/name).read_bytes()).decode()
     HTML=HTML.replace('./assets/'+name,uri)
-HTML = HTML.replace('</body>', '<script>' + (WEB / 'startup.js').read_text() + '</script>' + '<script>' + (WEB / 'data.js').read_text() + '</script><script>' + (WEB / 'app.js').read_text() + '</script></body>')
+APP = (WEB / 'app.js').read_text()
+for asset in (WEB/'assets/consoles').glob('*.webp'):
+    APP = APP.replace('./assets/consoles/'+asset.name, 'data:image/webp;base64,'+base64.b64encode(asset.read_bytes()).decode())
+HTML = HTML.replace('</body>', '<script>' + (WEB / 'startup.js').read_text() + '</script>' + '<script>' + (WEB / 'data.js').read_text() + '</script><script>' + APP + '</script></body>')
 SCREENS = ROOT / 'screenshots'
 SCREENS.mkdir(exist_ok=True)
 MOCK = '''
 window.__calls = [];
+window.__update={currentVersion:'0.5.2',latestVersion:null,phase:'idle',message:'Check for updates',notes:'',received:0,total:0,installMode:'system'};
 window.__artSaved = false;
 window.__artOptions={enabled:true,style:"default"};
 window.__windows = [{uid:'/games/My Windows Game.desktop',title:'My Windows Game',target:'/games/My Windows Game.desktop',runner:'desktop'}];
 window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   window.__calls.push([name,args]);
   const ids = ['switch','ps1','ps2','ps3','psp','n64','gamecube','dreamcast','wii','wiiu','gb','gba','nds','3ds'];
+  if(name==='update_status') return window.__update;
+  if(name==='check_updates') return (window.__update={...window.__update,latestVersion:'0.6.0',phase:'available',message:'A newer Matrix Play release is available.',notes:'Console artwork and updates.'});
+  if(name==='download_update') return (window.__update={...window.__update,phase:'downloaded',message:'Verified update downloaded.'});
+  if(name==='install_update') return (window.__update={...window.__update,phase:'installed',message:'Update installed. Restart Matrix Play to finish.'});
   if(name==='bootstrap') return {artwork:window.__artOptions,root:'/home/example/Games/Matrix',folders:Object.fromEntries(ids.map(id=>[id,`/home/example/Games/Matrix/${id}/${id} Games`])),profiles:{ps2:{emulatorName:'PCSX2',emulatorPath:'/usr/bin/pcsx2',launchArgs:['{game}']}},windows:window.__windows};
   if(name==='scan_console') return args.id==='ps2' ? [{uid:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',title:'Test Game',path:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',kind:'ps2'}] : [];
   if(name==='scan_steam') return [{uid:'12345',title:'Test Steam Game',kind:'steam',appId:'12345'}];
@@ -38,6 +46,10 @@ window.__TAURI__ = { core: { invoke: async (name,args={}) => {
 '''
 
 MOCK = MOCK.replace('__COVER__', base64.b64encode((ROOT/'tests/fixtures/demo-cover.png').read_bytes()).decode('ascii'))
+
+def screenshot(page,name):
+    page.evaluate('async()=>{await Promise.all([...document.images].map(i=>i.decode()));await new Promise(requestAnimationFrame);}');
+    page.screenshot(path=str(SCREENS/name),full_page=True)
 
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True, executable_path=os.environ.get('MATRIX_CHROMIUM'),args=['--no-sandbox','--disable-dev-shm-usage'])
@@ -57,10 +69,10 @@ with sync_playwright() as p:
     assert preview.locator('#windows-form').count()==1
     preview.keyboard.press('Escape')
     preview.get_by_role('button', name='Consoles').click()
-    preview.screenshot(path=str(SCREENS/'matrix-console-preview.png'),full_page=True)
+    screenshot(preview,'matrix-console-preview.png')
 
     failed = browser.new_page(viewport={'width':1000,'height':800})
-    failed.set_content(HTML.replace((WEB/'app.js').read_text(), "throw new Error('Injected startup failure');"))
+    failed.set_content(HTML.replace(APP, "throw new Error('Injected startup failure');"))
     failed.wait_for_function('document.querySelector("#startup-status strong").textContent.includes("could not finish")')
     assert 'Injected startup failure' in failed.locator('#startup-status').inner_text()
     assert failed.get_by_role('button',name='Try again').is_visible()
@@ -71,11 +83,18 @@ with sync_playwright() as p:
     native.on('pageerror',lambda e: errors.append(str(e)))
     native.set_content(HTML)
     native.wait_for_function('document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelector(".console-card__bottom small")?.textContent?.includes("games")')
-    native.screenshot(path=str(SCREENS/'matrix-native-home.png'),full_page=True)
     assert native.locator('.console-card').count()==14
+    native.wait_for_function('[...document.querySelectorAll(".console-image")].length === 14 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)')
+    screenshot(native,'matrix-native-home.png')
+    native.get_by_role('button',name='Update Matrix Play').click()
+    native.get_by_role('button',name='Download update').click()
+    native.get_by_role('button',name='Install update').click()
+    assert native.get_by_role('button',name='Restart Matrix Play').is_visible()
+    screenshot(native,'matrix-updates.png')
+    native.keyboard.press('Escape')
     native.get_by_role('button',name='Browse PlayStation 2 library').click()
     assert native.locator('.game-item').count()==1
-    native.screenshot(path=str(SCREENS/'matrix-native-ps2.png'),full_page=True)
+    screenshot(native,'matrix-native-ps2.png')
     native.wait_for_function('window.__calls.some(x=>x[0]==="get_cover" && x[1].kind==="ps2")')
     assert native.locator('.game-cover img').count()>=1
     native.locator('.game-card').first.click()
@@ -88,7 +107,7 @@ with sync_playwright() as p:
     native.locator('#cover-serial').fill('SLUS-20312')
     native.get_by_role('button',name='Find cover by serial').click()
     native.wait_for_function('document.querySelector(".cover-result").textContent.includes("user-confirmed")')
-    native.screenshot(path=str(SCREENS/'matrix-cover-details.png'),full_page=True)
+    screenshot(native,'matrix-cover-details.png')
     native.get_by_role('button',name='Open TheCoverProject').click()
     native.wait_for_function('window.__calls.some(x=>x[0]==="open_cover_project")')
     native.get_by_role('button', name='Choose cover').click()
@@ -97,14 +116,14 @@ with sync_playwright() as p:
     native.keyboard.press('Escape')
     native.get_by_role('button',name='Steam Games').click()
     assert native.locator('.game-item').count()==1
-    native.screenshot(path=str(SCREENS/'matrix-native-steam.png'),full_page=True)
+    screenshot(native,'matrix-native-steam.png')
     native.locator('.game-card').first.click()
     native.wait_for_function('window.__calls.some(x=>x[0]==="launch_steam_game")')
     native.get_by_role('button',name='Windows Games').click()
     assert native.locator('.game-item').count()==1
     native.locator('.game-card').first.click()
     native.wait_for_function('window.__calls.some(x=>x[0]==="launch_windows_game")')
-    native.screenshot(path=str(SCREENS/'matrix-native-windows.png'),full_page=True)
+    screenshot(native,'matrix-native-windows.png')
     native.get_by_role('button',name='Add Windows game').click()
     native.locator('#windows-name').fill('Second Windows Game')
     native.locator('#windows-target').fill('/games/Second Game.exe')
@@ -115,7 +134,7 @@ with sync_playwright() as p:
     native.get_by_role('button',name='Emulators & folders').click()
     assert native.locator('.root-path').count()==1
     assert '/home/example/Games/Matrix' in native.locator('.root-path').inner_text()
-    native.screenshot(path=str(SCREENS/'matrix-cover-settings.png'),full_page=True)
+    screenshot(native,'matrix-cover-settings.png')
     native.locator('#cover-style').select_option('3d')
     native.wait_for_function('window.__artOptions.style === "3d"')
     native.locator('#auto-covers').uncheck()
@@ -134,7 +153,7 @@ with sync_playwright() as p:
     mobile.on('pageerror',lambda e: errors.append(str(e)))
     mobile.set_content(HTML)
     mobile.wait_for_function('document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"')
-    mobile.screenshot(path=str(SCREENS/'matrix-mobile.png'),full_page=True)
+    screenshot(mobile,'matrix-mobile.png')
     assert mobile.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Mobile horizontal overflow'
     assert not errors, errors
     print('PASS: 14 consoles, 3 libraries, launch dispatch, artwork status/serial/styles/disable/manual import, Windows registration, mobile layout (mock native bridge)')

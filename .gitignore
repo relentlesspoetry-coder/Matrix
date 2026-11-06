@@ -8,3 +8,8 @@ cover-core/target/
 __pycache__/
 
 src-tauri/gen/
+
+update-core/target/
+release-out/
+test-artifacts/
+*.pem

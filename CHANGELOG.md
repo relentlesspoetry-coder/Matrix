@@ -1,4 +1,14 @@
-# v0.5.2 — Matrix Play name and logo
+# Changelog
+
+## 0.5.3
+
+- Add an Update button: check public GitHub releases, download and verify signed Linux x86-64 packages, then install and restart. DEB installs request system authorization; AppImage installs replace the current file and retain a `.previous` backup. Development builds open the verified DEB in the system installer.
+- Automatically build, test, sign and publish a new version pushed to main. Add `scripts/release.py` to bump, commit and push each version.
+- Display the supplied artwork for all 14 existing console libraries. Retain four extra supplied images without adding unsupported libraries.
+- Update the public GitHub README with the Matrix Play logo, purpose, installation instructions and capability limits.
+- Correct a native launch-test timing issue by waiting for the completed cache-environment log.
+
+## 0.5.2 — Matrix Play name and logo
 
 - Apply the supplied Matrix Play logo to the sidebar and its central symbol to compact branding, window and Linux launcher icons. The supplied full PNG is retained unmodified.
 - Rename the native window, application menu entry, package metadata, page title and interface copy to Matrix Play.
@@ -6,7 +16,7 @@
 - Set the renamed `matrix-play` DEB to replace the former `matrix` application package cleanly. Keep the existing executable and application identifier for compatibility.
 - Retain the v0.5.1 runtime-cache startup fix and diagnostics.
 
-# v0.5.1 — Resolve cache-dependent blank startup
+## 0.5.1 — Resolve cache-dependent blank startup
 
 - Isolate Matrix's runtime cache before WebKit starts; retain existing data, configuration, artwork and shared caches.
 - Restore the original cache environment for every external launch.
@@ -17,7 +27,7 @@
 
 The affected user confirmed that the fresh-cache launch works. The rebuilt application also passed the formerly stalled existing-profile startup. The exact offending shared cache file remains unidentified; no shared cache files are deleted.
 
-# v0.5.0 — Automatic PS1/PS2 artwork
+## 0.5.0 — Automatic PS1/PS2 artwork
 
 Continues the supplied Matrix-v0.4-native-source.zip. Keeps all 14 managed console directories and the independent Steam and Windows sections.
 

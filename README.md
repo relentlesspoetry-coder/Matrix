@@ -1,14 +1,28 @@
-# Matrix Play v0.5.2 — Native Linux game frontend
+<p align="center"><img src="web/assets/matrix-play-logo.png" alt="Matrix Play" width="420"></p>
 
-**Matrix Play** is a native **Linux** game launcher written in **Rust + Tauri 2**, with a responsive HTML/CSS/JavaScript interface running inside its desktop window. It has **three intentionally separate sections**: Consoles, Steam Games, Windows Games. There is no merged “All Games” library.
+# Matrix Play
+
+A native Linux game-library and emulator frontend. Browse games by console, connect each library to your installed emulator, and launch games from one application. Steam games and existing Windows/Wine launchers have their own tabs.
+
+Matrix Play organizes and launches your existing setup. Emulators, game files, firmware, keys and Wine are supplied and configured separately.
+
+Built with Rust and Tauri 2, Matrix Play keeps **14 console libraries**, **Steam Games**, and **Windows Games** separate. It is a library frontend, not an emulator or game store. Actual game compatibility depends on your installed emulator or Windows runner.
 
 ## Matrix Play branding
 
-This v0.5.2 release adopts the supplied **Matrix Play** name and artwork. The full original PNG is used in the sidebar; a crop of its central symbol is used for the compact sidebar, window and application launcher icons.
+Matrix Play adopts the supplied **Matrix Play** name and artwork. The full original PNG is used in the sidebar; a crop of its central symbol is used for the compact sidebar, window and application launcher icons.
 
 Fresh installs create `~/Games/Matrix Play/`. If `~/Games/Matrix/` already exists, it is reused in place so game paths, cover identities and emulator profiles keep working. Configuration, artwork, the startup-cache fix, application identifier and command-line executable `matrix-frontend` remain compatible.
 
 The Linux package is now `matrix-play`. Its package metadata replaces/conflicts with the old `matrix` package so APT can upgrade the application without colliding over its executable or launcher files. User configuration and games are retained. The GitHub repository URL remains unchanged.
+
+## Updates and automatic releases
+
+Use **Update** in the top bar to check public GitHub releases, read the release notes and download the newest Linux x86-64 package. Downloads persist under `$XDG_DATA_HOME/matrix/updates/`; the app checks an Ed25519 signature pinned in the application, package size and SHA-256 before installation. GitHub sign-in is not required.
+
+For a DEB installation, **Install update** opens Linux's system authorization dialog and runs the system package installer. For an AppImage, it replaces the running AppImage in its writable folder and keeps a `.previous` backup. **Restart Matrix Play** finishes either update. A development build opens the verified DEB with your system installer. If an update cannot complete, use **GitHub releases** in the dialog to download an installer manually. Earlier versions need one manual upgrade to obtain this button.
+
+Maintainers: commit the changes and the next version's CHANGELOG notes, then run `python3 scripts/release.py X.Y.Z`. It updates the version, commits and pushes to main. GitHub Actions builds both packages and runs the Rust and real desktop tests. Only a successful build publishes a signed testing release; an existing published version is never overwritten. The encrypted `MATRIX_UPDATE_SIGNING_KEY` repository secret is required. See [UPDATES.md](UPDATES.md).
 
 ## v0.5.1 startup fix
 
@@ -48,7 +62,9 @@ Serial detection supports filenames and bounded ISO9660 SYSTEM.CNF parsing, incl
 
 ### Actual validation performed
 
-Verified for this v0.5 source:
+Verified in source development (CI results are visible in the Actions tab):
+
+- `cargo test --locked --manifest-path update-core/Cargo.toml`: **5 passed**, covering signed manifest identity, downgrade rejection, damaged/oversized downloads, cancellation/cache, and synthetic AppImage replacement with backup. These tests do not execute a privileged DEB upgrade.
 
 - `cargo test --manifest-path cover-core/Cargo.toml`: **12 passed**, one live test skipped by default. These execute the actual Rust cover engine with synthetic, non-proprietary disc fixtures and an injected transport for deterministic HTTP outcomes.
 - `cargo test --manifest-path cover-core/Cargo.toml live_provider_templates -- --ignored --nocapture`: **1 passed**. The real HTTPS transport retrieved and decoded default/3D covers for one PS1 and one PS2 serial; all four sample URLs worked. Temporary images were removed.
