@@ -1,8 +1,8 @@
 {
   "name": "matrix-linux-frontend",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
-  "description": "Matrix Linux desktop build tools",
+  "description": "Matrix Play Linux desktop build tools",
   "scripts": {
     "tauri": "tauri",
     "build:linux": "tauri build --bundles deb,appimage",

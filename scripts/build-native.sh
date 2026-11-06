@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Matrix native Linux packages on a developer workstation.
+# Build Matrix Play native Linux packages on a developer workstation.
 # Does not install system dependencies or modify the game library.
 set -euo pipefail
 repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,7 +11,7 @@ if [[ -x "$repo/node_modules/.bin/tauri" ]]; then
 elif cargo tauri --version >/dev/null 2>&1; then
   tauri_command=(cargo tauri)
 else
-  echo >&2 'Tauri CLI missing. Run npm ci in the Matrix folder.'
+  echo >&2 'Tauri CLI missing. Run npm ci in the Matrix Play folder.'
   exit 1
 fi
 cd "$repo"

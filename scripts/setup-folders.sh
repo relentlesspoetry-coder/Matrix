@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Optional standalone folder initialization; native Matrix performs this on first launch.
+# Optional standalone folder initialization; native Matrix Play performs this on first launch.
 set -euo pipefail
-root="${1:-${HOME:?HOME is not set}/Games/Matrix}"
+if [[ -n "${1:-}" ]]; then
+  root="$1"
+elif [[ -d "${HOME:?HOME is not set}/Games/Matrix" ]]; then
+  root="$HOME/Games/Matrix"
+else
+  root="$HOME/Games/Matrix Play"
+fi
 while IFS='|' read -r console library; do
   mkdir -p -- "$root/$console/$library"
 done <<'LIBRARIES'
@@ -20,4 +26,4 @@ GBA|GBA Games
 Nintendo DS|Nintendo DS Games
 Nintendo 3DS|Nintendo 3DS Games
 LIBRARIES
-printf 'Matrix folders ready: %s\n' "$root"
+printf 'Matrix Play folders ready: %s\n' "$root"

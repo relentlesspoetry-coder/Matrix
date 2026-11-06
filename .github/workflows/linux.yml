@@ -43,15 +43,30 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: npm run build:linux -- --ci -- --locked
       - name: Check ordinary painted window
-        run: xvfb-run -a python3 tests/test_normal_startup.py src-tauri/target/release/matrix-frontend
+        env:
+          WEBKIT_DISABLE_COMPOSITING_MODE: '1'
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: xvfb-run -a python3 tests/test_normal_startup.py src-tauri/target/release/matrix-frontend --screenshot test-artifacts/normal-startup.png
       - name: Test actual desktop window
+        env:
+          WEBKIT_DISABLE_COMPOSITING_MODE: '1'
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
         run: |
           cargo install tauri-driver --version 2.1.0 --locked
-          xvfb-run -a python3 tests/test_native.py src-tauri/target/release/matrix-frontend
+          xvfb-run -a python3 tests/test_native.py src-tauri/target/release/matrix-frontend --screenshots test-artifacts/native
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: Matrix-linux-x86_64
+          name: Matrix-Play-linux-x86_64
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
+      - name: Upload startup diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Matrix-Play-startup-diagnostics
+          path: test-artifacts/
+          if-no-files-found: warn

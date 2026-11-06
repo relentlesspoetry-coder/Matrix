@@ -8,6 +8,9 @@ WEB = ROOT / 'web'
 HTML = (WEB / 'index.html').read_text().replace('<link rel="stylesheet" href="./styles.css">', '<style>' + (WEB / 'styles.css').read_text() + '</style>')
 HTML = HTML.replace('<script src="./data.js" defer></script>', '').replace('<script src="./app.js" defer></script>', '')
 HTML = HTML.replace('<script src="./startup.js" defer></script>', '')
+for name in ['matrix-play-logo.png','matrix-play-icon.png']:
+    uri='data:image/png;base64,'+base64.b64encode((WEB/'assets'/name).read_bytes()).decode()
+    HTML=HTML.replace('./assets/'+name,uri)
 HTML = HTML.replace('</body>', '<script>' + (WEB / 'startup.js').read_text() + '</script>' + '<script>' + (WEB / 'data.js').read_text() + '</script><script>' + (WEB / 'app.js').read_text() + '</script></body>')
 SCREENS = ROOT / 'screenshots'
 SCREENS.mkdir(exist_ok=True)
@@ -44,7 +47,9 @@ with sync_playwright() as p:
     preview.set_content(HTML)
     assert preview.locator('.console-card').count()==14
     assert preview.locator('#startup-status').is_hidden()
-    assert 'MATRIX' in preview.locator('.brand').inner_text().replace('\n','')
+    assert preview.get_by_role('button',name='Matrix Play home').count()==1
+    assert preview.locator('.brand-logo').get_attribute('alt')=='Matrix Play'
+    preview.wait_for_function('document.querySelector(".brand-logo").naturalWidth > 0')
     preview.get_by_role('button', name='Steam Games').click()
     assert 'No steam games detected' in preview.locator('.external-empty').inner_text()
     preview.get_by_role('button', name='Windows Games').click()

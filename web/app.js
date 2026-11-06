@@ -1,4 +1,4 @@
-/* Matrix v0.5 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.2 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const byId = Object.fromEntries(consoles.map(consoleInfo => [consoleInfo.id, consoleInfo]));
@@ -119,7 +119,7 @@ function savePrefs() {
 }
 let artDb = null;
 async function initializeArt() {
-  // Native Matrix artwork lives in XDG data; browser preview uses IndexedDB.
+  // Native Matrix Play artwork lives in XDG data; browser preview uses IndexedDB.
   if (state.native || !('indexedDB' in window)) return;
   try {
     artDb = await new Promise((resolve, reject) => {
@@ -183,8 +183,8 @@ function renderHome() {
     <div class="section-toolbar"><h2 class="section-title">All systems</h2><div class="segmented" role="group" aria-label="Filter console brands">${['All', 'Sony', 'Nintendo', 'Sega'].map(vendor => `<button type="button" class="${state.vendor === vendor ? 'active' : ''}" data-action="vendor" data-value="${vendor}" aria-pressed="${state.vendor === vendor}">${vendor === 'All' ? 'All systems' : vendor === 'Sony' ? 'PlayStation' : vendor}</button>`).join('')}</div></div>
     <div class="console-grid">${visible.map(consoleCard).join('')}</div>
     <div class="notice">${glyph('info')}<span>${state.native
-      ? `Matrix reads each console’s own Games directory under ${escapeHtml(state.root)}. Steam and Windows have separate tabs.`
-      : 'Browser-only preview: sample games are for design review. A native Matrix build creates the folders and scans installed games.'}</span></div>`;
+      ? `Matrix Play reads each console’s own Games directory under ${escapeHtml(state.root)}. Steam and Windows have separate tabs.`
+      : 'Browser-only preview: sample games are for design review. A native Matrix Play build creates the folders and scans installed games.'}</span></div>`;
 }
 function gameCover(consoleInfo, game, index) {
   const key = artKey(consoleInfo.id, game.uid);
@@ -290,7 +290,7 @@ function renderConsole() {
 }
 function renderSettings() {
   $('#screen').innerHTML = `<div class="settings-header"><div class="eyebrow">YOUR SETUP</div><h1 class="page-title">Emulators &amp; folders.</h1><p class="page-subtitle">Each console uses its own emulator and dedicated Games directory.</p>${state.native ? `<div class="root-path">${glyph('folder')} Managed folder <strong>${escapeHtml(state.root)}</strong></div>` : ''}</div>
-    <div class="notice" style="margin:0 0 25px">${glyph('info')}<span>${state.native ? 'Matrix creates console folders automatically. Put an emulator AppImage or executable inside its console directory, or configure a system-installed emulator.' : 'Browser preview settings are not connected to your filesystem. Native folder creation and launching require the Matrix Linux application.'}</span></div>
+    <div class="notice" style="margin:0 0 25px">${glyph('info')}<span>${state.native ? 'Matrix Play creates console folders automatically. Put an emulator AppImage or executable inside its console directory, or configure a system-installed emulator.' : 'Browser preview settings are not connected to your filesystem. Native folder creation and launching require the Matrix Play Linux application.'}</span></div>
     <section class="artwork-settings"><h2>Cover artwork</h2>
     <p>PS1 and PS2 covers from xlenore, matched by serial within each console. Unknown or conflicting serials need your review. Local covers take priority.</p>
     <label><input type="checkbox" id="auto-covers" ${state.artwork.enabled ? 'checked' : ''} ${state.native ? '' : 'disabled'}> Download missing PS1/PS2 covers after library scans</label>
@@ -329,7 +329,7 @@ function renderExternal(page) {
   const title = steam ? 'Steam Games' : 'Windows Games';
   const games = externalList(page).filter(g => g.title.toLowerCase().includes(state.query.toLowerCase()));
   $('#screen').innerHTML = `<div class="title-row"><div><div class="eyebrow">${steam ? 'STEAM LIBRARY' : 'WINDOWS LIBRARY'}</div><h1 class="page-title">${title}.</h1>
-      <p class="page-subtitle">${steam ? 'Detected from existing Steam installations. Matrix does not copy or reinstall your games.' : 'Launch your existing Windows installs with Wine or their desktop shortcuts. Nothing is moved.'}</p></div>
+      <p class="page-subtitle">${steam ? 'Detected from existing Steam installations. Matrix Play does not copy or reinstall your games.' : 'Launch your existing Windows installs with Wine or their desktop shortcuts. Nothing is moved.'}</p></div>
       <div class="stats"><div class="stat"><strong>${externalList(page).length}</strong><span>Games</span></div></div></div>
     <div class="library-tools"><label class="search">${glyph('search')}<input type="search" id="external-search" placeholder="Search ${title}" value="${escapeHtml(state.query)}"></label>
     ${!steam ? `<button type="button" class="button button-primary" data-action="add-windows">${glyph('plus')} Add Windows game</button>` : ''}</div>
@@ -337,7 +337,7 @@ function renderExternal(page) {
       const cover = gameCover({ id: page, abbrev: steam ? 'STEAM' : 'WINDOWS' }, game, index);
       return `<div class="game-item"><button class="game-card" type="button" data-action="quick-external" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="${state.native ? 'Launch' : 'View'} ${escapeHtml(game.title)}">${cover}<span class="game-title">${escapeHtml(game.title)}</span><span class="game-meta">${steam ? 'Steam · App ' + escapeHtml(game.appId || game.uid) : 'Windows · ' + escapeHtml(game.runner || 'launcher')}</span></button><button class="game-info" type="button" data-action="external-game" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="Details for ${escapeHtml(game.title)}" title="Game details">${glyph('info')}</button></div>`;
     }).join('')}</div>` : `<div class="empty external-empty"><strong>${state.query ? 'No matching games' : `No ${title.toLowerCase()} detected`}</strong><p>${state.query ? 'Try a different search term.' : steam ? 'Install and sign into Steam, then click Refresh.' : 'Choose Add Windows game to register an existing .exe or .desktop launcher.'}</p></div>`}
-    <div class="notice">${glyph('info')}<span>${state.native ? steam ? 'Steam titles are discovered from appmanifest files and launched through Steam.' : 'Use existing Wine installations or desktop launchers; advanced per-game Proton/prefix handling will be added later.' : 'Browser preview only. Native discovery and launching are available in the Matrix Linux build.'}</span></div>`;
+    <div class="notice">${glyph('info')}<span>${state.native ? steam ? 'Steam titles are discovered from appmanifest files and launched through Steam.' : 'Use existing Wine installations or desktop launchers; advanced per-game Proton/prefix handling will be added later.' : 'Browser preview only. Native discovery and launching are available in the Matrix Play Linux build.'}</span></div>`;
   hydrateNativeCovers();
 }
 function openExternalGame(kind, uid) {
@@ -345,10 +345,10 @@ function openExternalGame(kind, uid) {
   state.lastFocus = document.activeElement; state.overlay = 'external'; state.selectedGame = {id:kind,uid};
   $('#overlay-root').innerHTML = `<div class="overlay detail-overlay" data-backdrop="true"><aside class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detail-title"><button class="close" data-action="close" aria-label="Close details">${glyph('close')}</button>
     <div class="detail-cover">${gameCover({id:kind,abbrev:kind.toUpperCase()},game,0)}</div><div class="eyebrow">${kind.toUpperCase()} LIBRARY</div><h2 id="detail-title">${escapeHtml(game.title)}</h2>
-    <p class="detail-sub">${escapeHtml(game.target || `Steam app ID ${game.appId || game.uid}`)}</p><p class="detail-description">${kind === 'steam' ? 'Matrix asks your existing Steam client to start this game.' : 'Matrix starts the configured existing Windows launcher without copying the game files.'}</p>
+    <p class="detail-sub">${escapeHtml(game.target || `Steam app ID ${game.appId || game.uid}`)}</p><p class="detail-description">${kind === 'steam' ? 'Matrix Play asks your existing Steam client to start this game.' : 'Matrix Play starts the configured existing Windows launcher without copying the game files.'}</p>
     <button class="button button-primary launch-button" data-action="launch-external" data-kind="${kind}" data-uid="${escapeHtml(uid)}">${glyph('play')} Play game</button>
     <div class="detail-actions"><button class="button button-ghost" type="button" data-action="pick-cover">${glyph('image')} Choose cover</button></div>
-    ${kind === 'windows' ? `<div class="detail-actions"><button class="button button-ghost" data-action="remove-windows" data-uid="${escapeHtml(uid)}">${glyph('trash')} Remove from Matrix</button></div>` : ''}
+    ${kind === 'windows' ? `<div class="detail-actions"><button class="button button-ghost" data-action="remove-windows" data-uid="${escapeHtml(uid)}">${glyph('trash')} Remove from Matrix Play</button></div>` : ''}
     <p class="detail-hint">${state.native ? 'Launching uses the installed Steam client or chosen Windows runner.' : 'Browser preview cannot launch games.'}</p></aside></div>`;
   $('.detail-panel .close').focus();
   hydrateNativeCovers();
@@ -377,8 +377,8 @@ function openConfigure(id) {
   $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="config-title"><button type="button" class="close" data-action="close" aria-label="Close dialog">${glyph('close')}</button><div class="eyebrow">EMULATOR PROFILE</div><h2 id="config-title">${escapeHtml(consoleInfo.name)}</h2><p class="muted">Choose the executable and dedicated game folder for this console.</p>
     <form id="config-form" data-id="${id}"><div class="field"><label for="emulator-name">Emulator name</label><input id="emulator-name" name="emulatorName" maxlength="120" value="${escapeHtml(current.emulatorName || consoleInfo.emulator)}" required></div>
     <div class="field"><label for="emulator-path">Emulator executable</label><input id="emulator-path" name="emulatorPath" placeholder="/usr/bin/emulator or /home/user/Apps/emulator.AppImage" value="${escapeHtml(current.emulatorPath || '')}" required><small>Native file browsing and executable validation will be added later.</small></div>
-    <div class="field"><label for="launch-args">Launch arguments (advanced · one argument per line)</label><textarea id="launch-args" name="launchArgs" rows="3">${escapeHtml((current.launchArgs || ['{game}']).join('\n'))}</textarea><small>Use {game} for the detected game file path. Matrix passes each line as one argument; no shell is used.</small></div>
-    <div class="field"><label for="library-path">Game library folder</label><input id="library-path" name="folderPath" placeholder="/home/user/Games/Matrix/${consoleInfo.mark}/${consoleInfo.mark} Games" value="${escapeHtml(state.native ? state.folders[id] || '' : current.folderPath || '')}" ${state.native ? 'readonly' : 'required'}><small>${state.native ? 'Automatically created by Matrix. Games belong in this folder; emulator binary belongs in the parent console folder.' : 'Preview only: paths are not connected to the filesystem.'}</small></div>
+    <div class="field"><label for="launch-args">Launch arguments (advanced · one argument per line)</label><textarea id="launch-args" name="launchArgs" rows="3">${escapeHtml((current.launchArgs || ['{game}']).join('\n'))}</textarea><small>Use {game} for the detected game file path. Matrix Play passes each line as one argument; no shell is used.</small></div>
+    <div class="field"><label for="library-path">Game library folder</label><input id="library-path" name="folderPath" placeholder="/home/user/Games/Matrix Play/${consoleInfo.mark}/${consoleInfo.mark} Games" value="${escapeHtml(state.native ? state.folders[id] || '' : current.folderPath || '')}" ${state.native ? 'readonly' : 'required'}><small>${state.native ? 'Automatically created by Matrix Play. Games belong in this folder; emulator binary belongs in the parent console folder.' : 'Preview only: paths are not connected to the filesystem.'}</small></div>
     <div class="dialog-actions"><button class="button button-ghost" type="button" data-action="close">Cancel</button><button class="button button-primary" type="submit">Save profile</button></div></form></section></div>`;
   $('#emulator-name').focus();
 }
@@ -458,7 +458,7 @@ async function loadCover(file) {
       state.art.set(key, URL.createObjectURL(file));
       state.missingArt.delete(key);
       refreshCoverUI(selected);
-      toast('Cover saved to Matrix’s Linux artwork folder.');
+      toast('Cover saved to Matrix Play’s Linux artwork folder.');
     } catch (error) { toast(`Could not save cover: ${error}`); }
     return;
   }
@@ -527,7 +527,7 @@ async function saveArtworkOptions() {
   finally {controls.forEach(node=>node.disabled=false);}
 }
 async function refreshNative() {
-  if (!state.native) { toast('Preview mode — launch the native Matrix app to scan your filesystem.'); return; }
+  if (!state.native) { toast('Preview mode — launch the native Matrix Play app to scan your filesystem.'); return; }
   try {
     const results = await Promise.all([
       ...consoles.map(c => nativeInvoke('scan_console', {id:c.id})),
@@ -552,7 +552,7 @@ async function initializeNative() {
     state.artwork = config.artwork || {enabled:true,style:'default'};
     state.configs = config.profiles;
     await refreshNative();
-  } catch(error) { toast(`Matrix initialization failed: ${error}`); }
+  } catch(error) { toast(`Matrix Play initialization failed: ${error}`); }
 }
 async function handleAction(button) {
   const { action, id, uid, value } = button.dataset;
@@ -602,7 +602,7 @@ async function handleAction(button) {
     } catch(error) { toast(String(error)); }
   }
   else if (action === 'remove-windows') {
-    if (!state.native) { toast('Native Matrix required.'); return; }
+    if (!state.native) { toast('Native Matrix Play required.'); return; }
     try { await nativeInvoke('remove_windows_game', {uid}); dismissOverlay(); await refreshNative(); toast('Removed library entry only. Installed files were preserved.'); }
     catch(error) { toast(String(error)); }
   }
@@ -664,7 +664,7 @@ function setupEvents() {
   document.addEventListener('submit', event => {
     if (event.target.id === 'windows-form') {
       event.preventDefault();
-      if (!state.native) { toast('Windows game registration requires native Matrix.'); return; }
+      if (!state.native) { toast('Windows game registration requires native Matrix Play.'); return; }
       const form = new FormData(event.target);
       void nativeInvoke('add_windows_game', {
         title:String(form.get('title') || '').trim(), target:String(form.get('target') || '').trim(), runner:String(form.get('runner') || '')

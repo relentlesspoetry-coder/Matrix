@@ -1,3 +1,11 @@
+# v0.5.2 — Matrix Play name and logo
+
+- Apply the supplied Matrix Play logo to the sidebar and its central symbol to compact branding, window and Linux launcher icons. The supplied full PNG is retained unmodified.
+- Rename the native window, application menu entry, package metadata, page title and interface copy to Matrix Play.
+- Keep existing Matrix libraries and persistent data in place; fresh installs use a Matrix Play game folder. Maintain all 14 separate console libraries and independent Steam/Windows tabs.
+- Set the renamed `matrix-play` DEB to replace the former `matrix` application package cleanly. Keep the existing executable and application identifier for compatibility.
+- Retain the v0.5.1 runtime-cache startup fix and diagnostics.
+
 # v0.5.1 — Resolve cache-dependent blank startup
 
 - Isolate Matrix's runtime cache before WebKit starts; retain existing data, configuration, artwork and shared caches.

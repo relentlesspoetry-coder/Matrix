@@ -9,8 +9,8 @@ window.matrixStartup = {
     const status = document.getElementById('startup-status');
     if (!status) return;
     status.hidden = false;
-    status.querySelector('strong').textContent = 'Matrix could not finish starting';
-    status.querySelector('p').textContent = String(message || 'Please restart Matrix. If this continues, report the message shown here.');
+    status.querySelector('strong').textContent = 'Matrix Play could not finish starting';
+    status.querySelector('p').textContent = String(message || 'Please restart Matrix Play. If this continues, report the message shown here.');
     status.querySelector('button').hidden = false;
   },
   complete() {
@@ -24,5 +24,5 @@ window.addEventListener('error', event => {
 });
 document.querySelector('#startup-status button').addEventListener('click', () => window.location.reload());
 setTimeout(() => {
-  if (!window.matrixStartup.ready) window.matrixStartup.fail('The interface is taking longer than expected. Try restarting Matrix.');
+  if (!window.matrixStartup.ready) window.matrixStartup.fail('The interface is taking longer than expected. Try restarting Matrix Play.');
 }, 8000);

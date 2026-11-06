@@ -1,12 +1,20 @@
-# Matrix v0.5.1 — Native Linux game frontend
+# Matrix Play v0.5.2 — Native Linux game frontend
 
-**Matrix** is a native **Linux** game launcher written in **Rust + Tauri 2**, with a responsive HTML/CSS/JavaScript interface running inside its desktop window. It has **three intentionally separate sections**: Consoles, Steam Games, Windows Games. There is no merged “All Games” library.
+**Matrix Play** is a native **Linux** game launcher written in **Rust + Tauri 2**, with a responsive HTML/CSS/JavaScript interface running inside its desktop window. It has **three intentionally separate sections**: Consoles, Steam Games, Windows Games. There is no merged “All Games” library.
+
+## Matrix Play branding
+
+This v0.5.2 release adopts the supplied **Matrix Play** name and artwork. The full original PNG is used in the sidebar; a crop of its central symbol is used for the compact sidebar, window and application launcher icons.
+
+Fresh installs create `~/Games/Matrix Play/`. If `~/Games/Matrix/` already exists, it is reused in place so game paths, cover identities and emulator profiles keep working. Configuration, artwork, the startup-cache fix, application identifier and command-line executable `matrix-frontend` remain compatible.
+
+The Linux package is now `matrix-play`. Its package metadata replaces/conflicts with the old `matrix` package so APT can upgrade the application without colliding over its executable or launcher files. User configuration and games are retained. The GitHub repository URL remains unchanged.
 
 ## v0.5.1 startup fix
 
 A cache-dependent stall could leave v0.5.0's window blank before the first page loaded. Giving only the process a fresh cache directory reproduced a successful startup with the original data/configuration, and the affected user confirmed the workaround. The exact offending shared cache file was not identified.
 
-Matrix now isolates its runtime cache under `$XDG_CACHE_HOME/matrix/runtime-v1/` (normally `~/.cache/matrix/runtime-v1/`) before creating WebKit. It does not delete shared caches, migrate game files, or replace the browser data/profile. Launched emulators, Steam, Flatpak, Wine, desktop launchers and browser/folder openers receive the original cache environment.
+Matrix Play now isolates its runtime cache under `$XDG_CACHE_HOME/matrix/runtime-v1/` (normally `~/.cache/matrix/runtime-v1/`) before creating WebKit. It does not delete shared caches, migrate game files, or replace the browser data/profile. Launched emulators, Steam, Flatpak, Wine, desktop launchers and browser/folder openers receive the original cache environment.
 
 Startup stages and WebKit failures are logged to `$XDG_DATA_HOME/matrix/startup.log` (normally `~/.local/share/matrix/startup.log`); each launch resets that bounded diagnostic file. A visible error/retry panel handles interface script failures. This cannot replace native diagnostics when the entire web process cannot load a page.
 
@@ -14,16 +22,16 @@ Regression checks now include an actual painted, non-WebDriver window, normal la
 
 ## Install the Linux test release
 
-Download **Matrix_0.5.1_amd64.deb** from the [v0.5.1 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.1), then run `sudo apt install ./Matrix_0.5.1_amd64.deb` in its download folder. Open **Matrix** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
+Download **Matrix-Play_0.5.2_amd64.deb** from the [v0.5.2 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.2), then run `sudo apt install ./Matrix-Play_0.5.2_amd64.deb` in its download folder. Open **Matrix Play** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
 
-![Real compiled Matrix window in an isolated test display](screenshots/matrix-linux-home.png)
+![Real compiled Matrix Play window in an isolated test display](screenshots/matrix-linux-home.png)
 
 ## What works in the current source
 
-- First-run directory creation for **14 systems**, under `$HOME/Games/Matrix/`, plus per-console folders named `* Games`.
+- First-run directory creation for **14 systems**, under `$HOME/Games/Matrix Play/`, plus per-console folders named `* Games`.
 - Independent game scanning for each console using recognized disc/ROM extensions and selected extracted layouts.
-- Select an emulator executable/AppImage stored in its console directory; when unambiguous Matrix detects it. It can also detect several conventional emulator binaries already installed on `PATH`. Flatpak emulator discovery is not implemented yet.
-- **Single-click launching:** in a native Matrix build, clicking a game card immediately invokes its assigned emulator, `steam -applaunch` or a registered Wine/desktop launcher. The small information button opens details without launching.
+- Select an emulator executable/AppImage stored in its console directory; when unambiguous Matrix Play detects it. It can also detect several conventional emulator binaries already installed on `PATH`. Flatpak emulator discovery is not implemented yet.
+- **Single-click launching:** in a native Matrix Play build, clicking a game card immediately invokes its assigned emulator, `steam -applaunch` or a registered Wine/desktop launcher. The small information button opens details without launching.
 - Steam game discovery using `appmanifest_*.acf` from standard Steam and Flatpak locations, plus Steam library folders declared in `libraryfolders.vdf`.
 - Windows game registration by referencing existing `.exe` (system Wine) and `.desktop` files; no game relocation.
 - **Local cover art:** searches for a game-name-matched `.png`, `.jpg` or `.webp` beside the ROM (or `cover.*` in a game folder), plus Steam's local library art cache. Supports manually chosen covers saved under `$XDG_DATA_HOME/matrix/covers/` (normally `~/.local/share/matrix/covers/`), with safe per-game hash-based filenames. Artwork is loaded only for on-screen cards.
@@ -56,7 +64,7 @@ To rerun UI tests, install Python Playwright and Chromium (`python3 -m pip insta
 ## Created folder structure
 
 ```text
-~/Games/Matrix/
+~/Games/Matrix Play/
 ├── Switch/
 │   └── Switch Games/
 ├── PS1/
@@ -90,7 +98,7 @@ To rerun UI tests, install Python Playwright and Chromium (`python3 -m pip insta
 Each nested `* Games` folder belongs **inside** its console's parent folder. For example:
 
 ```text
-~/Games/Matrix/PS1/
+~/Games/Matrix Play/PS1/
 ├── DuckStation.AppImage        # emulator, if using a local executable
 └── PS1 Games/
     ├── My Game.cue             # disc descriptor
@@ -100,9 +108,9 @@ Each nested `* Games` folder belongs **inside** its console's parent folder. For
 
 The native app creates these folders on first run using `bootstrap()`. Users can create them early with `./scripts/setup-folders.sh`, which only creates missing directories. It never downloads emulators, games, firmware or proprietary keys.
 
-Steam and Windows games are **not** copied into `~/Games/Matrix`. They stay at their current install locations.
+Steam and Windows games are **not** copied into `~/Games/Matrix Play`. They stay at their current install locations.
 
-## Build Matrix on Zorin OS 18 or Ubuntu 24.04
+## Build Matrix Play on Zorin OS 18 or Ubuntu 24.04
 
 Install Tauri's documented Linux dependencies:
 
@@ -118,7 +126,7 @@ Install Rust from <https://rustup.rs> and Node.js 20 or later. Then install the 
 npm ci
 ```
 
-Extract this archive. From the **Matrix-v0.5** folder:
+Extract this archive. From the **Matrix-Play-v0.5.2** folder:
 
 ```bash
 npm run tauri -- dev             # native development window
@@ -138,7 +146,7 @@ UI-only preview: open `web/index.html` in Chromium, Firefox or another browser. 
 5. Full gamepad navigation, controller setup, fullscreen experience, launch/exit monitoring and UI refinement.
 6. End-to-end test harness with disposable ISO/ROM fixtures (non-proprietary), execution status and proper error reporting before release.
 
-Matrix is not an emulator. Do not distribute copyrighted ROMs, BIOS, encryption keys or proprietary system firmware with it.
+Matrix Play is not an emulator. Do not distribute copyrighted ROMs, BIOS, encryption keys or proprietary system firmware with it.
 
 ## Native desktop test and GitHub builds
 
@@ -152,3 +160,7 @@ xvfb-run -a python3 tests/test_native.py src-tauri/target/release/matrix-fronten
 ```
 
 This test creates an isolated temporary library and harmless launcher fixtures; it does not test actual gameplay or use your installed libraries. The browser test's `matrix-native-*` screenshots show a simulated native bridge; `matrix-linux-home.png` shows the compiled desktop window.
+
+The cloud runner has no physical GPU: its Xvfb checks explicitly use software graphics and allow up to 15 seconds for the window to paint. Those CI settings are confined to the test steps. The application does not force those graphics flags on user machines. Ordinary local X11/Wayland startup checks are reported separately from cloud software-rendering checks. Failed paint checks retain a screenshot artifact for diagnosis.
+
+For v0.5.2, the native window/asset-loading check passed with an existing legacy library, the ordinary painted-window check passed with the new default library root, and APT's install simulation selected only replacement of `matrix` by `matrix-play`. These are migration/build checks; actual installation still requires the user's APT command. The supplied full logo's bytes were verified unchanged.

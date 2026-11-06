@@ -182,7 +182,14 @@ fn artwork_root() -> Result<PathBuf, String> {
 }
 
 fn matrix_root() -> Result<PathBuf, String> {
-    Ok(home()?.join("Games").join("Matrix"))
+    let games = home()?.join("Games");
+    let legacy = games.join("Matrix");
+    // Existing libraries stay in place across the product rename.
+    Ok(if legacy.is_dir() {
+        legacy
+    } else {
+        games.join("Matrix Play")
+    })
 }
 
 fn config_file() -> Result<PathBuf, String> {
@@ -1164,7 +1171,7 @@ fn launch_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
 static STARTUP_LOG: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 fn startup_log(message: &str) {
     use std::io::Write;
-    eprintln!("[Matrix] {message}");
+    eprintln!("[Matrix Play] {message}");
     if let Some(path) = STARTUP_LOG.get() {
         if fs::metadata(path).is_ok_and(|m| m.len() > 65536) {
             return;
@@ -1182,7 +1189,10 @@ fn initialize_startup_log() {
             let _ = STARTUP_LOG.set(path);
         }
     }
-    startup_log(&format!("Starting Matrix {}", env!("CARGO_PKG_VERSION")));
+    startup_log(&format!(
+        "Starting Matrix Play {}",
+        env!("CARGO_PKG_VERSION")
+    ));
     startup_log(&format!("Graphics: {:?}", graphics_diagnostics()));
 }
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -1260,7 +1270,7 @@ fn main() {
             open_cover_project,
         ])
         .run(tauri::generate_context!())
-        .expect("Error running Matrix frontend");
+        .expect("Error running Matrix Play frontend");
 }
 
 #[cfg(test)]

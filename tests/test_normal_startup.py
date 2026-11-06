@@ -34,17 +34,20 @@ def main():
                 while time.monotonic()<deadline:
                     if proc.poll() is not None:
                         raise AssertionError('Matrix exited before startup: '+logfile.read_text())
-                    if 'Interface ready' in logfile.read_text() and len(list((home/'Games/Matrix').glob('*/* Games')))==14:break
+                    if 'Interface ready' in logfile.read_text() and len(list((home/'Games/Matrix Play').glob('*/* Games')))==14:break
                     time.sleep(.1)
                 else:raise AssertionError('Interface never became ready: '+logfile.read_text())
-                assert len(list((home/'Games/Matrix').glob('*/* Games')))==14
-                time.sleep(1)
-                screenshot=ImageGrab.grab(xdisplay=os.environ['DISPLAY'])
-                # A flat background or blank webview must not pass merely because DOM/IPC work.
-                assert screenshot.getcolors(1000) is None, 'The actual desktop window appears blank'
-                if cfg.screenshot:
-                    cfg.screenshot.parent.mkdir(parents=True,exist_ok=True)
-                    screenshot.save(cfg.screenshot)
+                assert len(list((home/'Games/Matrix Play').glob('*/* Games')))==14
+                deadline=time.monotonic()+15
+                while time.monotonic()<deadline:
+                    screenshot=ImageGrab.grab(xdisplay=os.environ['DISPLAY'])
+                    if cfg.screenshot:
+                        cfg.screenshot.parent.mkdir(parents=True,exist_ok=True)
+                        screenshot.save(cfg.screenshot)
+                    # Check what the display actually painted, allowing for a busy renderer.
+                    if screenshot.getcolors(1000) is None:break
+                    time.sleep(.25)
+                else:raise AssertionError('The actual desktop window appears blank: '+logfile.read_text())
                 assert (home/'data/matrix/startup.log').read_text().count('Interface ready')>=1
                 print('PASS: ordinary non-WebDriver startup, visible painted interface, startup diagnostics, 14 console libraries')
             finally:

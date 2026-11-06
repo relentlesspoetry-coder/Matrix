@@ -136,6 +136,8 @@ def main():
             request('POST', f'/session/{session}/timeouts', {'script':60000})
             wait_for(lambda: js('return document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelectorAll(".console-card").length === 14'))
             assert len([p for p in library.iterdir() if p.is_dir()]) == 14
+            assert js('return document.title').startswith('Matrix Play')
+            wait_for(lambda: js('return document.querySelector(".brand-logo")?.naturalWidth > 0'))
             diagnostics=invoke('graphics_diagnostics')
             assert diagnostics['XDG_CACHE_HOME'] == str(parent_cache/'matrix/runtime-v1')
             assert len(invoke('scan_console', {'id':'ps1'})) == 1
