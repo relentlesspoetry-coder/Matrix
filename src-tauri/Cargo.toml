@@ -1,6 +1,6 @@
 [package]
 name = "matrix-frontend"
-version = "0.5.3"
+version = "0.5.4"
 edition = "2021"
 authors = ["relentlesspoetry-coder"]
 build = "build.rs"
