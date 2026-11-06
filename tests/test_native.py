@@ -287,6 +287,7 @@ def main():
             wait_for(log.exists)
             assert log.read_text().splitlines() == ['launch', str(desktop)]
             wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
+            screenshot('matrix-linux-windows.png')
             # A native Steam binary is present, but this title belongs to Flatpak.
             flat_steam = home/'.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps'
             flat_steam.mkdir(parents=True)
