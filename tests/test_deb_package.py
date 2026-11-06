@@ -7,6 +7,7 @@ import argparse
 import io
 import json
 from pathlib import Path
+import re
 import struct
 import subprocess
 import tarfile
@@ -36,6 +37,15 @@ def verify_deb(package, version):
         ).strip()
         if actual != expected:
             raise ValueError(f'{field}: expected {expected!r}, got {actual!r}')
+    dependencies = subprocess.check_output(
+        ['dpkg-deb', '--field', str(package), 'Depends'], text=True
+    ).strip()
+    # A recommendation, name substring or optional alternative does not ensure
+    # /usr/bin/pkexec is installed for the secure in-app system upgrade path.
+    if not any(re.fullmatch(r'pkexec(?::(?:any|native|amd64))?(?:\s*\([^)]+\))?',
+                            dependency.strip())
+               for dependency in dependencies.split(',')):
+        raise ValueError('Depends: the secure update installer requires pkexec')
     # Use a temporary file rather than buffering an entire installer in memory.
     # Nothing is extracted; tar metadata and just the ELF headers are read.
     with tempfile.TemporaryFile() as payload:
@@ -81,7 +91,7 @@ def synthetic_elf(machine=62, elf_class=2):
 
 def fixture_deb(path, *, package=PACKAGE, version='1.2.3', architecture='amd64',
                 helper=True, uid=0, gid=0, mode=0o755, kind=tarfile.REGTYPE,
-                helper_elf=None, frontend_elf=None, duplicate=False):
+                helper_elf=None, frontend_elf=None, duplicate=False, depends='pkexec'):
     """Write a minimal ar/DEB with controlled tar metadata, without root access."""
     def tar_bytes(entries):
         output = io.BytesIO()
@@ -91,7 +101,7 @@ def fixture_deb(path, *, package=PACKAGE, version='1.2.3', architecture='amd64',
                 archive.addfile(entry, io.BytesIO(data) if entry.isfile() else None)
         return output.getvalue()
 
-    control = f'Package: {package}\nVersion: {version}\nArchitecture: {architecture}\nMaintainer: Fixture <fixture@example.invalid>\nDescription: Archive test only\n'.encode()
+    control = f'Package: {package}\nVersion: {version}\nArchitecture: {architecture}\nDepends: {depends}\nMaintainer: Fixture <fixture@example.invalid>\nDescription: Archive test only\n'.encode()
     entries = [(tarfile.TarInfo('./' + FRONTEND), frontend_elf if frontend_elf is not None else synthetic_elf())]
     if helper:
         entry = tarfile.TarInfo('./' + HELPER)
@@ -115,11 +125,22 @@ class PackageTests(unittest.TestCase):
     def test_valid_package(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'valid.deb'
-            fixture_deb(path)
-            verify_deb(path, '1.2.3')
+            for depends in ['pkexec', 'libgtk-3-0, pkexec (>= 122), libwebkit2gtk-4.1-0',
+                            'pkexec:amd64']:
+                with self.subTest(depends=depends):
+                    fixture_deb(path, depends=depends)
+                    verify_deb(path, '1.2.3')
+
+    def test_bundle_declares_installer_dependency(self):
+        config = json.loads((ROOT / 'src-tauri/tauri.conf.json').read_text())
+        self.assertIn('pkexec', config['bundle']['linux']['deb']['depends'])
 
     def test_invalid_packages(self):
         cases = [
+            ({'depends': ''}, 'requires pkexec'),
+            ({'depends': 'libgtk-3-0, libwebkit2gtk-4.1-0'}, 'requires pkexec'),
+            ({'depends': 'not-pkexec'}, 'requires pkexec'),
+            ({'depends': 'pkexec | other-package'}, 'requires pkexec'),
             ({'helper': False}, 'missing'),
             ({'uid': 1000}, 'root:root'),
             ({'gid': 1000}, 'root:root'),
@@ -155,6 +176,6 @@ if __name__ == '__main__':
         version = json.loads((ROOT / 'package.json').read_text())['version']
         for package in args.packages:
             verify_deb(package, version)
-            print(f'Validated {package.name}: {PACKAGE} {version} amd64 and root-owned ELF update helper')
+            print(f'Validated {package.name}: {PACKAGE} {version} amd64, pkexec dependency and root-owned ELF update helper')
     else:
         unittest.main(argv=[__file__])

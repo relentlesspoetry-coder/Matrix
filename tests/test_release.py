@@ -4,10 +4,34 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'scripts'))
+from release_notes import release_notes
+
+# Only a complete version heading identifies a release. Digits, prerelease and
+# build suffixes must never turn another version's notes into a match.
+for version in ['0.6.0', '0.6.1']:
+    for collision in [version+'0', version+'-rc.1', version+'+build.1']:
+        for changelog in [f'## {collision}\nWrong notes.\n',
+                          f'Reference to ## {version}\nWrong notes.\n',
+                          f'### {version}\nWrong notes.\n']:
+            try:
+                release_notes(changelog, version)
+                raise AssertionError('A version prefix/reference is not a release heading')
+            except ValueError: pass
+    for changelog in [f'## {version}\n\n## Older\nOld notes.',
+                      f'## {version}\nFirst notes.\n## {version}\nDuplicate notes.']:
+        try:
+            release_notes(changelog, version)
+            raise AssertionError('Empty and duplicate version sections must be rejected')
+        except ValueError: pass
+assert release_notes('## 0.6.10\nWrong.\n## 0.6.1-rc.1\nWrong.\n'
+                     '## 0.6.1 \t\nRight.\n### Details\nKeep details.\n'
+                     '## 0.6.0\nOlder.', '0.6.1') == 'Right.\n### Details\nKeep details.'
 spec=importlib.util.spec_from_file_location('release_builder',ROOT/'scripts/prepare-release.py')
 builder=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
@@ -24,7 +48,8 @@ with tempfile.TemporaryDirectory(prefix='matrix-release-test-') as tmp:
     root=Path(tmp)/'repo';root.mkdir();builder.ROOT=root
     (root/'package.json').write_text('{"version":"0.6.0"}')
     (root/'src-tauri').mkdir();(root/'src-tauri/tauri.conf.json').write_text('{"version":"0.6.0"}')
-    (root/'CHANGELOG.md').write_text('# Changes\n\n## 0.6.0\n\nTest release notes.\n\n## 0.5.3\n\nOlder notes.\n')
+    changelog = '# Changes\n\n## 0.6.00\nWrong prefix notes.\n\n## 0.6.0-rc.1\nWrong prerelease notes.\n\n## 0.6.0\n\nTest release notes.\n\n## 0.5.3\n\nOlder notes.\n'
+    (root/'CHANGELOG.md').write_text(changelog)
     (root/'update-core').mkdir()
     key=Path(tmp)/'key.pem';pub=Path(tmp)/'public.pem'
     run('openssl','genpkey','-algorithm','ED25519','-out',str(key))
@@ -36,6 +61,20 @@ with tempfile.TemporaryDirectory(prefix='matrix-release-test-') as tmp:
     for kind,ext,data in [('deb','deb',b'!<arch>\nfixture'),('appimage','AppImage',b'\x7fELF0000AI\x02fixture')]:
         folder=root/f'src-tauri/target/release/bundle/{kind}';folder.mkdir(parents=True)
         (folder/f'Matrix Play_0.6.0_amd64.{ext}').write_bytes(data)
+    for index, wrong_notes in enumerate([
+            '## 0.6.00\nWrong patch.\n', '## 0.6.0-rc.1\nWrong prerelease.\n',
+            '## 0.6.0+build.1\nWrong build.\n', 'Reference to ## 0.6.0\nNot a heading.\n',
+            '## 0.6.0\n\n## 0.5.3\nOld notes.\n',
+            '## 0.6.0\nFirst.\n## 0.6.0\nDuplicate.\n']):
+        (root/'CHANGELOG.md').write_text(wrong_notes)
+        rejected_out = Path(tmp)/f'rejected-notes-{index}'
+        try:
+            builder.prepare(rejected_out, key)
+            raise AssertionError('Invalid release notes must be blocked before signing')
+        except ValueError as error:
+            assert 'CHANGELOG.md' in str(error)
+        assert not rejected_out.exists(), 'Reject before copying or signing release artifacts'
+    (root/'CHANGELOG.md').write_text(changelog)
     out=Path(tmp)/'output';builder.prepare(out,key)
     manifest=json.loads((out/'update-manifest.json').read_text())
     assert manifest['notes']=='Test release notes.'
@@ -105,6 +144,27 @@ with tempfile.TemporaryDirectory(prefix='matrix-release-test-') as tmp:
         assert run('git','rev-parse','HEAD',cwd=root) == before
         assert run('git','status','--porcelain',cwd=root) == b''
         assert run('git','for-each-ref',cwd=remote) == b''
+    # Exercise the actual bump gate from a clean checkout, not just its parser.
+    valid_notes = (root/'CHANGELOG.md').read_text()
+    for wrong_notes in ['## 0.6.10\nWrong patch.\n',
+                        '## 0.6.1-rc.10\nWrong prerelease.\n',
+                        '## 0.6.1+build.1\nWrong build.\n']:
+        (root/'CHANGELOG.md').write_text(wrong_notes)
+        run('git','add','CHANGELOG.md',cwd=root)
+        run('git','commit','-qm','Invalid release note fixture',cwd=root)
+        before = run('git','rev-parse','HEAD',cwd=root)
+        try:
+            helper.bump('0.6.1')
+            raise AssertionError('A prefix collision must not authorize a release')
+        except SystemExit as error:
+            assert 'CHANGELOG.md' in str(error)
+        assert json.loads((root/'package.json').read_text())['version'] == '0.6.0'
+        assert run('git','rev-parse','HEAD',cwd=root) == before
+        assert run('git','status','--porcelain',cwd=root) == b''
+        assert run('git','for-each-ref',cwd=remote) == b''
+    (root/'CHANGELOG.md').write_text(valid_notes)
+    run('git','add','CHANGELOG.md',cwd=root)
+    run('git','commit','-qm','Restore exact release notes',cwd=root)
     # A previously published raw-prerelease DEB also cannot safely promote to
     # the same core version, even though the generic SemVer comparator allows it.
     (root/'package.json').write_text('{"version":"0.6.1-rc.10"}')

@@ -11,7 +11,7 @@ const state = {
   steam: [], windows: [],
   discovery:{candidates:[],linked:[],ambiguous:[],notices:[]}, launches:{},launchBusy:{},launchGeneration:{},
   missingArt: new Set(), pendingArt: new Map(),
-  artwork: {enabled:true, style:"default"}, coverStatus: new Map(), coverGeneration: 0, artRevision: 0,
+  artwork: {enabled:true, style:"default"}, artworkSaving: false, coverStatus: new Map(), coverGeneration: 0, artRevision: 0,
 };
 const $ = selector => document.querySelector(selector);
 const nativeInvoke = (name, args = {}) => window.__TAURI__.core.invoke(name, args);
@@ -120,6 +120,19 @@ function savePrefs() {
     }));
   } catch { toast('The browser could not persist these UI preview settings.'); }
 }
+function evictCover(key) {
+  const uri = state.art.get(key);
+  state.art.delete(key);
+  if (uri?.startsWith('blob:')) URL.revokeObjectURL(uri);
+}
+function cacheCover(key, uri) {
+  if (state.art.get(key) === uri) return;
+  evictCover(key);
+  state.art.set(key, uri);
+}
+function clearCoverCache() {
+  for (const key of state.art.keys()) evictCover(key);
+}
 let artDb = null;
 async function initializeArt() {
   // Native Matrix Play artwork lives in XDG data; browser preview uses IndexedDB.
@@ -137,7 +150,7 @@ async function initializeArt() {
       req.onerror = () => reject(req.error);
     });
     for (const item of all) {
-      if (item?.blob instanceof Blob) state.art.set(item.key, URL.createObjectURL(item.blob));
+      if (item?.blob instanceof Blob) cacheCover(item.key, URL.createObjectURL(item.blob));
     }
     render();
   } catch { artDb = null; /* In-memory artwork still works. */ }
@@ -227,7 +240,7 @@ async function requestNativeCover(element) {
     const uri = await nativeInvoke('get_cover', { kind, uid });
     if (revision !== state.artRevision) return;
     if (uri) {
-      state.art.set(key, uri);
+      cacheCover(key, uri);
       updateVisibleCover(key, uri);
     } else state.missingArt.add(key);
   } catch {
@@ -341,8 +354,8 @@ function renderSettings() {
     ${state.native ? discoverySummary() : ''}
     <section class="artwork-settings"><h2>Cover artwork</h2>
     <p>PS1 and PS2 covers from xlenore, matched by serial within each console. Unknown or conflicting serials need your review. Local covers take priority.</p>
-    <label><input type="checkbox" id="auto-covers" ${state.artwork.enabled ? 'checked' : ''} ${state.native ? '' : 'disabled'}> Download missing PS1/PS2 covers after library scans</label>
-    <label for="cover-style">Cover style</label><select id="cover-style" ${state.native ? '' : 'disabled'}><option value="default" ${state.artwork.style==='default'?'selected':''}>Default</option><option value="3d" ${state.artwork.style==='3d'?'selected':''}>3D</option></select>
+    <label><input type="checkbox" id="auto-covers" ${state.artwork.enabled ? 'checked' : ''} ${state.native && !state.artworkSaving ? '' : 'disabled'}> Download missing PS1/PS2 covers after library scans</label>
+    <label for="cover-style">Cover style</label><select id="cover-style" ${state.native && !state.artworkSaving ? '' : 'disabled'}><option value="default" ${state.artwork.style==='default'?'selected':''}>Default</option><option value="3d" ${state.artwork.style==='3d'?'selected':''}>3D</option></select>
     <p>Downloaded covers stay on this computer for offline use. Requests send the serial and style to GitHub; your game files and full paths are not uploaded.</p>
     <p>TheCoverProject: manual only. Automated access permission has not been established. Download in your browser, then use Choose cover in game details.</p>
     <button type="button" class="button button-ghost" data-action="cover-project">Open TheCoverProject</button><p id="cover-scan-status" role="status"></p></section>
@@ -381,11 +394,13 @@ function renderExternal(page) {
       <div class="stats"><div class="stat"><strong>${externalList(page).length}</strong><span>Games</span></div></div></div>
     <div class="library-tools"><label class="search">${glyph('search')}<input type="search" id="external-search" placeholder="Search ${title}" value="${escapeHtml(state.query)}"></label>
     ${!steam ? `<button type="button" class="button button-primary" data-action="add-windows">${glyph('plus')} Add Windows game</button>` : ''}</div>
+    <div id="launch-status"></div>
     ${games.length ? `<div class="game-grid">${games.map((game,index) => {
       const cover = gameCover({ id: page, abbrev: steam ? 'STEAM' : 'WINDOWS' }, game, index);
       return `<div class="game-item"><button class="game-card" type="button" data-action="quick-external" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="${state.native ? 'Launch' : 'View'} ${escapeHtml(game.title)}">${cover}<span class="game-title">${escapeHtml(game.title)}</span><span class="game-meta">${steam ? 'Steam · App ' + escapeHtml(game.appId || game.uid) : 'Windows · ' + escapeHtml(game.runner || 'launcher')}</span></button><button class="game-info" type="button" data-action="external-game" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="Details for ${escapeHtml(game.title)}" title="Game details">${glyph('info')}</button></div>`;
     }).join('')}</div>` : `<div class="empty external-empty"><strong>${state.query ? 'No matching games' : `No ${title.toLowerCase()} detected`}</strong><p>${state.query ? 'Try a different search term.' : steam ? 'Install and sign into Steam, then click Refresh.' : 'Choose Add Windows game to register an existing .exe or .desktop launcher.'}</p></div>`}
     <div class="notice">${glyph('info')}<span>${state.native ? steam ? 'Steam titles are discovered from appmanifest files and launched through Steam.' : 'Use existing Wine installations or desktop launchers; advanced per-game Proton/prefix handling will be added later.' : 'Browser preview only. Native discovery and launching are available in the Matrix Play Linux build.'}</span></div>`;
+  renderLaunchStatus();
   hydrateNativeCovers();
 }
 function openExternalGame(kind, uid) {
@@ -414,51 +429,76 @@ function openAddWindows() {
 function dismissOverlay() {
   if (state.overlay === null) return;
   state.overlay = null;
+  state.selectedGame = null;
+  const shell=$('.app-shell');if (shell) shell.inert=false;
   $('#overlay-root').innerHTML = '';
   if (state.lastFocus?.isConnected) state.lastFocus.focus();
   state.lastFocus = null;
 }
+function activeLaunchId() { return state.page === 'console' ? state.consoleId : ['steam','windows'].includes(state.page) ? state.page : null; }
 function renderLaunchStatus() {
   const target=$('#launch-status');if (!target) return;
-  const id=state.consoleId, info=state.launches[id];
-  target.innerHTML=info ? `<div class="launch-notice ${['error','needs-setup'].includes(info.phase)?'launch-error':''}" role="status"><p>${escapeHtml(info.message)}</p><div class="launch-actions"><button type="button" class="button button-ghost" data-action="open-emulator" data-id="${id}">Open emulator</button>${info.log || info.logPath ? `<button type="button" class="button button-ghost" data-action="launch-details" data-id="${id}">Launch details</button>`:''}</div></div>` : '';
+  const id=activeLaunchId(), info=state.launches[id], emulator=!!byId[id];
+  target.innerHTML=info ? `<div class="launch-notice ${['error','needs-setup'].includes(info.phase)?'launch-error':''}" role="status"><p>${escapeHtml(info.message)}</p><div class="launch-actions">${emulator ? `<button type="button" class="button button-ghost" data-action="open-emulator" data-id="${id}">Open emulator</button>`:''}${info.log || info.logPath ? `<button type="button" class="button button-ghost" data-action="launch-details" data-id="${id}">Launch details</button>`:''}</div></div>` : '';
 }
+let launchDetailsRequest = 0;
 async function showLaunchDetails(id) {
-  try {const latest=state.native ? await nativeInvoke('get_launch_status',{id}) : null;if (latest) state.launches[id]=latest;} catch (_) { /* Retain the last available status. */ }
   const info=state.launches[id];if (!info) return;
+  const request=++launchDetailsRequest, generation=state.launchGeneration[id];
+  const emulator=!!byId[id], name=byId[id]?.name || (id==='steam' ? 'Steam Games' : 'Windows Games');
   state.lastFocus=document.activeElement;state.overlay='launch-details';
-  $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog launch-dialog" role="dialog" aria-modal="true" aria-labelledby="launch-title"><button class="close" type="button" data-action="close" aria-label="Close launch details">${glyph('close')}</button><div class="eyebrow">${escapeHtml(byId[id].name)}</div><h2 id="launch-title">Emulator launch</h2><p class="muted">${escapeHtml(info.message)}</p><pre class="launch-output">${escapeHtml(info.log || 'No output was captured.')}</pre>${info.logPath ? `<p class="muted">Saved log: ${escapeHtml(info.logPath)}</p>`:''}<div class="dialog-actions"><button type="button" class="button button-primary" data-action="open-emulator" data-id="${id}">Open emulator</button></div></section></div>`;
-  $('#launch-title').closest('.dialog').querySelector('button').focus();
+  $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog launch-dialog" role="dialog" aria-modal="true" aria-labelledby="launch-title"><button class="close" type="button" data-action="close" aria-label="Close launch details">${glyph('close')}</button><div class="eyebrow">${escapeHtml(name)}</div><h2 id="launch-title">${emulator ? 'Emulator' : 'Game'} launch</h2><p class="muted" id="launch-message">${escapeHtml(info.message)}</p><pre class="launch-output">${escapeHtml(info.log || 'No output was captured.')}</pre><p class="muted" id="launch-log-path" ${info.logPath ? '' : 'hidden'}>${info.logPath ? `Saved log: ${escapeHtml(info.logPath)}` : ''}</p>${emulator ? `<div class="dialog-actions"><button type="button" class="button button-primary" data-action="open-emulator" data-id="${id}">Open emulator</button></div>`:''}</section></div>`;
+  const dialog=$('.launch-dialog');
+  dialog.querySelector('button').focus();
+  try {
+    const latest=state.native ? await nativeInvoke('get_launch_status',{id}) : null;
+    if (!latest || request!==launchDetailsRequest || state.overlay!=='launch-details' || dialog!==$('.launch-dialog') || generation!==state.launchGeneration[id]) return;
+    state.launches[id]=latest;
+    // Refresh text without replacing focused controls or a newer dialog.
+    $('#launch-message').textContent=latest.message || '';
+    $('.launch-output').textContent=latest.log || 'No output was captured.';
+    $('#launch-log-path').textContent=latest.logPath ? `Saved log: ${latest.logPath}` : '';
+    $('#launch-log-path').hidden=!latest.logPath;
+  } catch (_) { /* Retain the last available status. */ }
 }
-async function launchConsole(id,uid=null) {
-  if (byId[id]?.libraryOnly) {if (uid) openGame(id,uid);else toast(byId[id].supportNote);return;}
-  if (!state.native) {toast('Open the Linux app to launch an emulator.');return;}
+async function launchTracked(id,command,args) {
   if (state.launchBusy[id]) return;
   state.launchBusy[id]=true;
   const generation=(state.launchGeneration[id] || 0)+1;state.launchGeneration[id]=generation;
+  const overlay=state.overlay, dialog=$('#overlay-root').firstElementChild;
   try {
-    const info=await nativeInvoke(uid ? 'launch_console_game':'open_emulator',uid ? {id,uid}:{id});
-    state.launches[id]=info || {phase:'started',message:'Launch request sent to emulator.'};
-    if (state.overlay==='game' || state.overlay==='launch-details') dismissOverlay();
-    if (state.consoleId===id) renderLaunchStatus();
+    const info=await nativeInvoke(command,args);
+    state.launches[id]=info || {phase:'started',message:'Game launch requested.'};
+    if (['game','external','launch-details'].includes(overlay) && state.overlay===overlay && $('#overlay-root').firstElementChild===dialog) dismissOverlay();
+    if (activeLaunchId()===id) renderLaunchStatus();
     toast(state.launches[id].message);
     let attempts=0;
     const poll=async()=>{
-      if (state.launchGeneration[id]!==generation || ++attempts>30) return;
+      if (state.launchGeneration[id]!==generation) return;
       try {
         const latest=await nativeInvoke('get_launch_status',{id});
         if (!latest || state.launchGeneration[id]!==generation) return;
         const changed=state.launches[id]?.phase!==latest.phase;state.launches[id]=latest;
-        if (changed && state.consoleId===id) renderLaunchStatus();
+        if (changed && activeLaunchId()===id) renderLaunchStatus();
         if (['error','exited'].includes(latest.phase)) {if (latest.phase==='error') toast(latest.message);return;}
-        setTimeout(poll,700);
+        // Continue watching later failures too, at a lower cadence after startup.
+        setTimeout(poll,++attempts<30 ? 700 : 5000);
       } catch (_) { /* Launch details can still be requested manually. */ }
     };
     if (!['error','exited'].includes(state.launches[id].phase)) setTimeout(poll,700);
   } catch(error) {
-    state.launches[id]={phase:'needs-setup',message:String(error)};
-    if (state.consoleId===id) renderLaunchStatus();toast(String(error));
+    state.launches[id]={phase:byId[id] ? 'needs-setup' : 'error',message:String(error)};
+    if (activeLaunchId()===id) renderLaunchStatus();toast(String(error));
   } finally {state.launchBusy[id]=false;}
+}
+async function launchConsole(id,uid=null) {
+  if (byId[id]?.libraryOnly) {if (uid) openGame(id,uid);else toast(byId[id].supportNote);return;}
+  if (!state.native) {toast('Open the Linux app to launch an emulator.');return;}
+  await launchTracked(id,uid ? 'launch_console_game':'open_emulator',uid ? {id,uid}:{id});
+}
+async function launchExternal(kind,uid) {
+  if (!state.native) {toast('Browser preview cannot launch games.');return;}
+  await launchTracked(kind,kind==='steam' ? 'launch_steam_game' : 'launch_windows_game',{uid});
 }
 function discoverySummary() {
   const report=state.discovery, total=report.candidates.length;
@@ -497,19 +537,22 @@ function updateLauncherFields() {
   $('#emulator-file-hint').textContent=launcher==='appimage' ? 'Choose your downloaded .AppImage wherever you keep it. Matrix Play leaves it in place.' : 'Choose an installed emulator file, for example one in /usr/bin.';
   if (launcher==='flatpak') void loadFlatpakChoices();
 }
+let flatpakRequest = 0;
 async function loadFlatpakChoices() {
   const select=$('#flatpak-app'); if (!select) return;
   if (!state.native) { $('#flatpak-help').textContent='Installed apps are available in the Linux application.';return; }
+  const request=++flatpakRequest;
+  const current=()=>request===flatpakRequest && select===$('#flatpak-app');
   const previous=select.value || select.dataset.saved || '';
   select.disabled=true;$('#flatpak-help').textContent='Reading installed Flatpak apps…';
   try {
     const apps=await nativeInvoke('list_flatpaks');
-    if (select!==$('#flatpak-app')) return;
+    if (!current()) return;
     select.innerHTML='<option value="">Choose an installed app…</option>'+apps.map(app=>`<option value="${escapeHtml(app.appId+'|'+app.installation)}" data-name="${escapeHtml(app.name)}">${escapeHtml(app.name)} — ${escapeHtml(app.appId)} (${escapeHtml(app.installation)})</option>`).join('');
     select.value=previous;
     $('#flatpak-help').textContent=apps.length ? 'Choose your installed emulator. Matrix Play gives it read access to this console’s Games folder for each launch.' : 'No Flatpak apps found. Install an emulator through Software, then click Reload apps.';
-  } catch(error) { $('#flatpak-help').textContent=String(error); }
-  finally { select.disabled=false; }
+  } catch(error) { if (current()) $('#flatpak-help').textContent=String(error); }
+  finally { if (current()) select.disabled=false; }
 }
 function openConfigure(id) {
   const consoleInfo=byId[id];if (!consoleInfo) return;
@@ -578,11 +621,11 @@ function importFolder(files) {
   toast(`Previewed ${imported.length} ${byId[id].name} filename${imported.length === 1 ? '' : 's'}. No game files were copied or uploaded.`);
 }
 function refreshCoverUI(selected) {
-  if (state.page === 'console') { renderGameResults(); openGame(selected.id, selected.uid); }
-  else if (state.page === 'steam' || state.page === 'windows') {
-    renderExternal(state.page);
-    openExternalGame(state.page, selected.uid);
-  }
+  // Update matching images in place. A pending import must never reopen details
+  // or replace a different library/dialog after the user has navigated away.
+  const key = artKey(selected.id, selected.uid);
+  const uri = state.art.get(key);
+  if (uri) updateVisibleCover(key, uri);
 }
 
 async function loadCover(file) {
@@ -598,19 +641,14 @@ async function loadCover(file) {
       const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
       await nativeInvoke('save_cover', { kind: selected.id, uid: selected.uid, bytes });
       state.artRevision++; // In-flight native reads must not replace this local cover.
-      const previous = state.art.get(key);
-      if (previous?.startsWith('blob:')) URL.revokeObjectURL(previous);
-      state.art.set(key, URL.createObjectURL(file));
+      cacheCover(key, URL.createObjectURL(file));
       state.missingArt.delete(key);
       refreshCoverUI(selected);
       toast('Cover saved to Matrix Play’s Linux artwork folder.');
     } catch (error) { toast(`Could not save cover: ${error}`); }
     return;
   }
-  const old = state.art.get(key);
-  const next = URL.createObjectURL(file);
-  state.art.set(key, next);
-  if (old?.startsWith('blob:')) URL.revokeObjectURL(old);
+  cacheCover(key, URL.createObjectURL(file));
   const saved = await storeArt(key,file);
   refreshCoverUI(selected);
   toast(saved ? 'Custom cover saved to this browser.' : 'Custom cover updated for this session; browser storage was unavailable.');
@@ -633,7 +671,7 @@ async function fetchArtwork(kind,uid,serial=null,generation=state.coverGeneratio
   state.coverStatus.set(key,outcome);
   updateCoverStatus(kind,uid);
   if (['downloaded','cached','local'].includes(outcome?.status)) {
-    state.artRevision++;state.missingArt.delete(key); state.art.delete(key);
+    state.artRevision++;state.missingArt.delete(key); evictCover(key);
     // Load only currently visible cards; other games use the persistent native cache later.
     document.querySelectorAll('.game-cover[data-art-key]').forEach(node => {
       if (node.dataset.artKey === key) void requestNativeCover(node);
@@ -659,17 +697,29 @@ async function scanArtwork() {
   }
 }
 async function saveArtworkOptions() {
-  if (!state.native) return;
-  ++state.coverGeneration;
+  if (!state.native || state.artworkSaving) return;
   const controls=[$('#auto-covers'),$('#cover-style')];
+  if (controls.some(node=>!node)) return;
+  ++state.coverGeneration;
+  state.artworkSaving=true;
   const enabled=controls[0].checked, style=controls[1].value;
   controls.forEach(node => node.disabled=true);
   try {
     state.artwork=await nativeInvoke('save_artwork_settings',{enabled,style});
-    state.artRevision++;state.art.clear();state.missingArt.clear();state.coverStatus.clear();
+    state.artRevision++;clearCoverCache();state.missingArt.clear();state.coverStatus.clear();
+    hydrateNativeCovers();
     toast('Artwork preferences saved.');void scanArtwork();
-  } catch(error) {toast(`Could not save artwork preferences: ${error}`);renderSettings();}
-  finally {controls.forEach(node=>node.disabled=false);}
+  } catch(error) {toast(`Could not save artwork preferences: ${error}`);}
+  finally {
+    state.artworkSaving=false;
+    // Controls may belong to an old Settings view. Never replace the current
+    // page, and restore whichever Settings controls are actually visible now.
+    if (state.page==='settings') {
+      const enabledControl=$('#auto-covers'), styleControl=$('#cover-style');
+      if (enabledControl) {enabledControl.checked=state.artwork.enabled;enabledControl.disabled=false;}
+      if (styleControl) {styleControl.value=state.artwork.style;styleControl.disabled=false;}
+    }
+  }
 }
 async function refreshNative() {
   if (!state.native) { toast('Preview mode — launch the native Matrix Play app to scan your filesystem.'); return; }
@@ -682,7 +732,7 @@ async function refreshNative() {
     state.steam = results[consoles.length];
     state.windows = results[consoles.length+1];
     state.missingArt.clear(); // Rescan can introduce matching .jpg files next to ROMs.
-    state.artRevision++;state.art.clear();
+    state.artRevision++;clearCoverCache();
     render();
     void scanArtwork();
   } catch (error) { toast(`Library scan failed: ${error}`); }
@@ -705,15 +755,49 @@ function renderUpdater() {
   if (state.overlay !== 'updates') return;
   const info = state.update || {phase:'checking',message:'Checking GitHub…'};
   const busy = ['checking','downloading','installing'].includes(info.phase);
-  const action = {available:['download-update','Download update'], downloaded:['install-update',info.installMode === 'download' ? 'Open installer' : 'Install update'],installed:['restart-update','Restart Matrix Play']}[info.phase];
+  const action = {available:['download-update','Download update'], downloaded:['install-update',info.installMode === 'download' ? 'Open installer' : 'Install update'],installed:['restart-update','Restart Matrix Play'],downloading:['cancel-update','Cancel download']}[info.phase];
   const percent = info.total ? Math.min(100,Math.round(info.received / info.total * 100)) : 0;
   const hint = info.installMode === 'system' ? 'Installation uses your Linux system installer and may ask for your password.' : info.installMode === 'appimage' ? 'Your AppImage will be replaced in its current folder. A .previous backup is kept.' : 'The downloaded Linux installer opens in your system installer.';
-  $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title"><button type="button" class="close" data-action="close" aria-label="Close updates">${glyph('close')}</button><div class="eyebrow">MATRIX PLAY</div><h2 id="update-title">App updates</h2><p class="muted">Installed <strong>${escapeHtml(info.currentVersion || '—')}</strong>${info.latestVersion ? ` · Latest <strong>${escapeHtml(info.latestVersion)}</strong>` : ''}</p><p class="update-message" role="status">${escapeHtml(info.message)}</p>${info.phase === 'downloading' ? `<progress max="100" value="${percent}" aria-label="Update download"></progress><p class="muted">${percent}% · ${(info.received/1048576).toFixed(1)} / ${(info.total/1048576).toFixed(1)} MB</p>` : ''}${info.notes ? `<div class="update-notes">${escapeHtml(info.notes)}</div>` : ''}<p class="muted">${escapeHtml(hint)} Downloads are checked against a signed release before installation.</p><div class="dialog-actions"><button type="button" class="button button-ghost" data-action="update-releases">GitHub releases</button>${info.phase === 'downloading' ? '<button type="button" class="button button-ghost" data-action="cancel-update">Cancel download</button>' : action ? `<button type="button" class="button button-primary" data-action="${action[0]}">${action[1]}</button>` : `<button type="button" class="button button-primary" data-action="check-updates" ${busy ? 'disabled' : ''}>${busy ? 'Please wait…' : 'Check again'}</button>`}</div></section></div>`;
+  // Keep interactive elements alive across polling ticks so keyboard focus,
+  // screen-reader position and a pointer press survive progress updates.
+  if (!$('.update-dialog')) {
+    $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title"><button type="button" class="close" data-action="close" aria-label="Close updates">${glyph('close')}</button><div class="eyebrow">MATRIX PLAY</div><h2 id="update-title">App updates</h2><p class="muted">Installed <strong id="update-current"></strong><span id="update-latest-label"> · Latest <strong id="update-latest"></strong></span></p><p class="update-message" role="status"></p><div id="update-progress"><progress max="100" value="0" aria-label="Update download"></progress><p class="muted" id="update-progress-text"></p></div><div class="update-notes"></div><p class="muted" id="update-hint"></p><div class="dialog-actions"><button type="button" class="button button-ghost" data-action="update-releases">GitHub releases</button><button type="button" class="button button-primary" id="update-action"></button></div></section></div>`;
+  }
+  const shell=$('.app-shell');if (shell) shell.inert=true;
+  $('#update-current').textContent=info.currentVersion || '—';
+  $('#update-latest').textContent=info.latestVersion || '';
+  $('#update-latest-label').hidden=!info.latestVersion;
+  $('.update-message').textContent=info.message || '';
+  $('#update-progress').hidden=info.phase!=='downloading';
+  $('.update-dialog progress').value=percent;
+  $('#update-progress-text').textContent=`${percent}% · ${((info.received || 0)/1048576).toFixed(1)} / ${((info.total || 0)/1048576).toFixed(1)} MB`;
+  $('.update-notes').textContent=info.notes || '';
+  $('.update-notes').hidden=!info.notes;
+  $('#update-hint').textContent=`${hint} Downloads are checked against a signed release before installation.`;
+  const nextAction=action?.[0] || 'check-updates';
+  let button=$('#update-action');
+  if (button.dataset.action && button.dataset.action!==nextAction) {
+    // A press on Cancel must not become Install if the download completes
+    // before pointer/key release. Preserve nodes only for the same action.
+    const focused=document.activeElement===button;
+    const replacement=button.cloneNode(false);
+    button.replaceWith(replacement);button=replacement;
+    if (focused) $('.update-dialog .close').focus();
+  }
+  button.dataset.action=nextAction;
+  button.textContent=action?.[1] || (busy ? 'Please wait…' : 'Check again');
+  button.disabled=!action && busy;
+  button.classList.toggle('button-ghost',info.phase==='downloading');
+  button.classList.toggle('button-primary',info.phase!=='downloading');
+  if (button.disabled && document.activeElement===button) $('.update-dialog .close').focus();
 }
+let updateOperation = 0;
+let updaterOpening = 0;
 async function runUpdate(command) {
   if (!state.native) { toast('App updates are available in the Linux application.'); return; }
   if (state.updateBusy) return;
   state.updateBusy = true;
+  const operation=++updateOperation;
   if (state.update) {
     state.update.phase = {check_updates:'checking',download_update:'downloading',install_update:'installing'}[command] || state.update.phase;
     state.update.message = 'Please wait…';
@@ -723,7 +807,7 @@ async function runUpdate(command) {
   const timer = setInterval(async () => {
     if (polling) return;
     polling = true;
-    try { const info = await nativeInvoke('update_status'); if (state.updateBusy) { state.update = info; renderUpdater(); } } catch (_) { /* The operation reports its own error. */ }
+    try { const info = await nativeInvoke('update_status'); if (state.updateBusy && operation===updateOperation) { state.update = info; renderUpdater(); } } catch (_) { /* The operation reports its own error. */ }
     finally { polling = false; }
   }, 500);
   try { state.update = await nativeInvoke(command); }
@@ -732,10 +816,19 @@ async function runUpdate(command) {
 }
 async function openUpdater() {
   if (!state.native) { toast('App updates are available in the Linux application.'); return; }
+  const opening=++updaterOpening, operationAtOpen=updateOperation, busyAtOpen=state.updateBusy;
   state.lastFocus = document.activeElement; state.overlay = 'updates';
-  try { state.update = await nativeInvoke('update_status'); } catch(error) { state.update = {phase:'error',message:String(error)}; }
   renderUpdater();
-  $('#update-title')?.closest('.dialog').querySelector('button')?.focus();
+  $('.update-dialog .close')?.focus();
+  try {
+    const info=await nativeInvoke('update_status');
+    if (opening!==updaterOpening || state.overlay!=='updates') return;
+    if (!busyAtOpen && !state.updateBusy && operationAtOpen===updateOperation) state.update=info;
+  } catch(error) {
+    if (opening!==updaterOpening || state.overlay!=='updates') return;
+    if (!busyAtOpen && !state.updateBusy && operationAtOpen===updateOperation) state.update={phase:'error',message:String(error)};
+  }
+  renderUpdater();
   if (!state.updateBusy && ['idle','current','error'].includes(state.update?.phase)) void runUpdate('check_updates');
 }
 
@@ -775,17 +868,11 @@ async function handleAction(button) {
   else if (action === 'quick-external') {
     const kind = button.dataset.kind;
     if (!state.native) { openExternalGame(kind,uid); return; }
-    try {
-      await nativeInvoke(kind === 'steam' ? 'launch_steam_game' : 'launch_windows_game', {uid});
-      toast('Game launch requested.');
-    } catch(error) { toast(`Unable to launch: ${error}`); }
+    void launchExternal(kind,uid);
   }
   else if (action === 'add-windows') openAddWindows();
   else if (action === 'launch-external') {
-    if (!state.native) { toast('Browser preview cannot launch games.'); return; }
-    try { await nativeInvoke(button.dataset.kind === 'steam' ? 'launch_steam_game' : 'launch_windows_game', {uid});
-      dismissOverlay(); toast('Launch request sent.');
-    } catch(error) { toast(String(error)); }
+    void launchExternal(button.dataset.kind,uid);
   }
   else if (action === 'remove-windows') {
     if (!state.native) { toast('Native Matrix Play required.'); return; }
@@ -897,7 +984,8 @@ function setupEvents() {
       const options = [...$('#overlay-root').querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled])')];
       if (!options.length) return;
       const first = options[0], last = options.at(-1);
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      if (!options.includes(document.activeElement)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
+      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }
   });

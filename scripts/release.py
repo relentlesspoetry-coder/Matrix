@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+from release_notes import release_notes
 
 ROOT=Path(__file__).resolve().parents[1]
 def git(*args):
@@ -49,8 +50,10 @@ def bump(version):
         raise SystemExit('Choose a version newer under Debian package ordering too')
     if git('branch','--show-current')!='main' or git('status','--porcelain'):
         raise SystemExit('Commit and review all changes on main before releasing')
-    if f'## {version}' not in (ROOT/'CHANGELOG.md').read_text():
-        raise SystemExit('Commit release notes in CHANGELOG.md first')
+    try:
+        release_notes((ROOT/'CHANGELOG.md').read_text(), version)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
     for name in ['package.json','package-lock.json','src-tauri/tauri.conf.json']:
         p=ROOT/name;data=json.loads(p.read_text());data['version']=version
         if name=='package-lock.json': data['packages']['']['version']=version

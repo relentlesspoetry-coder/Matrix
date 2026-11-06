@@ -103,11 +103,22 @@ impl Service {
     }
     fn fail(&self, error: String) -> Result<Info, String> {
         let mut s = self.inner.lock().map_err(|_| "Update state unavailable")?;
+        // Only successful checks may be reused. Check/download/install errors
+        // (including cancellation) must not disable the visible Check again.
+        s.last_check = None;
         s.info.phase = "error".into();
         s.info.message = error;
         Ok(s.info.clone())
     }
     fn check(&self) -> Result<Info, String> {
+        self.check_with(|kind| {
+            core::check(&mut core::Http::new()?, env!("CARGO_PKG_VERSION"), kind)
+        })
+    }
+    fn check_with(
+        &self,
+        fetch: impl FnOnce(&str) -> Result<(Option<core::VerifiedRelease>, String), String>,
+    ) -> Result<Info, String> {
         let kind = {
             let mut s = self.inner.lock().map_err(|_| "Update state unavailable")?;
             if ["checking", "downloading", "installing"].contains(&s.info.phase.as_str()) {
@@ -129,7 +140,7 @@ impl Service {
                 "deb"
             }
         };
-        let result = (|| core::check(&mut core::Http::new()?, env!("CARGO_PKG_VERSION"), kind))();
+        let result = fetch(kind);
         match result {
             Ok((release, latest)) => {
                 let mut s = self.inner.lock().map_err(|_| "Update state unavailable")?;
@@ -358,6 +369,87 @@ pub(crate) fn open_update_releases() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_again_retries_failed_checks_immediately() {
+        let service = Service::default();
+        let failed = service
+            .check_with(|_| Err("Temporary network failure".into()))
+            .unwrap();
+        assert_eq!(failed.phase, "error");
+        assert!(service.inner.lock().unwrap().last_check.is_none());
+        let retried = service
+            .check_with(|_| {
+                assert_eq!(service.status().unwrap().phase, "checking");
+                Ok((None, env!("CARGO_PKG_VERSION").into()))
+            })
+            .unwrap();
+        assert_eq!(retried.phase, "current");
+        // Retain throttling after successful requests.
+        assert_eq!(
+            service
+                .check_with(|_| panic!("A successful check should still be cached"))
+                .unwrap()
+                .phase,
+            "current"
+        );
+    }
+
+    #[test]
+    fn check_again_retries_download_cancellation_and_install_errors() {
+        for (phase, error) in [
+            ("downloading", "Download cancelled"),
+            ("downloading", "Download failed"),
+            ("installing", "Installation cancelled or failed"),
+        ] {
+            let service = Service::default();
+            {
+                let mut runtime = service.inner.lock().unwrap();
+                runtime.last_check = Some(Instant::now());
+                runtime.info.phase = phase.into();
+            }
+            // Busy operations must not be replaced by a concurrent check.
+            assert_eq!(
+                service
+                    .check_with(|_| panic!("Do not interrupt an active operation"))
+                    .unwrap()
+                    .phase,
+                phase
+            );
+            service.fail(error.into()).unwrap();
+            let retried = service
+                .check_with(|_| Ok((None, env!("CARGO_PKG_VERSION").into())))
+                .unwrap();
+            assert_eq!(retried.phase, "current", "{error}");
+        }
+    }
+
+    #[test]
+    fn concurrent_checks_only_fetch_once_and_expired_checks_fetch_again() {
+        let service = Service::default();
+        service
+            .check_with(|_| {
+                assert_eq!(
+                    service
+                        .check_with(|_| panic!("A check is already in progress"))
+                        .unwrap()
+                        .phase,
+                    "checking"
+                );
+                Ok((None, env!("CARGO_PKG_VERSION").into()))
+            })
+            .unwrap();
+        service.inner.lock().unwrap().last_check = Some(Instant::now() - Duration::from_secs(61));
+        let mut fetched = false;
+        service
+            .check_with(|_| {
+                fetched = true;
+                Ok((None, env!("CARGO_PKG_VERSION").into()))
+            })
+            .unwrap();
+        assert!(fetched);
+    }
+
     #[test]
     fn cancellation_after_downloading_is_published_is_not_lost() {
         let service = Service::default();

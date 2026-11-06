@@ -101,14 +101,29 @@ fn refresh_log(record: &mut Record) {
     }
     record.info.log = text[start..].to_owned();
 }
+fn validate_launch_id(id: &str) -> Result<(), String> {
+    if matches!(id, "steam" | "windows") {
+        Ok(())
+    } else {
+        spec(id).map(|_| ())
+    }
+}
+fn launcher_name(id: &str) -> &'static str {
+    match id {
+        "steam" => "Steam launcher",
+        "windows" => "Windows launcher",
+        _ => "Emulator",
+    }
+}
 pub(crate) fn start(command: Command, id: &str) -> Result<Info, String> {
-    spec(id)?;
+    validate_launch_id(id)?;
     let root = dirs::data_local_dir()
         .ok_or("Cannot locate Matrix Play launch logs")?
         .join("matrix/launches");
     start_in_root(command, id, &root)
 }
 fn start_in_root(mut command: Command, id: &str, root: &Path) -> Result<Info, String> {
+    let label = launcher_name(id);
     fs::create_dir_all(root).map_err(|e| e.to_string())?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -127,7 +142,7 @@ fn start_in_root(mut command: Command, id: &str, root: &Path) -> Result<Info, St
         info: Info {
             console_id: id.into(),
             phase: "starting".into(),
-            message: "Starting emulator…".into(),
+            message: format!("Starting {}…", label.to_lowercase()),
             log: String::new(),
             log_path: path.to_string_lossy().into_owned(),
         },
@@ -174,10 +189,13 @@ fn start_in_root(mut command: Command, id: &str, root: &Path) -> Result<Info, St
     let mut child = match command.spawn() {
         Ok(c) => c,
         Err(e) => {
-            append(&record, &format!("Could not start emulator: {e}"));
+            append(
+                &record,
+                &format!("Could not start {}: {e}", label.to_lowercase()),
+            );
             let mut r = record.lock().map_err(|_| "Launch status unavailable")?;
             r.info.phase = "error".into();
-            r.info.message = format!("Could not start emulator: {e}");
+            r.info.message = format!("Could not start {}: {e}", label.to_lowercase());
             return Ok(r.info.clone());
         }
     };
@@ -195,17 +213,19 @@ fn start_in_root(mut command: Command, id: &str, root: &Path) -> Result<Info, St
             match status {
                 Ok(s) if s.success() => {
                     r.info.phase = "exited".into();
-                    r.info.message="Emulator launcher completed. An existing emulator window may have received the game.".into();
+                    r.info.message = format!(
+                        "{label} completed. An existing window may have received the game."
+                    );
                 }
                 Ok(s) => {
                     r.info.phase = "error".into();
                     r.info.message = format!(
-                        "Emulator exited with {s}. Open launch details for its error output."
+                        "{label} exited with {s}. Open launch details for its error output."
                     );
                 }
                 Err(e) => {
                     r.info.phase = "error".into();
-                    r.info.message = format!("Could not monitor emulator: {e}");
+                    r.info.message = format!("Could not monitor {}: {e}", label.to_lowercase());
                 }
             }
         }
@@ -225,14 +245,14 @@ fn start_in_root(mut command: Command, id: &str, root: &Path) -> Result<Info, St
     let mut r = record.lock().map_err(|_| "Launch status unavailable")?;
     if r.info.phase == "starting" {
         r.info.phase = "started".into();
-        r.info.message = "Emulator process started.".into();
+        r.info.message = format!("{label} process started.");
     }
     refresh_log(&mut r);
     Ok(r.info.clone())
 }
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn get_launch_status(id: String) -> Result<Option<Info>, String> {
-    spec(&id)?;
+    validate_launch_id(&id)?;
     let list = records().lock().map_err(|_| "Launch status unavailable")?;
     list.get(&id)
         .map(|r| {

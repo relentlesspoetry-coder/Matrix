@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from release_notes import release_notes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,6 +22,7 @@ def prepare(out, key):
     # override and writes the raw application version to its control file.
     if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
         raise ValueError('DEB releases require a numeric X.Y.Z version; use GitHub testing/prerelease status instead of a version suffix')
+    notes = release_notes((ROOT/'CHANGELOG.md').read_text(), version)
     out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()):
         raise ValueError('Use an empty release output folder')
@@ -31,11 +33,6 @@ def prepare(out, key):
         target = out/name
         shutil.copyfile(source, target)
         assets[f'linux-x86_64-{kind}'] = dict(name=name, size=target.stat().st_size, sha256=hashlib.sha256(target.read_bytes()).hexdigest())
-    changelog = (ROOT/'CHANGELOG.md').read_text()
-    marker = f'## {version}'
-    if marker not in changelog:
-        raise ValueError('Write release notes in CHANGELOG.md before publishing')
-    notes = changelog.split(marker,1)[1].split('\n## ',1)[0].strip()
     manifest = dict(schema=1, repository='relentlesspoetry-coder/Matrix', version=version, tag='v'+version, notes=notes, assets=assets)
     path = out/'update-manifest.json'
     path.write_text(json.dumps(manifest,sort_keys=True,indent=2)+'\n')

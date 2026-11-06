@@ -1,5 +1,30 @@
 # Test Matrix Play on Linux
 
+## Unreleased repair verification — 2026-11-06
+
+The combined repair branch remains version 0.5.7 and has not been published.
+It was integrated against main `c13edefbe81e73a6f3200d2a1ef57fe28baf83de`.
+Local Rust 1.99.1 checks passed: 13 updater-core tests, 12 cover-core tests
+(the opt-in live-provider test was skipped), and 45 headless native-backend
+tests. The release-mode `matrix-install-update` helper also compiled.
+
+`node --test tests/test_*.cjs` passed 37 production-JavaScript fixture tests,
+including delayed launch failures, dialog ownership, artwork transactions,
+stale requests, updater focus, safe Cancel/Install transitions and repeated or
+interrupted operations. CI runs this
+complete glob rather than only the artwork suite. Folder structure, all three
+launch-log lifetime tests, all three DEB packaging fixtures, release/signing
+fixtures, Rust formatting, JavaScript/Python syntax and patch whitespace checks
+also passed. The release fixtures use disposable local remotes and keys, not
+the project's GitHub repository or signing credentials.
+
+These are synthetic tests, not real emulator/Steam/Wine gameplay or a privileged
+package upgrade. This cloud environment lacks the GTK/WebKit development
+packages needed for the desktop build and restricts browser IPC sockets.
+Desktop-window tests, installer builds and built-package validation still need
+the Linux CI run on the exact integrated commit. Previous release CI results
+below do not validate these unpublished changes.
+
 ## Reviewed-fix verification
 
 The integrated fixes were checked locally with Rust 1.99.1: updater-core passed
@@ -174,3 +199,18 @@ Configuration: `$XDG_CONFIG_HOME/matrix/frontend.json` (normally `~/.config/matr
 Artwork: `$XDG_DATA_HOME/matrix/covers/` (normally `~/.local/share/matrix/covers/`).
 
 To uninstall the application: `sudo apt remove matrix-play`. Your game library, artwork and user configuration are retained.
+
+## Launch regression coverage
+
+`node --test tests/test_launches.cjs` runs six deterministic production-UI checks
+for delayed external errors, details escaping, repeat-click suppression, stale
+poll cancellation, monitoring beyond startup and spawn rejection. These are
+mock IPC tests, not native desktop or game execution.
+
+The headless backend suite now has 37 tests, including native/Flatpak Steam
+provenance for external libraries and aliases, both PS3 title layouts, canonical
+Flatpak save-write boundaries, and delayed failures from synthetic Wine and gio
+executables. `tests/test_native.py` also covers these dispatch/UI paths with
+harmless launch fixtures when run in an environment with GTK/WebKit and an X11
+display. Real emulator save creation and real Steam/Wine games are separate manual
+checks; passing fixture tests does not certify those integrations.

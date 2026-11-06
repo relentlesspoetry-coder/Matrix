@@ -253,6 +253,39 @@ def main():
             wait_for(log.exists)
             assert log.read_text().splitlines() == [str(exe)]
             wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
+            # A native Steam binary is present, but this title belongs to Flatpak.
+            flat_steam = home/'.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps'
+            flat_steam.mkdir(parents=True)
+            external_steam = home/'External Steam Library/steamapps'
+            external_steam.mkdir(parents=True)
+            (flat_steam/'libraryfolders.vdf').write_text('"path" "'+str(external_steam.parent)+'"\n')
+            (external_steam/'appmanifest_23456.acf').write_text('"appid" "23456"\n"name" "Flatpak Steam Fixture"\n')
+            invoke('launch_steam_game', {'uid':'23456'})
+            wait_for(lambda: log.read_text().splitlines() == ['run','com.valvesoftware.Steam','-applaunch','23456'])
+            # Delayed runner failures must remain visible after successful spawn.
+            wait_for(lambda: js('return !state.launchBusy.windows'))
+            wine = home/'bin/wine'
+            wine.write_text('#!/bin/sh\nsleep 0.7\necho "Wine fixture could not load runtime" >&2\nexit 17\n')
+            click('.game-card')
+            wait_for(lambda: js('return document.querySelector("#launch-status")?.textContent.includes("exit status 17")'))
+            click('[data-action="launch-details"][data-id="windows"]')
+            assert 'Wine fixture could not load runtime' in js('return document.querySelector(".launch-output").textContent')
+            assert not js('return Boolean(document.querySelector(".launch-dialog [data-action=open-emulator]"))')
+            click('[data-action="close"]')
+            wine.write_text(launcher)
+            # gio dispatch is also monitored; this is a shim, not a GTK desktop launch.
+            desktop = home/'Failed Launcher.desktop'
+            desktop.write_text('[Desktop Entry]\nType=Application\nName=Fixture\nExec=missing-fixture\n')
+            gio = home/'bin/gio'
+            gio.write_text('#!/bin/sh\nsleep 0.7\necho "gio fixture failed to launch" >&2\nexit 19\n')
+            gio.chmod(0o755)
+            registered = invoke('add_windows_game', {'title':'Desktop failure','target':str(desktop),'runner':'desktop'})
+            info = invoke('launch_windows_game', {'uid':registered['uid']})
+            assert info['phase'] == 'started', info
+            wait_for(lambda: invoke('get_launch_status', {'id':'windows'})['phase'] == 'error')
+            info = invoke('get_launch_status', {'id':'windows'})
+            assert '19' in info['message'] and 'gio fixture failed to launch' in info['log'], info
+            invoke('remove_windows_game', {'uid':registered['uid']})
             invoke('save_artwork_settings', {'enabled':False,'style':'3d'})
             boot=invoke('bootstrap')
             assert boot['artwork'] == {'enabled':False,'style':'3d'}
@@ -311,6 +344,22 @@ def main():
             assert failed['phase']=='error' and 'runtime failed to start' in failed['log'],failed
             assert Path(failed['logPath']).read_text().strip()=='runtime failed to start'
             assert invoke('get_launch_status',{'id':'ps2'})['phase']=='error'
+            # Scoped save-write flags for known sidecar-saving Flatpaks.
+            save_flatpak = healthy_flatpak.replace('com.github.Rosalie241.RMG\\tRMG\\tsystem\\n', 'com.github.Rosalie241.RMG\\tRMG\\tsystem\\nio.github.sameboy.SameBoy\\tSameBoy\\tuser\\nio.mgba.mGBA\\tmGBA\\tuser\\n')
+            flatpak.write_text(save_flatpak)
+            for console, folder, engine, extension in [('gb','Game Boy','io.github.sameboy.SameBoy','gbc'),('gba','GBA','io.mgba.mGBA','gba')]:
+                game_root = library/folder/(folder+' Games')
+                game = game_root/'Nested Game'/('Fixture.'+extension)
+                game.parent.mkdir(parents=True)
+                game.write_text('Synthetic fixture')
+                invoke('save_emulator',{'id':console,'emulatorName':'Fixture','emulatorPath':'','launcher':'flatpak','flatpakId':engine,'flatpakInstallation':'user','launchArgs':['{game}']})
+                invoke('launch_console_game',{'id':console,'uid':str(game)})
+                argv = log.read_text().splitlines()
+                assert f'--filesystem={game_root}:ro' in argv and f'--filesystem={game.parent}:rw' in argv, argv
+                assert argv[-1] == str(game), argv
+                invoke('open_emulator',{'id':console})
+                argv = log.read_text().splitlines()
+                assert f'--filesystem={game_root}:ro' in argv and not any(arg.endswith(':rw') for arg in argv), argv
             flatpak.write_text(healthy_flatpak)
             invoke('set_favorite',{'id':'ps2','uid':str(ps2game),'favorite':False})
             assert invoke('bootstrap')['favorites']['ps2']==[]
@@ -324,6 +373,7 @@ def main():
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
             assert invoke('bootstrap')['profiles']['ps2']['launcher']=='flatpak'
+            print('PASS: scoped sidecar-save Flatpak argv, native/Flatpak Steam provenance, and delayed Windows runner diagnostics (synthetic fixtures)')
             print('PASS: automatic Flatpak/AppImage linking, canonical duplicate removal, execute-permission preservation, Open emulator and captured startup errors')
             print('PASS: native favorites survive process restart and webview reload, remain console-scoped, and preserve profiles; Flatpak discovery/setup/launch argv use harmless fixtures')
             print('PASS: real Tauri/WebKit window, native IPC, 18 libraries, PS1/PS2 scanning, manual/cache artwork, console boundaries, persisted settings, three launcher argument paths')

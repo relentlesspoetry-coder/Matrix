@@ -38,6 +38,9 @@
     "shortDescription": "Console, Steam and Windows game libraries for Linux",
     "linux": {
       "deb": {
+        "depends": [
+          "pkexec"
+        ],
         "conflicts": [
           "matrix"
         ],

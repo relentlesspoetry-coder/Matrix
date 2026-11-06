@@ -47,6 +47,7 @@ window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   if(name==='import_favorites') {window.__migrated=true;return window.__favorites;}
   if(name==='set_favorite') {const set=new Set(window.__favorites[args.id] || []);if(args.favorite)set.add(args.uid);else set.delete(args.uid);return window.__favorites[args.id]=[...set];}
   if(name==='list_flatpaks') return [{appId:'org.example.Emulator',name:'Example Emulator',installation:'user'},{appId:'net.pcsx2.PCSX2',name:'PCSX2',installation:'system'}];
+  if(name==='launch_windows_game' || name==='launch_steam_game') return window.__lastLaunch={consoleId:name==='launch_steam_game'?'steam':'windows',phase:window.__failLaunch?'error':'exited',message:window.__failLaunch?'Game launcher exited with exit status 17.':'Game launcher completed.',log:window.__failLaunch?'Launcher runtime missing <script>bad()</script>':'',logPath:'/tmp/test-external-launch.log'};
   if(name==='get_launch_status') return window.__lastLaunch;
   if(name==='launch_console_game' || name==='open_emulator') return window.__lastLaunch={consoleId:args.id,phase:window.__failLaunch && name==='launch_console_game'?'error':'exited',message:window.__failLaunch && name==='launch_console_game'?'Emulator exited with exit status 17.':'Emulator launcher completed.',log:window.__failLaunch && name==='launch_console_game'?'bwrap: missing runtime <script>bad()</script>':'',logPath:'/tmp/test-launch.log'};
   if(name==='browse_emulator') return '/home/example/Apps/Example.AppImage';
@@ -113,8 +114,32 @@ with sync_playwright() as p:
     assert 'SDL frontend' in native.locator('.platform-notice').inner_text()
     native.get_by_role('button',name='All consoles',exact=True).click()
 
+    # Keep a real polling interval active while checking DOM/focus ownership.
+    native.evaluate("""() => {
+      window.__originalInvoke=window.__TAURI__.core.invoke;
+      window.__TAURI__.core.invoke=(name,args)=>{
+        if(name==='download_update') {
+          window.__update={...window.__update,phase:'downloading',message:'Downloading',total:100,received:10};
+          return new Promise(resolve=>window.__finishDownload=()=>resolve(window.__update={...window.__update,phase:'downloaded',message:'Verified update downloaded.'}));
+        }
+        return window.__originalInvoke(name,args);
+      };
+    }""")
     native.get_by_role('button',name='Update Matrix Play').click()
     native.get_by_role('button',name='Download update').click()
+    native.get_by_role('button',name='Cancel download').focus()
+    native.evaluate("window.__focusedCancel=document.activeElement")
+    native.wait_for_timeout(1200)
+    assert native.evaluate("document.activeElement===window.__focusedCancel && document.activeElement.isConnected")
+    assert native.evaluate("document.querySelector('.app-shell').inert")
+    native.keyboard.press('Tab')
+    assert native.get_by_role('button',name='Close updates').evaluate('(node)=>document.activeElement===node')
+    native.keyboard.press('Escape')
+    assert not native.evaluate("document.querySelector('.app-shell').inert")
+    native.evaluate("window.__finishDownload(); window.__TAURI__.core.invoke=window.__originalInvoke")
+    native.wait_for_timeout(100)
+    assert native.locator('.update-dialog').count()==0
+    native.get_by_role('button',name='Update Matrix Play').click()
     native.get_by_role('button',name='Install update').click()
     assert native.get_by_role('button',name='Restart Matrix Play').is_visible()
     screenshot(native,'matrix-updates.png')
@@ -145,11 +170,21 @@ with sync_playwright() as p:
     screenshot(native,'matrix-cover-details.png')
     native.get_by_role('button',name='Open TheCoverProject').click()
     native.wait_for_function('window.__calls.some(x=>x[0]==="open_cover_project")')
+    native.evaluate("""() => {
+      window.__originalInvoke=window.__TAURI__.core.invoke;
+      window.__TAURI__.core.invoke=(name,args)=>name==='save_cover'
+        ? new Promise(resolve=>window.__finishCover=()=>{window.__artSaved=true;resolve();})
+        : window.__originalInvoke(name,args);
+    }""")
     native.get_by_role('button', name='Choose cover').click()
     native.locator('#art-input').set_input_files(str(ROOT/'tests/fixtures/demo-cover.png'))
-    native.wait_for_function('window.__artSaved === true')
+    native.wait_for_function("typeof window.__finishCover==='function'")
     native.keyboard.press('Escape')
     native.get_by_role('button',name='Steam Games').click()
+    native.evaluate("window.__finishCover(); window.__TAURI__.core.invoke=window.__originalInvoke")
+    native.wait_for_function('window.__artSaved === true')
+    assert native.locator('.detail-panel').count()==0
+    assert native.locator('.page-title').inner_text()=='Steam Games.'
     assert native.locator('.game-item').count()==1
     screenshot(native,'matrix-native-steam.png')
     native.locator('.game-card').first.click()

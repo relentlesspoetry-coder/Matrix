@@ -129,7 +129,40 @@ pub(crate) fn prepare(
     }
     Ok(profile)
 }
-pub(crate) fn command(profile: &EmulatorProfile, id: &str) -> Result<Command, String> {
+// These identified engines need ROM-adjacent save writes by default. Do not grant
+// write access for an arbitrary display name or for Open emulator/setup.
+fn flatpak_game_access(
+    profile: &EmulatorProfile,
+    id: &str,
+    folder: &Path,
+    game: Option<&Path>,
+) -> Result<Vec<String>, String> {
+    let folder = folder.canonicalize().map_err(|e| e.to_string())?;
+    let mut args = vec![format!("--filesystem={}:ro", folder.display())];
+    let sidecar_saves = matches!(
+        (profile.flatpak_id.as_str(), id),
+        ("io.github.sameboy.SameBoy", "gb") | ("io.mgba.mGBA", "gb" | "gba")
+    );
+    if let Some(game) = game.filter(|_| sidecar_saves) {
+        let game = game.canonicalize().map_err(|e| e.to_string())?;
+        let parent = game.parent().ok_or("Invalid game path")?;
+        if !game.is_file() || !parent.starts_with(&folder) {
+            return Err("Game is outside this console's library".into());
+        }
+        // Flatpak needs directory writes to create/rename save and state files.
+        // Grant just this game's containing directory, never the full Matrix root.
+        if parent == folder {
+            args.clear(); // Do not pass conflicting modes for the same mount.
+        }
+        args.push(format!("--filesystem={}:rw", parent.display()));
+    }
+    Ok(args)
+}
+pub(crate) fn command(
+    profile: &EmulatorProfile,
+    id: &str,
+    game: Option<&Path>,
+) -> Result<Command, String> {
     match profile.launcher {
         Launcher::Flatpak => {
             installed(profile)?;
@@ -146,8 +179,7 @@ pub(crate) fn command(profile: &EmulatorProfile, id: &str) -> Result<Command, St
                     c.arg(format!("--installation={other}"));
                 }
             }
-            let folder = games_dir(id)?.canonicalize().map_err(|e| e.to_string())?;
-            c.arg(format!("--filesystem={}:ro", folder.display()));
+            c.args(flatpak_game_access(profile, id, &games_dir(id)?, game)?);
             if profile
                 .flatpak_runtime_fonts
                 .unwrap_or(profile.flatpak_id == "net.pcsx2.PCSX2")
@@ -208,6 +240,57 @@ pub(crate) async fn browse_emulator(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sidecar_save_access_is_limited_to_recognized_game_parent() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("GB Games");
+        let nested = folder.join("One Game");
+        fs::create_dir_all(&nested).unwrap();
+        let game = nested.join("Game.gbc");
+        fs::write(&game, b"fixture").unwrap();
+        let mut profile = EmulatorProfile {
+            flatpak_id: "io.github.sameboy.SameBoy".into(),
+            ..Default::default()
+        };
+        let readonly = format!("--filesystem={}:ro", folder.display());
+        assert_eq!(
+            flatpak_game_access(&profile, "gb", &folder, Some(&game)).unwrap(),
+            [
+                readonly.clone(),
+                format!("--filesystem={}:rw", nested.display())
+            ]
+        );
+        // Setup gets no save write access; unrelated engines/consoles stay read-only.
+        assert_eq!(
+            flatpak_game_access(&profile, "gb", &folder, None).unwrap(),
+            [readonly.clone()]
+        );
+        assert_eq!(
+            flatpak_game_access(&profile, "ps2", &folder, Some(&game)).unwrap(),
+            [readonly.clone()]
+        );
+        profile.flatpak_id = "org.example.Custom".into();
+        assert_eq!(
+            flatpak_game_access(&profile, "gb", &folder, Some(&game)).unwrap(),
+            [readonly.clone()]
+        );
+        profile.flatpak_id = "io.mgba.mGBA".into();
+        let direct = folder.join("Direct.gba");
+        fs::write(&direct, b"fixture").unwrap();
+        assert_eq!(
+            flatpak_game_access(&profile, "gba", &folder, Some(&direct)).unwrap(),
+            [format!("--filesystem={}:rw", folder.display())]
+        );
+        let outside = root.path().join("Outside.gba");
+        fs::write(&outside, b"fixture").unwrap();
+        assert!(flatpak_game_access(&profile, "gba", &folder, Some(&outside)).is_err());
+        assert!(flatpak_game_access(&profile, "gba", &folder, Some(&nested)).is_err());
+        std::os::unix::fs::symlink(&outside, folder.join("Escape.gba")).unwrap();
+        assert!(
+            flatpak_game_access(&profile, "gba", &folder, Some(&folder.join("Escape.gba")))
+                .is_err()
+        );
+    }
     #[test]
     fn discovery_keeps_installations_and_rejects_bad_ids() {
         let apps=parse_flatpaks("org.example.Emu\tEmulator\tuser\norg.example.Emu\tEmulator\tsystem\n--command=evil\tBad\tuser\nbroken\n");

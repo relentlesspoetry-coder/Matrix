@@ -66,3 +66,36 @@ do not emulate games or prove real-emulator behavior.
 with rustc and checks process lifetime, late diagnostics, short EOF flushing, and
 disk-write failure. It explicitly skips if rustc is unavailable. The GUI and IPC
 remain outside this standalone test's coverage.
+
+## Save files, Steam provenance and external diagnostics
+
+Flatpak launches remain read-only for the managed console library by default.
+For the recognized SameBoy Game Boy and mGBA Game Boy/GBA profiles, a game launch
+also grants write access to that game's canonical containing directory so the
+emulator can create battery saves, save states and their temporary replacements.
+Nested titles do not grant writes to sibling game directories. A ROM directly in
+the console's games directory needs that directory writable. Open emulator does
+not add this permission. The ROM must resolve to a file within that console's
+library; escaped symlinks and unrelated paths are rejected. Matrix does not move,
+rewrite or delete any ROMs or existing saves. Filesystem mount flags are covered
+by synthetic tests; actual SameBoy/mGBA saving still needs an installed-emulator
+check.
+
+Steam discovery retains the native or Flatpak origin of primary libraries and
+libraries referenced by `libraryfolders.vdf`, including native aliases pointing
+into Flatpak data. Launch uses that origin instead of whichever `steam` binary is
+on PATH. A missing client is reported, never silently replaced with the other
+installation. Duplicate app IDs remain one library entry and existing IDs,
+favorites and artwork keys are unchanged.
+
+Steam, Wine and `gio launch` now use the same bounded diagnostics and exit-status
+monitoring as console emulators. Their library pages provide Launch details and
+show launcher errors, including errors after the initial spawn. Polling slows
+after startup and continues while Matrix is open. A successful launcher exit is
+not proof of game startup: Steam or a desktop launcher can forward a request or
+start another process. Matrix reports that distinction and retains captured
+output, but cannot infer an unreported descendant process's exit status.
+
+PS3 EBOOT titles use the directory above `USRDIR` for digital layouts, or above
+`PS3_GAME/USRDIR` for disc layouts. Scan, favorite validation and artwork lookup
+use the same title function without changing any paths.

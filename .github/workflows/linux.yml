@@ -43,7 +43,7 @@ jobs:
           python3 tests/test_deb_package.py
           python3 tests/test_launch_log_lifetime.py
           node --check web/app.js
-          node --test tests/test_artwork.cjs
+          node --test tests/test_*.cjs
       - name: Build Linux installers
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'

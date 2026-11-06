@@ -3,6 +3,7 @@
     windows_subsystem = "windows"
 )]
 
+mod artwork;
 mod discovery;
 mod emulators;
 mod favorites;
@@ -452,6 +453,27 @@ fn is_ps3_eboot(id: &str, path: &Path) -> bool {
             .is_some_and(|n| n.eq_ignore_ascii_case("USRDIR"))
 }
 
+// Disc dumps wrap the title in PS3_GAME; installed digital titles do not.
+fn ps3_title(path: &Path) -> String {
+    let content = path.ancestors().nth(2);
+    let title_dir = content.and_then(|dir| {
+        if dir
+            .file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("PS3_GAME"))
+        {
+            dir.parent()
+        } else {
+            Some(dir)
+        }
+    });
+    prettify(
+        title_dir
+            .and_then(Path::file_name)
+            .and_then(|v| v.to_str())
+            .unwrap_or("PS3 Game"),
+    )
+}
+
 fn is_ps4_eboot(id: &str, path: &Path) -> bool {
     id == "ps4"
         && path
@@ -533,13 +555,7 @@ fn scan_console_impl(id: &str) -> Result<Vec<Game>, String> {
             games.push(Game {
                 uid: uid.clone(),
                 title: if ps3_eboot {
-                    let game_dir = path.ancestors().nth(3).unwrap_or(path);
-                    prettify(
-                        game_dir
-                            .file_name()
-                            .and_then(|v| v.to_str())
-                            .unwrap_or("PS3 Game"),
-                    )
+                    ps3_title(path)
                 } else if ps4_eboot {
                     prettify(
                         path.parent()
@@ -599,29 +615,56 @@ fn quoted_tokens(line: &str) -> Vec<String> {
     result
 }
 
-fn steam_locations() -> Result<Vec<PathBuf>, String> {
-    let home = home()?;
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum SteamLauncher {
+    Native,
+    Flatpak,
+}
+#[derive(Debug)]
+struct SteamLibrary {
+    path: PathBuf,
+    launcher: SteamLauncher,
+}
+struct SteamGame {
+    game: Game,
+    launcher: SteamLauncher,
+}
+fn steam_locations_in(home: &Path) -> Vec<SteamLibrary> {
+    let flatpak_root = home.join(".var/app/com.valvesoftware.Steam");
+    let flatpak_root = flatpak_root.canonicalize().unwrap_or(flatpak_root);
     let candidates = [
-        home.join(".steam/steam/steamapps"),
-        home.join(".steam/root/steamapps"),
-        home.join(".local/share/Steam/steamapps"),
-        home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps"),
+        (home.join(".steam/steam/steamapps"), SteamLauncher::Native),
+        (home.join(".steam/root/steamapps"), SteamLauncher::Native),
+        (
+            home.join(".local/share/Steam/steamapps"),
+            SteamLauncher::Native,
+        ),
+        (
+            home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps"),
+            SteamLauncher::Flatpak,
+        ),
     ];
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
-    for original in candidates {
+    for (original, mut launcher) in candidates {
         if !original.is_dir() {
             continue;
         }
         let canonical = original.canonicalize().unwrap_or(original);
-        if seen.insert(canonical.clone()) {
-            paths.push(canonical);
+        // A legacy ~/.steam alias can point into Flatpak's data directory.
+        if canonical.starts_with(&flatpak_root) {
+            launcher = SteamLauncher::Flatpak;
+        }
+        if seen.insert((canonical.clone(), launcher)) {
+            paths.push(SteamLibrary {
+                path: canonical,
+                launcher,
+            });
         }
     }
-    let bases = paths.clone();
-    for base in bases {
-        let config = base.join("libraryfolders.vdf");
-        if let Ok(contents) = fs::read_to_string(config) {
+    let mut additional = Vec::new();
+    for base in &paths {
+        if let Ok(contents) = fs::read_to_string(base.path.join("libraryfolders.vdf")) {
             for line in contents.lines() {
                 let fields = quoted_tokens(line);
                 if fields.len() != 2 || fields[0] != "path" {
@@ -630,22 +673,24 @@ fn steam_locations() -> Result<Vec<PathBuf>, String> {
                 let next = Path::new(&fields[1]).join("steamapps");
                 if next.is_dir() {
                     let real = next.canonicalize().unwrap_or(next);
-                    if seen.insert(real.clone()) {
-                        paths.push(real);
+                    if seen.insert((real.clone(), base.launcher)) {
+                        additional.push(SteamLibrary {
+                            path: real,
+                            launcher: base.launcher,
+                        });
                     }
                 }
             }
         }
     }
-    Ok(paths)
+    paths.extend(additional);
+    paths
 }
-
-#[cfg_attr(feature = "desktop", tauri::command)]
-fn scan_steam() -> Result<Vec<Game>, String> {
+fn scan_steam_in(home: &Path) -> Vec<SteamGame> {
     let mut results = Vec::new();
     let mut seen = HashSet::new();
-    for dir in steam_locations()? {
-        let entries = match fs::read_dir(dir) {
+    for library in steam_locations_in(home) {
+        let entries = match fs::read_dir(&library.path) {
             Ok(items) => items,
             Err(_) => continue,
         };
@@ -668,11 +713,7 @@ fn scan_steam() -> Result<Vec<Game>, String> {
                 }
                 match fields[0].as_str() {
                     "appid" => app_id = Some(fields[1].clone()),
-                    "name" => {
-                        if title.is_none() {
-                            title = Some(fields[1].clone())
-                        }
-                    }
+                    "name" if title.is_none() => title = Some(fields[1].clone()),
                     _ => (),
                 }
             }
@@ -680,19 +721,46 @@ fn scan_steam() -> Result<Vec<Game>, String> {
                 app_id.filter(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
             {
                 if seen.insert(id.clone()) {
-                    results.push(Game {
-                        uid: id.clone(),
-                        title: title.unwrap_or_else(|| format!("Steam App {id}")),
-                        path: path.to_string_lossy().into(),
-                        kind: "steam".into(),
-                        app_id: Some(id),
+                    results.push(SteamGame {
+                        game: Game {
+                            uid: id.clone(),
+                            title: title.unwrap_or_else(|| format!("Steam App {id}")),
+                            path: path.to_string_lossy().into(),
+                            kind: "steam".into(),
+                            app_id: Some(id),
+                        },
+                        launcher: library.launcher,
                     });
                 }
             }
         }
     }
-    results.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
-    Ok(results)
+    results.sort_by(|a, b| {
+        a.game
+            .title
+            .to_lowercase()
+            .cmp(&b.game.title.to_lowercase())
+    });
+    results
+}
+#[cfg_attr(feature = "desktop", tauri::command)]
+fn scan_steam() -> Result<Vec<Game>, String> {
+    Ok(scan_steam_in(&home()?)
+        .into_iter()
+        .map(|g| g.game)
+        .collect())
+}
+fn steam_command(uid: &str, launcher: SteamLauncher) -> Command {
+    let mut command = match launcher {
+        SteamLauncher::Native => launch_command("steam"),
+        SteamLauncher::Flatpak => {
+            let mut c = launch_command("flatpak");
+            c.args(["run", "com.valvesoftware.Steam"]);
+            c
+        }
+    };
+    command.args(["-applaunch", uid]);
+    command
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -808,7 +876,7 @@ fn launch_console_impl(id: String, uid: String) -> Result<launches::Info, String
         .get(&id)
         .ok_or("Configure an emulator for this console first")?;
     launches::preflight(profile)?;
-    let mut command = emulators::command(profile, &id)?;
+    let mut command = emulators::command(profile, &id, Some(Path::new(&game.path)))?;
     let args = immersive::game_args(profile, &id);
     let mut substituted = false;
     for arg in args {
@@ -840,7 +908,7 @@ fn open_emulator_impl(id: String) -> Result<launches::Info, String> {
         .profiles
         .get(&id)
         .ok_or("Set up an emulator for this console first.")?;
-    let mut command = emulators::command(profile, &id)?;
+    let mut command = emulators::command(profile, &id, None)?;
     command.args(immersive::setup_args(profile, &id));
     command.current_dir(home()?);
     launches::start(command, &id)
@@ -853,34 +921,25 @@ async fn open_emulator(id: String) -> Result<launches::Info, String> {
         .map_err(|e| e.to_string())?
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
-fn launch_steam_game(uid: String) -> Result<(), String> {
+fn launch_steam_impl(uid: String) -> Result<launches::Info, String> {
     if !uid.bytes().all(|b| b.is_ascii_digit()) || uid.is_empty() {
         return Err("Invalid Steam app ID".into());
     }
-    if !scan_steam()?.into_iter().any(|g| g.uid == uid) {
-        return Err("Steam app not found in installed libraries".into());
-    }
-    // Prefer the system Steam client; Flatpak Steam is supported as a fallback.
-    let system = launch_command("steam").arg("-applaunch").arg(&uid).spawn();
-    if system.is_ok() {
-        return Ok(());
-    }
-    launch_command("flatpak")
-        .args(["run", "com.valvesoftware.Steam", "-applaunch", &uid])
-        .spawn()
-        .map_err(|e| format!("Steam could not be started: {e}"))?;
-    Ok(())
+    let game = scan_steam_in(&home()?)
+        .into_iter()
+        .find(|g| g.game.uid == uid)
+        .ok_or("Steam app not found in installed libraries")?;
+    // Never silently switch installations: their games and Proton prefixes differ.
+    launches::start(steam_command(&uid, game.launcher), "steam")
 }
-
-#[cfg_attr(feature = "desktop", tauri::command)]
-fn launch_windows_game(uid: String) -> Result<(), String> {
-    let settings = load_settings()?;
-    let game = settings
-        .windows
-        .iter()
-        .find(|g| g.uid == uid)
-        .ok_or("Windows game not registered")?;
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn launch_steam_game(uid: String) -> Result<launches::Info, String> {
+    tauri::async_runtime::spawn_blocking(move || launch_steam_impl(uid))
+        .await
+        .map_err(|e| e.to_string())?
+}
+fn windows_command(game: &WindowsGame) -> Result<Command, String> {
     if !Path::new(&game.target).is_file() {
         return Err("Windows game or launcher is missing".into());
     }
@@ -904,10 +963,23 @@ fn launch_windows_game(uid: String) -> Result<(), String> {
                 .ok_or("Invalid Windows game path")?,
         );
     }
-    command
-        .spawn()
-        .map_err(|e| format!("Could not launch Windows game: {e}"))?;
-    Ok(())
+    Ok(command)
+}
+fn launch_windows_impl(uid: String) -> Result<launches::Info, String> {
+    let settings = load_settings()?;
+    let game = settings
+        .windows
+        .iter()
+        .find(|g| g.uid == uid)
+        .ok_or("Windows game not registered")?;
+    launches::start(windows_command(game)?, "windows")
+}
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn launch_windows_game(uid: String) -> Result<launches::Info, String> {
+    tauri::async_runtime::spawn_blocking(move || launch_windows_impl(uid))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 // Artwork is private to Matrix, not stored in emulator / games directories.
@@ -974,14 +1046,7 @@ fn validate_game(kind: &str, uid: &str) -> Result<Game, String> {
         .and_then(|v| v.to_str())
         .unwrap_or("Untitled");
     let title = if ps3_eboot {
-        prettify(
-            game_path
-                .ancestors()
-                .nth(3)
-                .and_then(|p| p.file_name())
-                .and_then(|v| v.to_str())
-                .unwrap_or("PS3 Game"),
-        )
+        ps3_title(&game_path)
     } else if ps4_eboot {
         prettify(
             game_path
@@ -1204,17 +1269,7 @@ fn save_cover(kind: String, uid: String, bytes: Vec<u8>) -> Result<(), String> {
     let (extension, _) =
         cover_format(&bytes).ok_or("Only PNG, JPEG, and WebP images are supported")?;
     let target = stored_cover_path(&kind, &uid, extension)?;
-    fs::create_dir_all(target.parent().ok_or("Invalid artwork directory")?)
-        .map_err(|e| format!("Could not create artwork directory: {e}"))?;
-    let temp = target.with_extension(format!("{}.tmp", extension));
-    fs::write(&temp, &bytes).map_err(|e| format!("Could not save artwork: {e}"))?;
-    fs::rename(&temp, &target).map_err(|e| format!("Could not finalize artwork: {e}"))?;
-    for old in ["png", "jpg", "webp"] {
-        if old != extension {
-            let _ = fs::remove_file(stored_cover_path(&kind, &uid, old)?);
-        }
-    }
-    Ok(())
+    artwork::save(&target, &bytes)
 }
 
 // WebKit/GStreamer/Mesa cache initialization can stall before any page loads.
@@ -1399,6 +1454,164 @@ mod tests {
         assert_eq!(SPECS.len(), 18);
     }
     #[test]
+    fn steam_preserves_launcher_for_primary_and_external_libraries() {
+        let root = tempfile::tempdir().unwrap();
+        let native = root.path().join(".local/share/Steam/steamapps");
+        let flatpak = root
+            .path()
+            .join(".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps");
+        let external = root.path().join("External Steam Library/steamapps");
+        for (directory, id) in [(&native, "11"), (&flatpak, "22"), (&external, "33")] {
+            fs::create_dir_all(directory).unwrap();
+            fs::write(
+                directory.join(format!("appmanifest_{id}.acf")),
+                format!("\"appid\" \"{id}\"\n\"name\" \"Game {id}\"\n"),
+            )
+            .unwrap();
+        }
+        fs::write(
+            flatpak.join("libraryfolders.vdf"),
+            format!("\"path\" \"{}\"\n", external.parent().unwrap().display()),
+        )
+        .unwrap();
+        let games = scan_steam_in(root.path());
+        assert_eq!(games.len(), 3);
+        for game in games {
+            let flat = game.game.uid != "11";
+            assert_eq!(
+                game.launcher,
+                if flat {
+                    SteamLauncher::Flatpak
+                } else {
+                    SteamLauncher::Native
+                }
+            );
+            let command = steam_command(&game.game.uid, game.launcher);
+            assert_eq!(
+                command.get_program(),
+                if flat { "flatpak" } else { "steam" }
+            );
+            let args: Vec<_> = command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
+            let mut expected: Vec<String> = if flat {
+                vec!["run".into(), "com.valvesoftware.Steam".into()]
+            } else {
+                vec![]
+            };
+            expected.extend(["-applaunch".into(), game.game.uid]);
+            assert_eq!(args, expected);
+        }
+        // Legacy native aliases into the Flatpak root must not lose provenance.
+        fs::create_dir_all(root.path().join(".steam")).unwrap();
+        std::os::unix::fs::symlink(flatpak.parent().unwrap(), root.path().join(".steam/root"))
+            .unwrap();
+        let games = scan_steam_in(root.path());
+        assert_eq!(games.len(), 3);
+        assert_eq!(
+            games.iter().find(|g| g.game.uid == "22").unwrap().launcher,
+            SteamLauncher::Flatpak
+        );
+    }
+    #[test]
+    fn ps3_titles_support_disc_and_digital_layouts() {
+        assert_eq!(
+            ps3_title(Path::new("/Games/PS3 Games/Digital_Title/USRDIR/EBOOT.BIN")),
+            "Digital Title"
+        );
+        assert_eq!(
+            ps3_title(Path::new(
+                "/Games/PS3 Games/Disc_Title/PS3_GAME/USRDIR/EBOOT.BIN"
+            )),
+            "Disc Title"
+        );
+        assert_eq!(
+            ps3_title(Path::new(
+                "/Games/PS3 Games/Disc_Title/ps3_game/usrdir/eboot.bin"
+            )),
+            "Disc Title"
+        );
+    }
+    #[test]
+    fn external_launch_fixture() {
+        let Some(root) = std::env::var_os("MATRIX_EXTERNAL_FIXTURE") else {
+            return;
+        };
+        use std::os::unix::fs::PermissionsExt;
+        let root = PathBuf::from(root);
+        fs::create_dir_all(root.join("bin")).unwrap();
+        for (program, ext, runner) in [("wine", "exe", "wine"), ("gio", "desktop", "desktop")] {
+            let script = root.join("bin").join(program);
+            fs::write(&script, format!("#!/bin/sh\nprintf 'early {program} diagnostic\\n' >&2\nsleep 0.7\nprintf 'late {program} diagnostic\\n' >&2\nexit 17\n")).unwrap();
+            fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+            let target = root.join(format!("Game with spaces.{ext}"));
+            fs::write(&target, b"synthetic fixture, not executable game data").unwrap();
+            let game = add_windows_game(
+                "Fixture".into(),
+                target.to_string_lossy().into(),
+                runner.into(),
+            )
+            .unwrap();
+            let command = windows_command(&game).unwrap();
+            let args: Vec<_> = command.get_args().collect();
+            assert_eq!(args.last().unwrap(), &target.as_os_str());
+            assert_eq!(args.len(), if runner == "wine" { 1 } else { 2 });
+            if runner == "wine" {
+                assert_eq!(command.get_current_dir(), Some(root.as_path()));
+            }
+            let info = launch_windows_impl(game.uid).unwrap();
+            assert_eq!(info.phase, "started");
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                let info = launches::get_launch_status("windows".into())
+                    .unwrap()
+                    .unwrap();
+                if info.phase == "error" {
+                    assert!(info.message.contains("17"));
+                    assert!(info.message.contains("Windows launcher"));
+                    assert!(info.log.contains(&format!("early {program} diagnostic")));
+                    assert!(info.log.contains(&format!("late {program} diagnostic")));
+                    assert!(Path::new(&info.log_path).is_file());
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "launcher failure was not reported"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+        assert!(launches::get_launch_status("../escape".into()).is_err());
+    }
+    #[test]
+    fn windows_runner_failures_are_captured_after_spawn() {
+        let root = tempfile::tempdir().unwrap();
+        let (_, module) = module_path!().split_once("::").unwrap_or(("", "tests"));
+        let fixture = format!("{module}::external_launch_fixture");
+        let path = std::env::join_paths(std::iter::once(root.path().join("bin")).chain(
+            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+        ))
+        .unwrap();
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &fixture, "--nocapture"])
+            .env("MATRIX_EXTERNAL_FIXTURE", root.path())
+            .env("HOME", root.path())
+            .env("XDG_CONFIG_HOME", root.path().join("config"))
+            .env("XDG_DATA_HOME", root.path().join("data"))
+            .env("PATH", path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        assert!(root.path().join("data/matrix/launches").is_dir());
+    }
+    #[test]
     fn parse_vdf_tokens() {
         assert_eq!(
             quoted_tokens("  \"path\" \"/home/bless/Games/Steam\""),
@@ -1467,6 +1680,23 @@ mod tests {
         let uid = path.canonicalize().unwrap().to_string_lossy().into_owned();
         assert_eq!(scan_console_impl("ps2").unwrap().len(), 1);
         assert!(scan_console_impl("ps1").unwrap().is_empty());
+        let ps3 = games_dir("ps3").unwrap();
+        for layout in ["Digital_Title/USRDIR", "Disc_Title/PS3_GAME/USRDIR"] {
+            fs::create_dir_all(ps3.join(layout)).unwrap();
+            fs::write(ps3.join(layout).join("EBOOT.BIN"), b"synthetic").unwrap();
+        }
+        let ps3_games = scan_console_impl("ps3").unwrap();
+        assert_eq!(ps3_games.len(), 2);
+        assert_eq!(
+            ps3_games
+                .iter()
+                .map(|g| g.title.as_str())
+                .collect::<Vec<_>>(),
+            ["Digital Title", "Disc Title"]
+        );
+        for game in ps3_games {
+            assert_eq!(validate_game("ps3", &game.uid).unwrap().title, game.title);
+        }
         let ps4 = games_dir("ps4").unwrap();
         fs::create_dir_all(ps4.join("Example PS4/sce_sys")).unwrap();
         fs::write(ps4.join("Example PS4/eboot.bin"), b"synthetic").unwrap();
