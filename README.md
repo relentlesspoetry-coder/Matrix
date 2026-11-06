@@ -142,7 +142,7 @@ Install Rust from <https://rustup.rs> and Node.js 20 or later. Then install the 
 npm ci
 ```
 
-Extract this archive. From the **Matrix-Play-v0.5.3** folder:
+Extract this archive. From the extracted source folder:
 
 ```bash
 npm run tauri -- dev             # native development window
@@ -160,7 +160,7 @@ UI-only preview: open `web/index.html` in Chromium, Firefox or another browser. 
 3. Additional authorized artwork/metadata providers, nonstandard Sony serial formats and compressed-disc serial extraction. These are not implemented. PS1/PS2 serial-based xlenore downloads and manual cover imports are implemented; TheCoverProject automation is not.
 4. Windows runner/prefix profiles for existing non-Steam Proton/Wine games. `.exe` uses system Wine and a working directory, but custom Wine prefixes / launchers must currently be configured through a `.desktop` launcher; registry import from other tools is pending.
 5. Full gamepad navigation, controller setup, fullscreen experience, launch/exit monitoring and UI refinement.
-6. End-to-end test harness with disposable ISO/ROM fixtures (non-proprietary), execution status and proper error reporting before release.
+6. Broader emulator-specific and distribution testing. The existing native harness uses non-proprietary fixtures and harmless test launchers; it does not validate actual gameplay.
 
 Matrix Play is not an emulator. Do not distribute copyrighted ROMs, BIOS, encryption keys or proprietary system firmware with it.
 
@@ -179,4 +179,4 @@ This test creates an isolated temporary library and harmless launcher fixtures; 
 
 The cloud runner has no physical GPU: its Xvfb checks explicitly use software graphics and allow up to 15 seconds for the window to paint. Those CI settings are confined to the test steps. The application does not force those graphics flags on user machines. Ordinary local X11/Wayland startup checks are reported separately from cloud software-rendering checks. Failed paint checks retain a screenshot artifact for diagnosis.
 
-For v0.5.3, the native window/asset-loading check passed with an existing legacy library, the ordinary painted-window check passed with the new default library root, and APT's install simulation selected only replacement of `matrix` by `matrix-play`. These are migration/build checks; actual installation still requires the user's APT command. The supplied full logo's bytes were verified unchanged.
+The native window/asset-loading check passed with an existing legacy library, the ordinary painted-window check passed with the new default library root, and the v0.5.2 branding migration's APT simulation selected only replacement of `matrix` by `matrix-play`. These are migration/build checks; actual installation still requires the user's APT command. The supplied full logo's bytes were verified unchanged.

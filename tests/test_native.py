@@ -45,6 +45,8 @@ def main():
     args.add_argument('--driver', default='tauri-driver')
     args.add_argument('--webkit-driver', default='WebKitWebDriver')
     args.add_argument('--online', action='store_true')
+    args.add_argument('--check-updates', action='store_true', help='Check the real public GitHub updater (network required)')
+    args.add_argument('--download-update', action='store_true', help='Download and verify a newer release through the actual UI; never install it')
     args.add_argument('--unset-parent-cache', action='store_true')
     args.add_argument('--backend', choices=['session','x11','wayland'], default='session')
     args.add_argument('--legacy-graphics-workaround', action='store_true', help='Reproduce the compatibility settings used in the original test')
@@ -146,6 +148,24 @@ def main():
             wait_for(lambda: js('return [...document.querySelectorAll(".console-image")].length === 14 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)'))
             update=invoke('update_status')
             assert update['phase'] == 'idle' and update['currentVersion'] == diagnostics['version']
+            if cfg.check_updates or cfg.download_update:
+                click('[data-action="updates"]')
+                wait_for(lambda: invoke('update_status')['phase'] in ['current','available','error'], 75)
+                status=invoke('update_status')
+                assert status['phase'] in ['current','available'],status
+                if cfg.download_update:
+                    assert status['phase'] == 'available',status
+                    click('[data-action="download-update"]')
+                    wait_for(lambda: invoke('update_status')['phase'] in ['downloaded','error'], 180)
+                    status=invoke('update_status')
+                    assert status['phase'] == 'downloaded',status
+                    wait_for(lambda: js('return Boolean(document.querySelector("[data-action=install-update]"))'))
+                    assert list((home/'.local/share/matrix/updates').rglob('*.deb'))
+                    print('PASS: real desktop UI checked public GitHub, downloaded and verified the signed newer DEB; installation not run')
+                else:
+                    print('PASS: real desktop UI checked the public GitHub update service')
+                screenshot('matrix-linux-update-check.png')
+                click('[data-action="close"]')
             screenshot('matrix-linux-home.png')
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelectorAll(".game-item").length === 1'))
