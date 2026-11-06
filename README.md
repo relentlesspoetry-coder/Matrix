@@ -36,7 +36,7 @@ Regression checks now include an actual painted, non-WebDriver window, normal la
 
 ## Install the Linux test release
 
-Download **Matrix-Play_0.5.2_amd64.deb** from the [v0.5.2 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.2), then run `sudo apt install ./Matrix-Play_0.5.2_amd64.deb` in its download folder. Open **Matrix Play** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
+Download **Matrix-Play_0.5.3_amd64.deb** from the [v0.5.3 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.3), then run `sudo apt install ./Matrix-Play_0.5.3_amd64.deb` in its download folder. Open **Matrix Play** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
 
 ![Real compiled Matrix Play window in an isolated test display](screenshots/matrix-linux-home.png)
 
@@ -142,7 +142,7 @@ Install Rust from <https://rustup.rs> and Node.js 20 or later. Then install the 
 npm ci
 ```
 
-Extract this archive. From the **Matrix-Play-v0.5.2** folder:
+Extract this archive. From the **Matrix-Play-v0.5.3** folder:
 
 ```bash
 npm run tauri -- dev             # native development window
@@ -179,4 +179,4 @@ This test creates an isolated temporary library and harmless launcher fixtures; 
 
 The cloud runner has no physical GPU: its Xvfb checks explicitly use software graphics and allow up to 15 seconds for the window to paint. Those CI settings are confined to the test steps. The application does not force those graphics flags on user machines. Ordinary local X11/Wayland startup checks are reported separately from cloud software-rendering checks. Failed paint checks retain a screenshot artifact for diagnosis.
 
-For v0.5.2, the native window/asset-loading check passed with an existing legacy library, the ordinary painted-window check passed with the new default library root, and APT's install simulation selected only replacement of `matrix` by `matrix-play`. These are migration/build checks; actual installation still requires the user's APT command. The supplied full logo's bytes were verified unchanged.
+For v0.5.3, the native window/asset-loading check passed with an existing legacy library, the ordinary painted-window check passed with the new default library root, and APT's install simulation selected only replacement of `matrix` by `matrix-play`. These are migration/build checks; actual installation still requires the user's APT command. The supplied full logo's bytes were verified unchanged.
