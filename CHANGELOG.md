@@ -2,10 +2,12 @@
 
 ## 0.5.9
 
+- Remove direct Windows executable launching and runtime selection. Keep the Windows tab for existing `.desktop` shortcuts and preserve Steam launching through its owning installation. Matrix Play does not provide a Windows compatibility runtime.
+- Preserve older direct-executable registrations and artwork, but disable their launch action and explain how to register a working desktop shortcut. Installed game files and external software are unchanged.
 - Fix emulator setup keyboard navigation: Tab and Shift+Tab now continue through Advanced launch options and multiline arguments instead of jumping to Close. Skip hidden, disabled and non-tabbable controls when wrapping dialog focus.
 - Handle Linux WebKit shifted Tab key events so reverse keyboard navigation cannot escape behind the dialog.
 - Add ten production-handler regressions and real WebKit keyboard checks for forward/reverse navigation, collapsed advanced settings, hidden Flatpak/file fields and dialog focus wrapping.
-- This is a focused keyboard repair, not new gamepad support. Real Steam/Wine gameplay, emulator save creation and a privileged package upgrade remain separate integration checks.
+- This release also restricts the Windows library to existing desktop shortcuts; it does not add gamepad support. Real Steam/desktop-shortcut gameplay, emulator save creation and a privileged package upgrade remain separate integration checks.
 
 ## 0.5.8
 
@@ -90,11 +92,11 @@ Continues the supplied Matrix-v0.4-native-source.zip. Keeps all 14 managed conso
 - Adds deterministic Rust cover-engine tests, a separately invoked four-URL live test, actual headless-backend tests, and expanded browser UI checks. Adds portable Chromium test configuration and updates build instructions.
 - Adds a desktop Cargo feature, enabled by default. Tests can compile the backend without Tauri/GTK using `--no-default-features --lib`.
 
-Validation: 12 deterministic cover-engine tests, 5 actual headless-backend tests, one live smoke test covering four downloads, the folder-layout test and the simulated-native Chromium UI suite passed. Native desktop validation is recorded below. Real emulator/Steam/Wine gameplay remains unverified. See README.md.
+Validation: 12 deterministic cover-engine tests, 5 actual headless-backend tests, one live smoke test covering four downloads, the folder-layout test and the simulated-native Chromium UI suite passed. Native desktop validation is recorded below. Real emulator/Steam/desktop-shortcut gameplay remains unverified. See README.md.
 
 ## Native Linux testing release
 
 - Compiled and checked the complete Tauri desktop application on Zorin 18.1 x86-64; generated DEB and AppImage installers. Both passed the actual native-window test.
 - Added pinned npm Tauri tooling and a GitHub Linux build workflow.
 - Added an actual native WebDriver test with isolated filesystem fixtures, two optional live artwork requests, manual cover round-trip, settings preservation and safe test launcher dispatch for console/Steam/Windows.
-- Added installation/testing instructions and a real native window screenshot. Real gameplay and user-specific emulator/Steam/Wine behavior remain for testing.
+- Added installation/testing instructions and a real native window screenshot. Real gameplay and user-specific emulator/Steam/desktop-shortcut behavior remain for testing.

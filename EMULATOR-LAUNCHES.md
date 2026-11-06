@@ -88,7 +88,7 @@ on PATH. A missing client is reported, never silently replaced with the other
 installation. Duplicate app IDs remain one library entry and existing IDs,
 favorites and artwork keys are unchanged.
 
-Steam, Wine and `gio launch` now use the same bounded diagnostics and exit-status
+Steam and `gio launch` now use the same bounded diagnostics and exit-status
 monitoring as console emulators. Their library pages provide Launch details and
 show launcher errors, including errors after the initial spawn. Polling slows
 after startup and continues while Matrix is open. A successful launcher exit is

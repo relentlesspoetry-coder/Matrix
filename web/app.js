@@ -385,44 +385,45 @@ function goExternal(page) {
   render(); window.scrollTo(0,0);
 }
 function externalList(page) { return page === 'steam' ? state.steam : state.windows; }
+function windowsShortcutSupported(game) { return game?.runner === 'desktop' && /\.desktop$/i.test(game.target || ''); }
 function renderExternal(page) {
   const steam = page === 'steam';
   const title = steam ? 'Steam Games' : 'Windows Games';
   const games = externalList(page).filter(g => g.title.toLowerCase().includes(state.query.toLowerCase()));
   $('#screen').innerHTML = `<div class="title-row"><div><div class="eyebrow">${steam ? 'STEAM LIBRARY' : 'WINDOWS LIBRARY'}</div><h1 class="page-title">${title}.</h1>
-      <p class="page-subtitle">${steam ? 'Detected from existing Steam installations. Matrix Play does not copy or reinstall your games.' : 'Launch your existing Windows installs with Wine or their desktop shortcuts. Nothing is moved.'}</p></div>
+      <p class="page-subtitle">${steam ? 'Detected from existing Steam installations. Matrix Play does not copy or reinstall your games.' : 'Keep Windows games organized and open existing desktop shortcuts. Nothing is moved.'}</p></div>
       <div class="stats"><div class="stat"><strong>${externalList(page).length}</strong><span>Games</span></div></div></div>
     <div class="library-tools"><label class="search">${glyph('search')}<input type="search" id="external-search" placeholder="Search ${title}" value="${escapeHtml(state.query)}"></label>
     ${!steam ? `<button type="button" class="button button-primary" data-action="add-windows">${glyph('plus')} Add Windows game</button>` : ''}</div>
     <div id="launch-status"></div>
     ${games.length ? `<div class="game-grid">${games.map((game,index) => {
       const cover = gameCover({ id: page, abbrev: steam ? 'STEAM' : 'WINDOWS' }, game, index);
-      return `<div class="game-item"><button class="game-card" type="button" data-action="quick-external" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="${state.native ? 'Launch' : 'View'} ${escapeHtml(game.title)}">${cover}<span class="game-title">${escapeHtml(game.title)}</span><span class="game-meta">${steam ? 'Steam · App ' + escapeHtml(game.appId || game.uid) : 'Windows · ' + escapeHtml(game.runner || 'launcher')}</span></button><button class="game-info" type="button" data-action="external-game" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="Details for ${escapeHtml(game.title)}" title="Game details">${glyph('info')}</button></div>`;
-    }).join('')}</div>` : `<div class="empty external-empty"><strong>${state.query ? 'No matching games' : `No ${title.toLowerCase()} detected`}</strong><p>${state.query ? 'Try a different search term.' : steam ? 'Install and sign into Steam, then click Refresh.' : 'Choose Add Windows game to register an existing .exe or .desktop launcher.'}</p></div>`}
-    <div class="notice">${glyph('info')}<span>${state.native ? steam ? 'Steam titles are discovered from appmanifest files and launched through Steam.' : 'Use existing Wine installations or desktop launchers; advanced per-game Proton/prefix handling will be added later.' : 'Browser preview only. Native discovery and launching are available in the Matrix Play Linux build.'}</span></div>`;
+      return `<div class="game-item"><button class="game-card" type="button" data-action="quick-external" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="${state.native && (steam || windowsShortcutSupported(game)) ? 'Launch' : 'View'} ${escapeHtml(game.title)}">${cover}<span class="game-title">${escapeHtml(game.title)}</span><span class="game-meta">${steam ? 'Steam · App ' + escapeHtml(game.appId || game.uid) : windowsShortcutSupported(game) ? 'Windows · Desktop shortcut' : 'Windows · Shortcut required'}</span></button><button class="game-info" type="button" data-action="external-game" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="Details for ${escapeHtml(game.title)}" title="Game details">${glyph('info')}</button></div>`;
+    }).join('')}</div>` : `<div class="empty external-empty"><strong>${state.query ? 'No matching games' : `No ${title.toLowerCase()} detected`}</strong><p>${state.query ? 'Try a different search term.' : steam ? 'Install and sign into Steam, then click Refresh.' : 'Choose Add Windows game to register an existing .desktop shortcut.'}</p></div>`}
+    <div class="notice">${glyph('info')}<span>${state.native ? steam ? 'Steam titles are discovered from appmanifest files and launched through Steam.' : 'Matrix Play opens .desktop shortcuts only. It does not run .exe files or supply a Windows compatibility runtime. Shortcuts must already work outside Matrix Play.' : 'Browser preview only. Native discovery and launching are available in the Matrix Play Linux build.'}</span></div>`;
   renderLaunchStatus();
   hydrateNativeCovers();
 }
 function openExternalGame(kind, uid) {
   const game = externalList(kind).find(g => g.uid === uid); if (!game) return;
+  const supported = kind === 'steam' || windowsShortcutSupported(game);
   state.lastFocus = document.activeElement; state.overlay = 'external'; state.selectedGame = {id:kind,uid};
   $('#overlay-root').innerHTML = `<div class="overlay detail-overlay" data-backdrop="true"><aside class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detail-title"><button class="close" data-action="close" aria-label="Close details">${glyph('close')}</button>
     <div class="detail-cover">${gameCover({id:kind,abbrev:kind.toUpperCase()},game,0)}</div><div class="eyebrow">${kind.toUpperCase()} LIBRARY</div><h2 id="detail-title">${escapeHtml(game.title)}</h2>
-    <p class="detail-sub">${escapeHtml(game.target || `Steam app ID ${game.appId || game.uid}`)}</p><p class="detail-description">${kind === 'steam' ? 'Matrix Play asks your existing Steam client to start this game.' : 'Matrix Play starts the configured existing Windows launcher without copying the game files.'}</p>
-    <button class="button button-primary launch-button" data-action="launch-external" data-kind="${kind}" data-uid="${escapeHtml(uid)}">${glyph('play')} Play game</button>
+    <p class="detail-sub">${escapeHtml(game.target || `Steam app ID ${game.appId || game.uid}`)}</p><p class="detail-description">${kind === 'steam' ? 'Matrix Play asks your existing Steam client to start this game.' : supported ? 'Matrix Play opens your existing desktop shortcut. Any external software it uses is managed outside Matrix Play.' : 'Direct .exe launching is unavailable. This saved entry and its artwork are retained. Add a working .desktop shortcut, then remove this old entry if you no longer need it. Your installed game files are unchanged.'}</p>
+    <button class="button button-primary launch-button" data-action="launch-external" data-kind="${kind}" data-uid="${escapeHtml(uid)}" ${supported ? '' : 'disabled'}>${glyph('play')} ${supported ? 'Play game' : 'Desktop shortcut required'}</button>
     <div class="detail-actions"><button class="button button-ghost" type="button" data-action="pick-cover">${glyph('image')} Choose cover</button></div>
     ${kind === 'windows' ? `<div class="detail-actions"><button class="button button-ghost" data-action="remove-windows" data-uid="${escapeHtml(uid)}">${glyph('trash')} Remove from Matrix Play</button></div>` : ''}
-    <p class="detail-hint">${state.native ? 'Launching uses the installed Steam client or chosen Windows runner.' : 'Browser preview cannot launch games.'}</p></aside></div>`;
+    <p class="detail-hint">${state.native ? 'Launching uses your installed Steam client or existing desktop shortcut.' : 'Browser preview cannot launch games.'}</p></aside></div>`;
   $('.detail-panel .close').focus();
   hydrateNativeCovers();
 }
 function openAddWindows() {
   state.lastFocus = document.activeElement; state.overlay = 'windows-add';
   $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="windows-title"><button class="close" data-action="close">${glyph('close')}</button>
-   <div class="eyebrow">WINDOWS LIBRARY</div><h2 id="windows-title">Add existing game.</h2><p class="muted">Register a game already installed on Linux. No files are moved or copied.</p>
+   <div class="eyebrow">WINDOWS LIBRARY</div><h2 id="windows-title">Add existing game.</h2><p class="muted">Register a .desktop shortcut that already works on Linux. No files are moved or copied.</p>
    <form id="windows-form"><div class="field"><label for="windows-name">Game title</label><input id="windows-name" name="title" required maxlength="150" placeholder="Game title"></div>
-   <div class="field"><label for="windows-target">Installed executable or launcher</label><input id="windows-target" name="target" required placeholder="/home/you/Games/My Game/game.exe"></div>
-   <div class="field"><label for="windows-runner">Launch using</label><select id="windows-runner" name="runner"><option value="desktop">Existing .desktop launcher (recommended)</option><option value="wine">Wine (.exe file)</option></select><small>Games installed through other managers may require their own .desktop launcher and existing Wine/Proton prefix.</small></div>
+   <div class="field"><label for="windows-target">Existing desktop shortcut</label><input id="windows-target" name="target" required placeholder="/home/you/.local/share/applications/My Game.desktop"><small>Only .desktop shortcuts are supported. Direct .exe launching is unavailable. Matrix Play does not provide or configure a Windows compatibility runtime.</small></div>
    <div class="dialog-actions"><button class="button button-ghost" type="button" data-action="close">Cancel</button><button class="button button-primary" type="submit">Add game</button></div></form></section></div>`;
   $('#windows-name').focus();
 }
@@ -867,7 +868,7 @@ async function handleAction(button) {
   else if (action === 'external-game') openExternalGame(button.dataset.kind,uid);
   else if (action === 'quick-external') {
     const kind = button.dataset.kind;
-    if (!state.native) { openExternalGame(kind,uid); return; }
+    if (!state.native || (kind === 'windows' && !windowsShortcutSupported(externalList(kind).find(game => game.uid === uid)))) { openExternalGame(kind,uid); return; }
     void launchExternal(kind,uid);
   }
   else if (action === 'add-windows') openAddWindows();
@@ -947,7 +948,7 @@ function setupEvents() {
       if (!state.native) { toast('Windows game registration requires native Matrix Play.'); return; }
       const form = new FormData(event.target);
       void nativeInvoke('add_windows_game', {
-        title:String(form.get('title') || '').trim(), target:String(form.get('target') || '').trim(), runner:String(form.get('runner') || '')
+        title:String(form.get('title') || '').trim(), target:String(form.get('target') || '').trim(), runner:'desktop'
       }).then(async () => { dismissOverlay(); await refreshNative(); toast('Game added to Windows library.'); })
         .catch(error => toast(String(error)));
       return;

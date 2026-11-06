@@ -1,7 +1,7 @@
 """Exercise a compiled Tauri Linux window using its actual IPC and filesystem.
 
 Run under xvfb-run; install tauri-driver and webkit2gtk-driver first.
-The launcher fixtures are harmless scripts, not real emulators, Wine or Steam.
+The launcher fixtures are harmless scripts, not real emulators or Steam.
 Use --online to include two real cover downloads; all game data is synthetic.
 """
 import argparse
@@ -68,12 +68,13 @@ def main():
         ps1game = ps1 / 'Test Game [SLUS-00664].chd'
         ps2game.write_text('Synthetic fixture; not a playable ROM.')
         ps1game.write_text('Synthetic fixture; not a playable ROM.')
-        (home/'config/matrix/frontend.json').write_text(json.dumps({'artwork': {'enabled': cfg.online, 'style': 'default'}}))
+        legacy = {'uid':str(home/'Windows Fixture.exe'),'title':'Legacy Windows Fixture','target':str(home/'Windows Fixture.exe'),'runner':'retired-runtime'}
+        (home/'config/matrix/frontend.json').write_text(json.dumps({'artwork': {'enabled': cfg.online, 'style': 'default'}, 'windows':[legacy]}))
         manifest = home/'.local/share/Steam/steamapps/appmanifest_12345.acf'
         manifest.write_text('"AppState"\n{\n"appid" "12345"\n"name" "Native Steam Fixture"\n}\n')
         launcher = '#!/bin/sh\nprintf "%s\\n" "$@" > "$MATRIX_NATIVE_TEST_LAUNCH_LOG"\n'
         launcher += 'printf "%s" "$XDG_CACHE_HOME" > "$MATRIX_NATIVE_TEST_CACHE_LOG"\n'
-        for target in [library/'PS2/TestEmulator.AppImage', home/'bin/steam', home/'bin/wine']:
+        for target in [library/'PS2/TestEmulator.AppImage', home/'bin/steam', home/'bin/gio']:
             target.write_text(launcher)
             target.chmod(0o755)
         flatpak=home/'bin/flatpak'
@@ -85,6 +86,8 @@ def main():
         (shortcuts/'duckstation.desktop').write_text('[Desktop Entry]\nExec="'+str(appimage)+'" %f\n')
         exe = home/'Windows Fixture.exe'
         exe.write_text('Synthetic registration fixture.')
+        desktop = home/'Windows Fixture.desktop'
+        desktop.write_text('[Desktop Entry]\nType=Application\nName=Fixture\nExec=true\n')
         log = home/'launch.log'
         env = os.environ.copy()
         env.update(HOME=str(home), XDG_CONFIG_HOME=str(home/'config'), XDG_DATA_HOME=str(home/'.local/share'),
@@ -253,14 +256,36 @@ def main():
             wait_for(log.exists)
             assert log.read_text().splitlines() == ['-applaunch', '12345']
             wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
-            invoke('add_windows_game', {'title':'Native Windows Fixture','target':str(exe),'runner':'wine'})
+            # Direct executables and retired runner values cannot be registered or launched.
+            for runner in ['desktop', 'retired-runtime']:
+                try:
+                    invoke('add_windows_game', {'title':'Rejected executable','target':str(exe),'runner':runner})
+                    raise AssertionError('Direct executable registration was accepted')
+                except RuntimeError as error:
+                    assert 'Direct .exe launching is unavailable' in str(error)
+            try:
+                invoke('launch_windows_game', {'uid':legacy['uid']})
+                raise AssertionError('Legacy direct executable was launched')
+            except RuntimeError as error:
+                assert 'Direct .exe launching is unavailable' in str(error)
+            assert legacy in invoke('list_windows_games')
+            assert exe.read_text() == 'Synthetic registration fixture.'
+            invoke('add_windows_game', {'title':'Native Windows Fixture','target':str(desktop),'runner':'desktop'})
             click('[data-action="refresh"]')
             click('[data-action="windows"]')
-            wait_for(lambda: js('return document.querySelectorAll(".game-item").length === 1'))
+            wait_for(lambda: js('return document.querySelectorAll(".game-item").length === 2'))
+            click('.game-card[aria-label="View Legacy Windows Fixture"]')
+            assert js('return document.querySelector(".launch-button").disabled')
+            assert 'Direct .exe launching is unavailable' in js('return document.querySelector(".detail-description").textContent')
+            click('[data-action="close"]')
+            click('[data-action="add-windows"]')
+            assert not js('return Boolean(document.querySelector("#windows-runner"))')
+            assert '.desktop' in js('return document.querySelector("#windows-target").placeholder')
+            click('[data-action="close"]')
             log.unlink()
-            click('.game-card')
+            click('.game-card[aria-label="Launch Native Windows Fixture"]')
             wait_for(log.exists)
-            assert log.read_text().splitlines() == [str(exe)]
+            assert log.read_text().splitlines() == ['launch', str(desktop)]
             wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
             # A native Steam binary is present, but this title belongs to Flatpak.
             flat_steam = home/'.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps'
@@ -273,9 +298,9 @@ def main():
             wait_for(lambda: log.read_text().splitlines() == ['run','com.valvesoftware.Steam','-applaunch','23456'])
             # Delayed runner failures must remain visible after successful spawn.
             wait_for(lambda: js('return !state.launchBusy.windows'))
-            wine = home/'bin/wine'
-            wine.write_text('#!/bin/sh\nsleep 0.7\necho "Wine fixture could not load runtime" >&2\nexit 17\n')
-            click('.game-card')
+            gio = home/'bin/gio'
+            gio.write_text('#!/bin/sh\nsleep 0.7\necho "Desktop shortcut fixture could not launch" >&2\nexit 17\n')
+            click('.game-card[aria-label="Launch Native Windows Fixture"]')
             wait_for(lambda: js('return state.launches.windows?.phase === "error"'))
             failure = js('return state.launches.windows')
             assert '17' in failure['message'] and 'Windows launcher' in failure['message'], failure
@@ -283,10 +308,10 @@ def main():
             # backend message in the error UI instead of inventing its wording.
             assert js('return document.querySelector("#launch-status .launch-error p")?.textContent') == failure['message']
             click('[data-action="launch-details"][data-id="windows"]')
-            assert 'Wine fixture could not load runtime' in js('return document.querySelector(".launch-output").textContent')
+            assert 'Desktop shortcut fixture could not launch' in js('return document.querySelector(".launch-output").textContent')
             assert not js('return Boolean(document.querySelector(".launch-dialog [data-action=open-emulator]"))')
             click('[data-action="close"]')
-            wine.write_text(launcher)
+            gio.write_text(launcher)
             # gio dispatch is also monitored; this is a shim, not a GTK desktop launch.
             desktop = home/'Failed Launcher.desktop'
             desktop.write_text('[Desktop Entry]\nType=Application\nName=Fixture\nExec=missing-fixture\n')
@@ -304,7 +329,8 @@ def main():
             boot=invoke('bootstrap')
             assert boot['artwork'] == {'enabled':False,'style':'3d'}
             assert boot['profiles']['ps2']['emulatorPath'].endswith('TestEmulator.AppImage')
-            assert len(boot['windows']) == 1
+            assert len(boot['windows']) == 2
+            assert legacy in boot['windows']
             assert boot['favorites']['ps2']==[str(ps2game)]
             apps=invoke('list_flatpaks')
             assert {a['installation'] for a in apps}=={'user','system'}
@@ -417,6 +443,9 @@ def main():
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
             assert invoke('bootstrap')['profiles']['ps2']['launcher']=='flatpak'
+            assert legacy in invoke('list_windows_games')
+            assert exe.read_text() == 'Synthetic registration fixture.'
+            print('PASS: desktop-only registration, direct executable rejection and legacy entry preservation')
             print('PASS: scoped sidecar-save Flatpak argv, native/Flatpak Steam provenance, and delayed Windows runner diagnostics (synthetic fixtures)')
             print('PASS: automatic Flatpak/AppImage linking, canonical duplicate removal, execute-permission preservation, Open emulator and captured startup errors')
             print('PASS: native favorites survive process restart and webview reload, remain console-scoped, and preserve profiles; Flatpak discovery/setup/launch argv use harmless fixtures')

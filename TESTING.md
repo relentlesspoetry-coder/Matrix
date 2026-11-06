@@ -1,10 +1,17 @@
 # Test Matrix Play on Linux
 
-## Version 0.5.9 keyboard repair checks
+## Version 0.5.9 keyboard and desktop-shortcut checks
+
+The Windows library accepts only existing `.desktop` shortcuts and dispatches
+through `gio launch`. There is no direct Windows executable/runtime launch path.
+New backend/native regression cases reject direct `.exe` registration and saved
+legacy launches, preserve legacy entries and installed files, and verify that the
+Windows UI explains the limitation while Steam routing remains unchanged.
+The native tests use harmless `gio` and Steam fixtures, not real gameplay.
 
 The emulator setup dialog's focus trap omitted both the Advanced launch options
 summary and its multiline arguments field. Five new fixture cases failed before
-the repair. All ten keyboard cases and all 47 production-JavaScript fixture tests
+the repair. All ten keyboard cases and all 52 production-JavaScript fixture tests
 pass after it, along with the folder, release/signing and DEB packaging fixtures.
 Native testing also reproduced GTK/WebKit reporting Shift+Tab as an unidentified
 key, allowing focus to escape behind the dialog; the trap now recognizes Tab
@@ -16,8 +23,8 @@ on its exact commit before publication.
 Current local Rust and native-browser checks were unavailable: no Rust toolchain
 is installed and Chromium cannot open its IPC socket in this executor. The
 GitHub Linux workflow runs the full Rust/build/native gates. No new definite
-save-permission, Steam/Wine or updater bug was found in the targeted source
-review. Synthetic launchers are not real Steam/Wine gameplay or emulator save
+save-permission, Steam/desktop-shortcut or updater bug was found in the targeted source
+review. Synthetic launchers are not real Steam/desktop-shortcut gameplay or emulator save
 creation, and these checks do not perform privileged installation. This repair
 improves keyboard access; it does not add or certify physical gamepad support.
 
@@ -53,7 +60,7 @@ stopped because the added test expected "exit status 17" instead of Rust's
 with the visible error notice and still requires the exit code and captured
 diagnostic; production launch code did not change for that correction.
 
-These are synthetic launch tests, not real emulator/Steam/Wine gameplay, real
+These are synthetic launch tests, not real emulator/Steam/desktop-shortcut gameplay, real
 save-file creation or a privileged package upgrade. Local desktop testing was
 blocked by missing GTK/WebKit development packages and restricted browser IPC;
 the full desktop and built-package checks above ran in Linux CI instead.
@@ -152,7 +159,7 @@ Matrix Play creates `~/Games/Matrix Play/` and 18 console subfolders. Place your
 3. A filename with an exact Sony serial or a supported uncompressed SYSTEM.CNF layout can identify artwork. For unknown or conflicting serials, open game details with the information button and confirm the exact serial. Compressed images may need a filename serial or confirmation. Matrix Play does not guess from similar titles.
 4. Use **Choose cover** to import a local PNG/JPEG/WebP image. Local covers take priority. TheCoverProject is manual-only.
 5. Clicking a game card sends a launch request immediately. Use its small information button to view details without launching.
-6. Check **Steam Games** and **Windows Games** independently. Windows registration references an existing `.exe` using system Wine, or a `.desktop` launcher. Custom prefix/Proton setup is not automatically imported.
+6. Check **Steam Games** and **Windows Games** independently. Windows registration accepts only an existing `.desktop` shortcut that works outside Matrix Play. Direct `.exe` registration and launch are rejected, including saved legacy entries. Legacy entries and their artwork are preserved; register a working shortcut to replace them. External compatibility software is not supplied or configured by Matrix Play.
 
 A game's emulator, firmware and any required keys must already be installed/configured by the user. Matrix Play does not include them. It does not move or rewrite game files.
 
@@ -166,7 +173,7 @@ A game's emulator, firmware and any required keys must already be installed/conf
 
 **Additional v0.5.1 checks:** the rebuilt app reached Interface ready in the same existing-profile Wayland launch that previously stalled. Ordinary non-WebDriver X11 startup was checked by capturing the actual desktop pixels. Native tests cover both an explicitly provided and an unset parent cache directory, and ensure test launchers receive the original environment.
 
-**Not verified across the emulator lineup:** fullscreen gameplay on every engine (one real PCSX2 launch was confirmed in v0.5.5), launching a user's Steam games or real Wine installations, controller support, ARM builds, other Linux releases, every disc format/serial, or universal cover availability. Launch fixtures validate command dispatch, not emulator compatibility. The update button checks and downloads signed GitHub releases. Privileged DEB installation has not been executed by the automated tests; AppImage replacement is tested with synthetic fixtures.
+**Not verified across the emulator lineup:** fullscreen gameplay on every engine (one real PCSX2 launch was confirmed in v0.5.5), launching a user's Steam games or existing desktop shortcuts, controller support, ARM builds, other Linux releases, every disc format/serial, or universal cover availability. Launch fixtures validate command dispatch, not emulator compatibility. The update button checks and downloads signed GitHub releases. Privileged DEB installation has not been executed by the automated tests; AppImage replacement is tested with synthetic fixtures.
 
 ## Version 0.5.3 checks
 
@@ -242,8 +249,8 @@ mock IPC tests, not native desktop or game execution.
 
 The headless backend suite now has 37 tests, including native/Flatpak Steam
 provenance for external libraries and aliases, both PS3 title layouts, canonical
-Flatpak save-write boundaries, and delayed failures from synthetic Wine and gio
+Flatpak save-write boundaries, and delayed failures from synthetic gio
 executables. `tests/test_native.py` also covers these dispatch/UI paths with
 harmless launch fixtures when run in an environment with GTK/WebKit and an X11
-display. Real emulator save creation and real Steam/Wine games are separate manual
+display. Real emulator save creation and real Steam/desktop-shortcut games are separate manual
 checks; passing fixture tests does not certify those integrations.

@@ -196,8 +196,8 @@ with sync_playwright() as p:
     screenshot(native,'matrix-native-windows.png')
     native.get_by_role('button',name='Add Windows game').click()
     native.locator('#windows-name').fill('Second Windows Game')
-    native.locator('#windows-target').fill('/games/Second Game.exe')
-    native.locator('#windows-runner').select_option('wine')
+    native.locator('#windows-target').fill('/games/Second Game.desktop')
+    assert native.locator('#windows-runner').count() == 0
     native.get_by_role('button',name='Add game').click()
     native.wait_for_function('window.__windows.length === 2')
     assert native.locator('.game-item').count()==2

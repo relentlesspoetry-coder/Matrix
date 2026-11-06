@@ -2,11 +2,11 @@
 
 # Matrix Play
 
-A native Linux game-library and emulator frontend. Browse games by console, connect each library to your installed emulator, and launch games from one application. Steam games and existing Windows/Wine launchers have their own tabs.
+A native Linux game-library and emulator frontend. Browse games by console, connect each library to your installed emulator, and launch games from one application. Steam games and existing Windows-game desktop shortcuts have their own tabs.
 
-Matrix Play organizes and launches your existing setup. Emulators, game files, firmware, keys and Wine are supplied and configured separately.
+Matrix Play organizes and launches your existing setup. Emulators, game files, firmware and keys are supplied and configured separately. Matrix Play does not provide or configure a Windows compatibility runtime.
 
-Built with Rust and Tauri 2, Matrix Play keeps **18 console libraries**, **Steam Games**, and **Windows Games** separate. It is a library frontend, not an emulator or game store. Actual game compatibility depends on your installed emulator or Windows runner.
+Built with Rust and Tauri 2, Matrix Play keeps **18 console libraries**, **Steam Games**, and **Windows Games** separate. It is a library frontend, not an emulator or game store. Actual game compatibility depends on your installed emulator or the software behind your desktop shortcut.
 
 ## Fullscreen game launches and extra libraries
 
@@ -40,7 +40,7 @@ Maintainers: commit the changes and the next version's CHANGELOG notes, then run
 
 A cache-dependent stall could leave v0.5.0's window blank before the first page loaded. Giving only the process a fresh cache directory reproduced a successful startup with the original data/configuration, and the affected user confirmed the workaround. The exact offending shared cache file was not identified.
 
-Matrix Play now isolates its runtime cache under `$XDG_CACHE_HOME/matrix/runtime-v1/` (normally `~/.cache/matrix/runtime-v1/`) before creating WebKit. It does not delete shared caches, migrate game files, or replace the browser data/profile. Launched emulators, Steam, Flatpak, Wine, desktop launchers and browser/folder openers receive the original cache environment.
+Matrix Play now isolates its runtime cache under `$XDG_CACHE_HOME/matrix/runtime-v1/` (normally `~/.cache/matrix/runtime-v1/`) before creating WebKit. It does not delete shared caches, migrate game files, or replace the browser data/profile. Launched emulators, Steam, Flatpak, desktop launchers and browser/folder openers receive the original cache environment.
 
 Startup stages and WebKit failures are logged to `$XDG_DATA_HOME/matrix/startup.log` (normally `~/.local/share/matrix/startup.log`); each launch resets that bounded diagnostic file. A visible error/retry panel handles interface script failures. This cannot replace native diagnostics when the entire web process cannot load a page.
 
@@ -57,9 +57,9 @@ Download **Matrix-Play_0.5.8_amd64.deb** from the [v0.5.8 release](https://githu
 - First-run directory creation for **18 systems**, under `$HOME/Games/Matrix Play/`, plus per-console folders named `* Games`.
 - Independent game scanning for each console using recognized disc/ROM extensions and selected extracted layouts.
 - Select an emulator executable/AppImage stored in its console directory; when unambiguous Matrix Play detects it. It can also detect several conventional emulator binaries already installed on `PATH`. Emulator setup now includes a native file browser for AppImages/executables and an installed-Flatpak chooser.
-- **Single-click launching:** in a native Matrix Play build, clicking a game card immediately invokes its assigned emulator, `steam -applaunch` or a registered Wine/desktop launcher. The small information button opens details without launching.
+- **Single-click launching:** in a native Matrix Play build, clicking a game card immediately invokes its assigned emulator, `steam -applaunch` or a registered `.desktop` shortcut. The small information button opens details without launching.
 - Steam game discovery using `appmanifest_*.acf` from standard Steam and Flatpak locations, plus Steam library folders declared in `libraryfolders.vdf`.
-- Windows game registration by referencing existing `.exe` (system Wine) and `.desktop` files; no game relocation.
+- Windows game registration by referencing existing `.desktop` shortcuts; no game relocation. Direct `.exe` launching is not supported. Existing direct-executable registrations and artwork are retained, but cannot launch; add a working shortcut to replace the entry.
 - **Local cover art:** searches for a game-name-matched `.png`, `.jpg` or `.webp` beside the ROM (or `cover.*` in a game folder), plus Steam's local library art cache. Supports manually chosen covers saved under `$XDG_DATA_HOME/matrix/covers/` (normally `~/.local/share/matrix/covers/`), with safe per-game hash-based filenames. Artwork is loaded only for on-screen cards.
 - Persistent per-console favorites with visible counts, plus console-specific search, sorting and grid/list views.
 - Safe process creation using discrete arguments, not shell-interpolated commands. Emulator configuration never automatically rewrites game files.
@@ -117,7 +117,7 @@ Verified in source development (CI results are visible in the Actions tab):
 - `python3 tests/test_ui.py`: Chromium integration test passed with a **mock Tauri bridge**. It covers the 18 consoles, independent Steam/Windows tabs, launch dispatch, cover controls/status, explicit serial submission, manual save, TheCoverProject button, style/disable persistence requests, responsive layout and no page script errors.
 - `node --check web/app.js` and Rust formatting/parser checks passed.
 
-**Native testing release:** full desktop `cargo check` and an optimized native build succeeded. DEB and AppImage packages were generated. The DEB was extracted and tested through its actual Tauri/WebKit window in an isolated temporary home/X11 display. `tests/test_native.py --online` passed, covering actual IPC, folders/scanning, persistent settings, local/downloaded artwork, console boundaries and launch argument dispatch to harmless test executables. Actual automatic PS1 and PS2 downloads worked in that window. The AppImage also passed the real desktop test in extraction mode, and native binary unit tests passed. The affected user confirmed real PCSX2 Flatpak game launching in installed v0.5.5 and fullscreen gameplay with no emulator menus in installed v0.5.6. Other engines are covered by source/argument tests, not universal gameplay certification; Steam/Wine execution and other Linux platforms remain unverified; see [TESTING.md](TESTING.md).
+**Native testing release:** full desktop `cargo check` and an optimized native build succeeded. DEB and AppImage packages were generated. The DEB was extracted and tested through its actual Tauri/WebKit window in an isolated temporary home/X11 display. `tests/test_native.py --online` passed, covering actual IPC, folders/scanning, persistent settings, local/downloaded artwork, console boundaries and launch argument dispatch to harmless test executables. Actual automatic PS1 and PS2 downloads worked in that window. The AppImage also passed the real desktop test in extraction mode, and native binary unit tests passed. The affected user confirmed real PCSX2 Flatpak game launching in installed v0.5.5 and fullscreen gameplay with no emulator menus in installed v0.5.6. Other engines are covered by source/argument tests, not universal gameplay certification; Steam and desktop-shortcut execution and other Linux platforms remain unverified; see [TESTING.md](TESTING.md).
 
 To rerun UI tests, install Python Playwright and Chromium (`python3 -m pip install playwright`, `python3 -m playwright install chromium`). Set `MATRIX_CHROMIUM=/path/to/chrome` if using an existing Chromium binary. Run tests from the extracted folder; no proprietary ROMs are required. Standard Rust tests are offline after dependencies have been fetched; the explicit ignored smoke test requires internet access.
 
@@ -210,7 +210,7 @@ UI-only preview: open `web/index.html` in Chromium, Firefox or another browser. 
 1. Real emulator/game testing on Zorin, installed-package use on user machines, and Wayland/native-display behavior. Compilation, DEB generation and the actual Tauri window have been tested in a virtual X11 display.
 2. Real emulator-specific adapters for unusual command-line syntax, PS3 installed games, Switch installed content, Wii U extracted directories, multidisc grouping and emulator-specific Flatpak options. Emulator support differs between versions; the generic launch template is not guaranteed to work for every executable.
 3. Additional authorized artwork/metadata providers, nonstandard Sony serial formats and compressed-disc serial extraction. These are not implemented. PS1/PS2 serial-based xlenore downloads and manual cover imports are implemented; TheCoverProject automation is not.
-4. Windows runner/prefix profiles for existing non-Steam Proton/Wine games. `.exe` uses system Wine and a working directory, but custom Wine prefixes / launchers must currently be configured through a `.desktop` launcher; registry import from other tools is pending.
+4. Windows games are organized through existing `.desktop` shortcuts only. These must already work outside Matrix Play; any software they invoke is managed externally. Matrix Play does not install, configure or invoke a Windows compatibility runtime directly. Steam games continue to launch through the owning Steam installation, whose own compatibility choices are outside Matrix Play.
 5. Full gamepad navigation, controller setup, fullscreen experience, launch/exit monitoring and UI refinement.
 6. Broader emulator-specific and distribution testing. The existing native harness uses non-proprietary fixtures and harmless test launchers; it does not validate actual gameplay.
 

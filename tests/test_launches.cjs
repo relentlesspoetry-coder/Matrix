@@ -1,5 +1,5 @@
 // Exercise the production external-launch UI with deterministic timers/IPC.
-// These fixtures are not real Wine, Steam, GTK or game execution.
+// These fixtures are not real Steam, GTK or game execution.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -48,12 +48,12 @@ function fixture(invoke) {
   return { ...api, timers, calls, toasts, status, overlay, nodes };
 }
 const started = { phase: 'started', message: 'Windows launcher process started.', logPath: '/tmp/fixture.log', log: '' };
-const failed = { phase: 'error', message: 'Windows launcher exited with exit status 17.', logPath: '/tmp/fixture.log', log: 'wine: missing <runtime> <script>bad()</script>' };
+const failed = { phase: 'error', message: 'Windows launcher exited with exit status 17.', logPath: '/tmp/fixture.log', log: 'gio: missing <launcher> <script>bad()</script>' };
 
 test('a post-spawn Windows failure is polled, visible and safely escaped in details', async () => {
   const f = fixture(name => name === 'launch_windows_game' ? started : failed);
   f.state.overlay = 'external';
-  await f.launchExternal('windows', '/games/Fixture.exe');
+  await f.launchExternal('windows', '/games/Fixture.desktop');
   assert.equal(f.state.overlay, null);
   assert.match(f.status.innerHTML, /Windows launcher process started/);
   assert.equal(f.timers.length, 1);
@@ -111,12 +111,12 @@ test('late launcher failures remain monitored after the startup window', async (
 });
 
 test('spawn rejection is a visible error and unrelated open dialogs are retained', async () => {
-  const f = fixture(() => { throw new Error('Wine is missing'); });
+  const f = fixture(() => { throw new Error('Desktop launcher is missing'); });
   f.state.overlay = 'windows-add';
   await f.launchExternal('windows', 'one');
   assert.equal(f.state.launches.windows.phase, 'error');
   assert.equal(f.state.overlay, 'windows-add');
-  assert.match(f.status.innerHTML, /Wine is missing/);
+  assert.match(f.status.innerHTML, /Desktop launcher is missing/);
   assert.doesNotMatch(f.status.innerHTML, /Open emulator/);
 });
 

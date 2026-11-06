@@ -172,7 +172,8 @@ struct WindowsGame {
     uid: String,
     title: String,
     target: String,
-    runner: String, // "wine" for .exe, "desktop" for .desktop
+    // Retain unknown legacy values for settings compatibility; only desktop is launchable.
+    runner: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -816,15 +817,9 @@ fn add_windows_game(title: String, target: String, runner: String) -> Result<Win
     if !path.is_file() {
         return Err("Game or launcher file does not exist".into());
     }
-    let ext = path
-        .extension()
-        .and_then(|v| v.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    if !((runner == "wine" && ext == "exe") || (runner == "desktop" && ext == "desktop")) {
-        return Err("Choose Wine for an .exe or Desktop launcher for a .desktop file".into());
-    }
+    validate_windows_shortcut(path, &runner)?;
     let canonical = path.canonicalize().map_err(|e| e.to_string())?;
+    validate_windows_shortcut(&canonical, &runner)?;
     let uid = canonical.to_string_lossy().to_string();
     let game = WindowsGame {
         uid,
@@ -929,7 +924,7 @@ fn launch_steam_impl(uid: String) -> Result<launches::Info, String> {
         .into_iter()
         .find(|g| g.game.uid == uid)
         .ok_or("Steam app not found in installed libraries")?;
-    // Never silently switch installations: their games and Proton prefixes differ.
+    // Never silently switch installations: their libraries and settings differ.
     launches::start(steam_command(&uid, game.launcher), "steam")
 }
 #[cfg(feature = "desktop")]
@@ -939,30 +934,26 @@ async fn launch_steam_game(uid: String) -> Result<launches::Info, String> {
         .await
         .map_err(|e| e.to_string())?
 }
+fn validate_windows_shortcut(path: &Path, runner: &str) -> Result<(), String> {
+    if runner != "desktop"
+        || !path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("desktop"))
+    {
+        return Err("Only existing .desktop shortcuts are supported. Direct .exe launching is unavailable. Add a working desktop shortcut instead; your installed game files are unchanged.".into());
+    }
+    Ok(())
+}
 fn windows_command(game: &WindowsGame) -> Result<Command, String> {
-    if !Path::new(&game.target).is_file() {
-        return Err("Windows game or launcher is missing".into());
+    let path = Path::new(&game.target);
+    // Validate saved entries too, including registrations made by older versions.
+    validate_windows_shortcut(path, &game.runner)?;
+    if !path.is_file() {
+        return Err("Windows desktop shortcut is missing".into());
     }
-    let mut command = match game.runner.as_str() {
-        "wine" => {
-            let mut c = launch_command("wine");
-            c.arg(&game.target);
-            c
-        }
-        "desktop" => {
-            let mut c = launch_command("gio");
-            c.arg("launch").arg(&game.target);
-            c
-        }
-        _ => return Err("Unsupported Windows launcher".into()),
-    };
-    if game.runner == "wine" {
-        command.current_dir(
-            Path::new(&game.target)
-                .parent()
-                .ok_or("Invalid Windows game path")?,
-        );
-    }
+    let mut command = launch_command("gio");
+    command.arg("launch").arg(path);
     Ok(command)
 }
 fn launch_windows_impl(uid: String) -> Result<launches::Info, String> {
@@ -1534,6 +1525,64 @@ mod tests {
         );
     }
     #[test]
+    fn windows_shortcuts_reject_direct_executables_and_unknown_runners() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("Game with spaces.exe");
+        fs::write(&target, b"synthetic game fixture").unwrap();
+        for runner in ["desktop", "legacy-runtime", ""] {
+            let error = add_windows_game(
+                "Unsupported entry".into(),
+                target.to_string_lossy().into(),
+                runner.into(),
+            )
+            .err()
+            .expect("direct executable registration must fail");
+            assert!(error.contains("Direct .exe launching is unavailable"));
+            let game = WindowsGame {
+                uid: "legacy".into(),
+                title: "Legacy game".into(),
+                target: target.to_string_lossy().into(),
+                runner: runner.into(),
+            };
+            assert!(windows_command(&game).is_err());
+        }
+        let disguised = root.path().join("Disguised.desktop");
+        std::os::unix::fs::symlink(&target, &disguised).unwrap();
+        assert!(add_windows_game(
+            "Disguised executable".into(),
+            disguised.to_string_lossy().into(),
+            "desktop".into()
+        )
+        .is_err());
+        let desktop = root.path().join("Game.DESKTOP");
+        fs::write(&desktop, b"[Desktop Entry]\nType=Application\nExec=true\n").unwrap();
+        let game = WindowsGame {
+            uid: "shortcut".into(),
+            title: "Shortcut game".into(),
+            target: desktop.to_string_lossy().into(),
+            runner: "desktop".into(),
+        };
+        let command = windows_command(&game).unwrap();
+        assert_eq!(command.get_program(), "gio");
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [std::ffi::OsStr::new("launch"), desktop.as_os_str()]
+        );
+        assert!(validate_windows_shortcut(&desktop, "legacy-runtime").is_err());
+    }
+    #[test]
+    fn legacy_windows_entries_are_preserved_but_not_launchable() {
+        let value = serde_json::json!({
+            "uid": "/games/Legacy.exe", "title": "Legacy", "target": "/games/Legacy.exe",
+            "runner": "legacy-runtime"
+        });
+        let game: WindowsGame = serde_json::from_value(value.clone()).unwrap();
+        assert!(windows_command(&game)
+            .unwrap_err()
+            .contains("Direct .exe launching is unavailable"));
+        assert_eq!(serde_json::to_value(game).unwrap(), value);
+    }
+    #[test]
     fn external_launch_fixture() {
         let Some(root) = std::env::var_os("MATRIX_EXTERNAL_FIXTURE") else {
             return;
@@ -1541,7 +1590,8 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let root = PathBuf::from(root);
         fs::create_dir_all(root.join("bin")).unwrap();
-        for (program, ext, runner) in [("wine", "exe", "wine"), ("gio", "desktop", "desktop")] {
+        {
+            let (program, ext, runner) = ("gio", "desktop", "desktop");
             let script = root.join("bin").join(program);
             fs::write(&script, format!("#!/bin/sh\nprintf 'early {program} diagnostic\\n' >&2\nsleep 0.7\nprintf 'late {program} diagnostic\\n' >&2\nexit 17\n")).unwrap();
             fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
@@ -1556,10 +1606,9 @@ mod tests {
             let command = windows_command(&game).unwrap();
             let args: Vec<_> = command.get_args().collect();
             assert_eq!(args.last().unwrap(), &target.as_os_str());
-            assert_eq!(args.len(), if runner == "wine" { 1 } else { 2 });
-            if runner == "wine" {
-                assert_eq!(command.get_current_dir(), Some(root.as_path()));
-            }
+            assert_eq!(args.len(), 2);
+            assert_eq!(args[0], "launch");
+            assert_eq!(command.get_program(), "gio");
             let info = launch_windows_impl(game.uid).unwrap();
             assert_eq!(info.phase, "started");
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -1585,7 +1634,7 @@ mod tests {
         assert!(launches::get_launch_status("../escape".into()).is_err());
     }
     #[test]
-    fn windows_runner_failures_are_captured_after_spawn() {
+    fn desktop_shortcut_failures_are_captured_after_spawn() {
         let root = tempfile::tempdir().unwrap();
         let (_, module) = module_path!().split_once("::").unwrap_or(("", "tests"));
         let fixture = format!("{module}::external_launch_fixture");

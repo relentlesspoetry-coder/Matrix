@@ -510,8 +510,8 @@ mod tests {
             current.windows.push(WindowsGame {
                 uid: "keep".into(),
                 title: "Keep this game".into(),
-                target: "/games/keep.exe".into(),
-                runner: "wine".into(),
+                target: "/games/keep.desktop".into(),
+                runner: "desktop".into(),
             });
             Ok(())
         })
