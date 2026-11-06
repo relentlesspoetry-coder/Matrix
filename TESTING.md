@@ -1,5 +1,24 @@
 # Test Matrix Play on Linux
 
+## Version 0.5.9 keyboard repair checks
+
+The emulator setup dialog's focus trap omitted both the Advanced launch options
+summary and its multiline arguments field. Five new fixture cases failed before
+the repair. All six keyboard cases and all 43 production-JavaScript fixture tests
+pass after it, along with the folder, release/signing and DEB packaging fixtures.
+The native desktop suite now uses WebDriver key actions to verify Tab/Shift+Tab
+through expanded and collapsed advanced settings, hidden Flatpak/file controls,
+and the dialog boundaries. The release pipeline must pass these native checks
+on its exact commit before publication.
+
+Current local Rust and native-browser checks were unavailable: no Rust toolchain
+is installed and Chromium cannot open its IPC socket in this executor. The
+GitHub Linux workflow runs the full Rust/build/native gates. No new definite
+save-permission, Steam/Wine or updater bug was found in the targeted source
+review. Synthetic launchers are not real Steam/Wine gameplay or emulator save
+creation, and these checks do not perform privileged installation. This repair
+improves keyboard access; it does not add or certify physical gamepad support.
+
 ## Version 0.5.8 repair verification — 2026-11-06
 
 The combined repairs were integrated against main

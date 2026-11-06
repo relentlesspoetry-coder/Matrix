@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.9
+
+- Fix emulator setup keyboard navigation: Tab and Shift+Tab now continue through Advanced launch options and multiline arguments instead of jumping to Close. Skip hidden, disabled and non-tabbable controls when wrapping dialog focus.
+- Add six production-handler regressions and real WebKit keyboard checks for forward/reverse navigation, collapsed advanced settings, hidden Flatpak/file fields and dialog focus wrapping.
+- This is a focused keyboard repair, not new gamepad support. Real Steam/Wine gameplay, emulator save creation and a privileged package upgrade remain separate integration checks.
+
 ## 0.5.8
 
 - Grant temporary game-directory write access to recognized SameBoy/mGBA Flatpaks for adjacent save files, while keeping setup access read-only and other libraries separate.

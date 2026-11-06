@@ -132,6 +132,15 @@ def main():
         def click(selector):
             js('document.querySelector(arguments[0]).click()', selector)
 
+        def key(value, shift=False):
+            actions = ([{'type':'keyDown','value':'\ue008'}] if shift else [])
+            actions += [{'type':'keyDown','value':value}, {'type':'keyUp','value':value}]
+            actions += ([{'type':'keyUp','value':'\ue008'}] if shift else [])
+            request('POST', f'/session/{session}/actions', {'actions':[{'type':'key','id':'keyboard','actions':actions}]})
+
+        def focused(selector):
+            return js('return document.activeElement === document.querySelector(arguments[0])', selector)
+
         def screenshot(name):
             if cfg.screenshots:
                 cfg.screenshots.mkdir(parents=True, exist_ok=True)
@@ -303,6 +312,34 @@ def main():
             click('[data-action="configure"][data-id="ps2"]')
             js('document.querySelector("#emulator-launcher").value="flatpak";document.querySelector("#emulator-launcher").dispatchEvent(new Event("change",{bubbles:true}))')
             wait_for(lambda: js('return document.querySelector("#flatpak-app").options.length === 4'))
+            # Native WebKit keyboard navigation, not simulated focus handling.
+            # Hidden file/AppImage controls must not steal Flatpak tab order.
+            js('document.querySelector("#emulator-launcher").focus()')
+            key('\ue004')
+            assert focused('#flatpak-app')
+            js('document.querySelector("#emulator-name").focus()')
+            key('\ue004')
+            assert focused('.advanced-setup summary')
+            key('\ue007')
+            assert js('return document.querySelector(".advanced-setup").open')
+            key('\ue004')
+            assert focused('#launch-args')
+            key('\ue004')
+            assert focused('#library-path')
+            key('\ue004', shift=True)
+            assert focused('#launch-args')
+            key('\ue004', shift=True)
+            assert focused('.advanced-setup summary')
+            key('\ue004', shift=True)
+            assert focused('#emulator-name')
+            js('document.querySelector(".advanced-setup").open=false;document.querySelector(".advanced-setup summary").focus()')
+            key('\ue004')
+            assert focused('#library-path')
+            js('document.querySelector(".emulator-dialog .close").focus()')
+            key('\ue004', shift=True)
+            assert focused('[data-open-after-save]')
+            key('\ue004')
+            assert focused('.emulator-dialog .close')
             js('document.querySelector("#flatpak-app").value="org.matrix.TestEmulator|user";document.querySelector("#flatpak-app").dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#config-form").requestSubmit()')
             wait_for(lambda: invoke('bootstrap')['profiles']['ps2'].get('launcher')=='flatpak')
             wait_for(lambda: js('return !document.querySelector("#config-form")'))
