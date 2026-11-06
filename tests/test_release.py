@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='matrix-release-test-') as tmp:
     public=run('openssl','pkey','-in',str(key),'-pubout','-outform','DER')
     (root/'update-core/update-public-key.bin').write_bytes(public[-32:])
     run('openssl','pkey','-in',str(key),'-pubout','-out',str(pub))
-    run('git','init','-q',cwd=root);run('git','add','.',cwd=root)
+    run('git','init','-q','-b','main',cwd=root);run('git','add','.',cwd=root)
     run('git','-c','user.name=Release Test','-c','user.email=test@example.invalid','commit','-qm','Fixture',cwd=root)
     for kind,ext,data in [('deb','deb',b'!<arch>\nfixture'),('appimage','AppImage',b'\x7fELF0000AI\x02fixture')]:
         folder=root/f'src-tauri/target/release/bundle/{kind}';folder.mkdir(parents=True)
@@ -50,4 +50,26 @@ with tempfile.TemporaryDirectory(prefix='matrix-release-test-') as tmp:
         builder.prepare(Path(tmp)/'wrong-output',wrong)
         raise AssertionError('Mismatched signing key should be rejected')
     except ValueError: pass
+    # Exercise the version helper against a local bare remote (no GitHub/network).
+    helper_spec=importlib.util.spec_from_file_location('version_helper',ROOT/'scripts/release.py')
+    helper=importlib.util.module_from_spec(helper_spec);helper_spec.loader.exec_module(helper);helper.ROOT=root
+    (root/'.gitignore').write_text('src-tauri/target/\n')
+    (root/'package-lock.json').write_text('{"version":"0.6.0","packages":{"":{"version":"0.6.0"}}}')
+    (root/'src-tauri/Cargo.toml').write_text('[package]\nname = "matrix-frontend"\nversion = "0.6.0"\n')
+    (root/'src-tauri/Cargo.lock').write_text('[[package]]\nname = "matrix-frontend"\nversion = "0.6.0"\n')
+    (root/'web').mkdir();(root/'web/app.js').write_text('/* v0.6.0 */');(root/'web/index.html').write_text('v0.6.0')
+    (root/'README.md').write_text('[v0.6.0 release](https://github.com/example/app/releases/tag/v0.6.0) Matrix-Play_0.6.0_amd64.deb\nHistorically confirmed 0.6.0.\n')
+    (root/'TESTING.md').write_text('native testing release, version 0.6.0.\nHistorically confirmed 0.6.0.\n')
+    (root/'CHANGELOG.md').write_text('## 0.6.1\nNew notes.\n## 0.6.0\nPrevious notes.\n')
+    run('git','config','user.name','Release Test',cwd=root);run('git','config','user.email','test@example.invalid',cwd=root)
+    run('git','add','.',cwd=root);run('git','commit','-qm','Version helper fixture',cwd=root)
+    remote=Path(tmp)/'origin.git';run('git','init','--bare','-q',str(remote));run('git','remote','add','origin',str(remote),cwd=root)
+    helper.bump('0.6.1')
+    assert json.loads((root/'package.json').read_text())['version']=='0.6.1'
+    assert 'Matrix-Play_0.6.1_amd64.deb' in (root/'README.md').read_text()
+    assert 'Historically confirmed 0.6.0.' in (root/'README.md').read_text()
+    assert 'version 0.6.1.' in (root/'TESTING.md').read_text()
+    assert 'Historically confirmed 0.6.0.' in (root/'TESTING.md').read_text()
+    assert b'Release Matrix Play 0.6.1' in run('git','log','main','-1','--format=%s',cwd=remote)
+    print('PASS: version helper bumps, commits and pushes to a disposable local remote, retaining historical verification versions')
 print('PASS: real release packaging, exact version notes, signature, hashes, source archive, wrong-key and stale-output rejection (disposable fixtures)')

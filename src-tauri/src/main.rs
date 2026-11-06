@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod emulators;
+mod favorites;
 mod updates;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -114,6 +116,14 @@ const SPECS: &[ConsoleSpec] = &[
 struct EmulatorProfile {
     emulator_name: String,
     emulator_path: String,
+    #[serde(default)]
+    launcher: emulators::Launcher,
+    #[serde(default)]
+    flatpak_id: String,
+    #[serde(default)]
+    flatpak_installation: String,
+    #[serde(default)]
+    extract_appimage: bool,
     /// Each entry is a literal argv token. {game} is the ONLY interpolation token.
     #[serde(default)]
     launch_args: Vec<String>,
@@ -146,6 +156,10 @@ impl Default for ArtworkSettings {
 #[derive(Serialize, Deserialize, Default)]
 struct Settings {
     #[serde(default)]
+    favorites: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    favorites_migrated: bool,
+    #[serde(default)]
     artwork: ArtworkSettings,
     #[serde(default)]
     profiles: BTreeMap<String, EmulatorProfile>,
@@ -156,6 +170,8 @@ struct Settings {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Bootstrap {
+    favorites: BTreeMap<String, Vec<String>>,
+    favorites_migrated: bool,
     artwork: ArtworkSettings,
     root: String,
     folders: BTreeMap<String, String>,
@@ -354,6 +370,7 @@ fn bootstrap() -> Result<Bootstrap, String> {
                     emulator_name: guessed_emulator(s.id).to_string(),
                     emulator_path: executable.to_string_lossy().into_owned(),
                     launch_args: default_args(s.id),
+                    ..Default::default()
                 },
             );
             auto_detected = true;
@@ -371,6 +388,8 @@ fn bootstrap() -> Result<Bootstrap, String> {
         );
     }
     Ok(Bootstrap {
+        favorites: settings.favorites,
+        favorites_migrated: settings.favorites_migrated,
         root: root.to_string_lossy().into(),
         folders,
         profiles: settings.profiles,
@@ -620,40 +639,37 @@ fn save_emulator(
     emulator_name: String,
     emulator_path: String,
     launch_args: Vec<String>,
+    launcher: Option<String>,
+    flatpak_id: Option<String>,
+    flatpak_installation: Option<String>,
+    allow_execute: Option<bool>,
+    extract_appimage: Option<bool>,
 ) -> Result<(), String> {
-    let _ = spec(&id)?;
-    if emulator_name.trim().is_empty() || emulator_path.trim().is_empty() {
-        return Err("Specify both the emulator name and executable path".into());
-    }
-    let path = Path::new(&emulator_path);
-    if !path.is_file() {
-        return Err("Emulator executable does not exist at that path".into());
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = fs::metadata(path)
-            .map_err(|e| e.to_string())?
-            .permissions()
-            .mode();
-        if mode & 0o111 == 0 {
-            return Err("Emulator is not executable; grant execute permission first".into());
-        }
-    }
-    let mut settings = load_settings()?;
-    let effective_args = if launch_args.is_empty() {
-        default_args(&id)
-    } else {
-        launch_args
+    spec(&id)?;
+    let launcher = match launcher.as_deref().unwrap_or("executable") {
+        "executable" => emulators::Launcher::Executable,
+        "appimage" => emulators::Launcher::Appimage,
+        "flatpak" => emulators::Launcher::Flatpak,
+        _ => return Err("Choose AppImage, Flatpak or executable.".into()),
     };
-    settings.profiles.insert(
-        id,
+    let profile = emulators::prepare(
         EmulatorProfile {
             emulator_name,
             emulator_path,
-            launch_args: effective_args,
+            launcher,
+            flatpak_id: flatpak_id.unwrap_or_default(),
+            flatpak_installation: flatpak_installation.unwrap_or_default(),
+            extract_appimage: extract_appimage.unwrap_or(false),
+            launch_args: if launch_args.is_empty() {
+                default_args(&id)
+            } else {
+                launch_args
+            },
         },
-    );
+        allow_execute.unwrap_or(false),
+    )?;
+    let mut settings = load_settings()?;
+    settings.profiles.insert(id, profile);
     save_settings(&settings)
 }
 
@@ -713,14 +729,6 @@ fn open_console_folder(id: String) -> Result<(), String> {
     Ok(())
 }
 
-fn command_for_emulator(path: &str) -> Result<Command, String> {
-    let binary = Path::new(path);
-    if !binary.is_file() {
-        return Err("Emulator executable is missing; check Settings".into());
-    }
-    Ok(launch_command(binary))
-}
-
 #[cfg_attr(feature = "desktop", tauri::command)]
 fn launch_console_game(id: String, uid: String) -> Result<(), String> {
     let _ = spec(&id)?;
@@ -733,7 +741,7 @@ fn launch_console_game(id: String, uid: String) -> Result<(), String> {
         .profiles
         .get(&id)
         .ok_or("Configure an emulator for this console first")?;
-    let mut command = command_for_emulator(&profile.emulator_path)?;
+    let mut command = emulators::command(profile, &id)?;
     let args = if profile.launch_args.is_empty() {
         vec!["{game}".into()]
     } else {
@@ -1227,6 +1235,7 @@ fn main() {
     isolate_runtime_cache();
     tauri::Builder::default()
         .manage(updates::Service::default())
+        .plugin(tauri_plugin_dialog::init())
         .on_page_load(|_, page| {
             startup_log(&format!("Page {:?}: {}", page.event(), page.url()));
         })
@@ -1266,6 +1275,10 @@ fn main() {
             scan_console,
             scan_steam,
             save_emulator,
+            emulators::list_flatpaks,
+            emulators::browse_emulator,
+            favorites::set_favorite,
+            favorites::import_favorites,
             add_windows_game,
             list_windows_games,
             remove_windows_game,
@@ -1377,6 +1390,31 @@ mod tests {
             },
         );
         save_settings(&settings).unwrap();
+        let legacy = BTreeMap::from([
+            ("ps2".into(), vec![uid.clone(), "demo-0".into()]),
+            ("ps1".into(), vec![uid.clone()]),
+        ]);
+        let migrated = favorites::import_favorites(legacy.clone()).unwrap();
+        assert_eq!(migrated["ps2"], vec![uid.clone()]);
+        assert!(migrated["ps1"].is_empty());
+        assert!(favorites::set_favorite("ps1".into(), uid.clone(), true).is_err());
+        assert!(favorites::set_favorite("ps2".into(), uid.clone(), false)
+            .unwrap()
+            .is_empty());
+        assert!(favorites::import_favorites(legacy).unwrap()["ps2"].is_empty());
+        assert_eq!(
+            favorites::set_favorite("ps2".into(), uid.clone(), true)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            favorites::set_favorite("ps2".into(), uid.clone(), true)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(bootstrap().unwrap().favorites["ps2"], vec![uid.clone()]);
         save_artwork_settings(false, "3d".into()).unwrap();
         assert_eq!(
             load_settings().unwrap().profiles["ps2"].emulator_name,

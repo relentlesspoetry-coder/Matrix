@@ -76,6 +76,12 @@ A game's emulator, firmware and any required keys must already be installed/conf
 - The compiled desktop window passed native IPC/scanning/launch-fixture tests, rendered all 14 console images and exposed the real updater status. Ordinary non-WebDriver startup painted successfully without injected graphics settings.
 - Rust cover and backend tests continue to pass. The release pipeline must also pass its Linux build and actual desktop checks before signing and publication.
 
+## Version 0.5.4 development checks
+
+Nine native/headless backend tests pass, including backward-compatible executable profiles, AppImage header validation and explicit execute-permission consent, installed-Flatpak parsing/scope, and favorites migration/deduplication/console boundaries. Mock-bridge Chromium tests exercise AppImage Browse dispatch, Flatpak selection/save, favorite add/remove, counts and empty states.
+
+The compiled desktop test passed favorites persistence across a webview reload and a complete frontend process restart. It selected a Flatpak through the real setup form, persisted its installation scope and launched it with expected discrete arguments and console-specific read access. That launch uses a harmless fixture `flatpak` executable; it does not test real emulator gameplay. Ordinary non-WebDriver painted-window startup also passed without forced graphics settings. The native picker uses Tauri's dialog plugin; the browser test simulates its selected-path response.
+
 ## Published release and installed-app verification — 2026-11-05
 
 The public GitHub Actions run [42143081462](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42143081462) passed both build/test and signing/publication jobs for v0.5.3. Its six published assets include DEB, AppImage, source ZIP, checksums and the signed update manifest. Downloaded asset hashes were checked against SHA256SUMS.

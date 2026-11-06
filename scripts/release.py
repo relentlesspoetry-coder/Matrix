@@ -31,8 +31,20 @@ def bump(version):
         else:
             s=s.replace(f'name = "matrix-frontend"\nversion = "{old}"',f'name = "matrix-frontend"\nversion = "{version}"',1)
         p.write_text(s)
-    for name in ['web/app.js','web/index.html','README.md','TESTING.md']:
+    for name in ['web/app.js','web/index.html']:
         p=ROOT/name;p.write_text(p.read_text().replace(old,version))
+    for name in ['README.md','TESTING.md']:
+        p=ROOT/name;s=p.read_text()
+        # Update current install instructions without rewriting dated evidence.
+        for before,after in [
+            (f'Matrix-Play_{old}_amd64',f'Matrix-Play_{version}_amd64'),
+            (f'/releases/tag/v{old}',f'/releases/tag/v{version}'),
+            (f'[v{old} release]',f'[v{version} release]'),
+            (f'[v{old} GitHub release]',f'[v{version} GitHub release]'),
+            (f'native testing release, version {old}.',f'native testing release, version {version}.'),
+            (f'install the v{old} DEB',f'install the v{version} DEB'),
+        ]: s=s.replace(before,after)
+        p.write_text(s)
     subprocess.run(['git','add','package.json','package-lock.json','src-tauri/tauri.conf.json','src-tauri/Cargo.toml','src-tauri/Cargo.lock','web/app.js','web/index.html','README.md','TESTING.md'],cwd=ROOT,check=True)
     subprocess.run(['git','commit','-m',f'Release Matrix Play {version}'],cwd=ROOT,check=True)
     # Persist the user's instruction: every new version is pushed, never left local.

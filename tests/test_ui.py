@@ -20,6 +20,7 @@ SCREENS.mkdir(exist_ok=True)
 MOCK = '''
 window.__calls = [];
 window.__update={currentVersion:'0.5.2',latestVersion:null,phase:'idle',message:'Check for updates',notes:'',received:0,total:0,installMode:'system'};
+window.__favorites={};window.__migrated=false;
 window.__artSaved = false;
 window.__artOptions={enabled:true,style:"default"};
 window.__windows = [{uid:'/games/My Windows Game.desktop',title:'My Windows Game',target:'/games/My Windows Game.desktop',runner:'desktop'}];
@@ -30,7 +31,7 @@ window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   if(name==='check_updates') return (window.__update={...window.__update,latestVersion:'0.6.0',phase:'available',message:'A newer Matrix Play release is available.',notes:'Console artwork and updates.'});
   if(name==='download_update') return (window.__update={...window.__update,phase:'downloaded',message:'Verified update downloaded.'});
   if(name==='install_update') return (window.__update={...window.__update,phase:'installed',message:'Update installed. Restart Matrix Play to finish.'});
-  if(name==='bootstrap') return {artwork:window.__artOptions,root:'/home/example/Games/Matrix',folders:Object.fromEntries(ids.map(id=>[id,`/home/example/Games/Matrix/${id}/${id} Games`])),profiles:{ps2:{emulatorName:'PCSX2',emulatorPath:'/usr/bin/pcsx2',launchArgs:['{game}']}},windows:window.__windows};
+  if(name==='bootstrap') return {favorites:window.__favorites,favoritesMigrated:window.__migrated,artwork:window.__artOptions,root:'/home/example/Games/Matrix',folders:Object.fromEntries(ids.map(id=>[id,`/home/example/Games/Matrix/${id}/${id} Games`])),profiles:{ps2:{emulatorName:'PCSX2',emulatorPath:'/usr/bin/pcsx2',launchArgs:['{game}']}},windows:window.__windows};
   if(name==='scan_console') return args.id==='ps2' ? [{uid:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',title:'Test Game',path:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',kind:'ps2'}] : [];
   if(name==='scan_steam') return [{uid:'12345',title:'Test Steam Game',kind:'steam',appId:'12345'}];
   if(name==='list_windows_games') return window.__windows;
@@ -40,6 +41,10 @@ window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   if(name==='download_cover') return args.serial ? {status:'downloaded',message:'Cover saved for offline use',serial:args.serial,source:'user-confirmed',url:'https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/default/SLUS-20312.jpg'} : {status:'needs-serial',message:'No serial found; confirm a serial in game details'};
   if(name==='get_cover') return args.kind==='ps2' ? 'data:image/png;base64,__COVER__' : null;
   if(name==='save_cover') {window.__artSaved=true;return;}
+  if(name==='import_favorites') {window.__migrated=true;return window.__favorites;}
+  if(name==='set_favorite') {const set=new Set(window.__favorites[args.id] || []);if(args.favorite)set.add(args.uid);else set.delete(args.uid);return window.__favorites[args.id]=[...set];}
+  if(name==='list_flatpaks') return [{appId:'org.example.Emulator',name:'Example Emulator',installation:'user'}];
+  if(name==='browse_emulator') return '/home/example/Apps/Example.AppImage';
   if(name==='save_emulator') return;
   return;
 }}};
@@ -94,6 +99,14 @@ with sync_playwright() as p:
     native.keyboard.press('Escape')
     native.get_by_role('button',name='Browse PlayStation 2 library').click()
     assert native.locator('.game-item').count()==1
+    native.get_by_role('button',name='Add Test Game to favorites',exact=True).click()
+    native.get_by_role('button',name='My favorites (1)').click()
+    assert native.locator('.game-item').count()==1
+    screenshot(native,'matrix-console-favorites.png')
+    assert native.evaluate('window.__favorites.ps2.length')==1
+    native.get_by_role('button',name='Remove Test Game from favorites',exact=True).click()
+    native.wait_for_function('document.querySelector(".empty-library strong")?.textContent.includes("favorites yet")')
+    native.get_by_role('button',name='Browse all games').click()
     screenshot(native,'matrix-native-ps2.png')
     native.wait_for_function('window.__calls.some(x=>x[0]==="get_cover" && x[1].kind==="ps2")')
     assert native.locator('.game-cover img').count()>=1
@@ -147,6 +160,20 @@ with sync_playwright() as p:
     assert native.locator('#library-path').get_attribute('readonly') is not None
     assert native.locator('#launch-args').count() == 1
     native.keyboard.press('Escape')
+    native.get_by_role('button',name='Edit',exact=True).click()
+    native.locator('#emulator-launcher').select_option('appimage')
+    native.get_by_role('button',name='Browse…').click()
+    native.wait_for_function('document.querySelector("#emulator-path").value.includes("Example.AppImage")')
+    assert native.locator('#allow-execute').is_checked()
+    screenshot(native,'matrix-appimage-setup.png')
+    native.locator('#emulator-launcher').select_option('flatpak')
+    native.wait_for_function('document.querySelector("#flatpak-app").options.length===2')
+    native.locator('#flatpak-app').select_option('org.example.Emulator|user')
+    assert native.locator('#emulator-name').input_value()=='Example Emulator'
+    assert native.locator('#emulator-path').is_hidden()
+    screenshot(native,'matrix-flatpak-setup.png')
+    native.get_by_role('button',name='Save emulator',exact=True).click()
+    native.wait_for_function('window.__calls.some(x=>x[0]==="save_emulator" && x[1].launcher==="flatpak" && x[1].flatpakId==="org.example.Emulator" && x[1].flatpakInstallation==="user")')
 
     mobile = browser.new_page(viewport={'width':390,'height':844},device_scale_factor=1,is_mobile=True,has_touch=True)
     mobile.evaluate(MOCK)

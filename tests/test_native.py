@@ -76,6 +76,9 @@ def main():
         for target in [library/'PS2/TestEmulator.AppImage', home/'bin/steam', home/'bin/wine']:
             target.write_text(launcher)
             target.chmod(0o755)
+        flatpak=home/'bin/flatpak'
+        flatpak.write_text('#!/bin/sh\nif [ "$1" = "list" ]; then\n  printf "org.matrix.TestEmulator\\tMatrix Test Emulator\\tuser\\norg.matrix.TestEmulator\\tMatrix Test Emulator\\tsystem\\n"\n  exit 0\nfi\n'+launcher.split('\n',1)[1])
+        flatpak.chmod(0o755)
         exe = home/'Windows Fixture.exe'
         exe.write_text('Synthetic registration fixture.')
         log = home/'launch.log'
@@ -173,6 +176,19 @@ def main():
                 wait_for(lambda: invoke('get_cover', {'kind':'ps2','uid':str(ps2game)}), 60)
                 wait_for(lambda: invoke('get_cover', {'kind':'ps1','uid':str(ps1game)}), 60)
                 wait_for(lambda: js('return document.querySelector(".game-cover img")?.complete'))
+            click('[data-action="favorite"]')
+            wait_for(lambda: invoke('bootstrap')['favorites'].get('ps2') == [str(ps2game)])
+            click('[data-action="console-favorites"]')
+            assert js('return document.querySelectorAll(".game-item").length') == 1
+            assert invoke('bootstrap')['favorites'].get('ps1',[]) == []
+            try:
+                invoke('set_favorite', {'id':'ps1','uid':str(ps2game),'favorite':True})
+                raise AssertionError('Cross-console favorite accepted')
+            except RuntimeError: pass
+            request('POST',f'/session/{session}/refresh',{})
+            wait_for(lambda: js('return document.querySelectorAll(".console-card").length === 14 && document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"'))
+            click('[data-action="console"][data-id="ps2"]')
+            wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
             screenshot('matrix-linux-ps2.png')
             click('.game-card')
             wait_for(log.exists)
@@ -212,6 +228,40 @@ def main():
             assert boot['artwork'] == {'enabled':False,'style':'3d'}
             assert boot['profiles']['ps2']['emulatorPath'].endswith('TestEmulator.AppImage')
             assert len(boot['windows']) == 1
+            assert boot['favorites']['ps2']==[str(ps2game)]
+            apps=invoke('list_flatpaks')
+            assert {a['installation'] for a in apps}=={'user','system'}
+            click('[data-action="settings"]')
+            click('[data-action="configure"][data-id="ps2"]')
+            js('document.querySelector("#emulator-launcher").value="flatpak";document.querySelector("#emulator-launcher").dispatchEvent(new Event("change",{bubbles:true}))')
+            wait_for(lambda: js('return document.querySelector("#flatpak-app").options.length === 3'))
+            js('document.querySelector("#flatpak-app").value="org.matrix.TestEmulator|user";document.querySelector("#flatpak-app").dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#config-form").requestSubmit()')
+            wait_for(lambda: invoke('bootstrap')['profiles']['ps2'].get('launcher')=='flatpak')
+            wait_for(lambda: js('return !document.querySelector("#config-form")'))
+            click('[data-action="home"]')
+            click('[data-action="console"][data-id="ps2"]')
+            wait_for(lambda: js('return Boolean(document.querySelector(".game-card"))'))
+            log.unlink()
+            (home/'child-cache.log').unlink()
+            click('.game-card')
+            expected=['run','--user',f'--filesystem={ps2}:ro','org.matrix.TestEmulator',str(ps2game)]
+            wait_for(lambda: log.read_text().splitlines()==expected)
+            wait_for(lambda: (home/'child-cache.log').read_text()==expected_child_cache)
+            assert invoke('bootstrap')['profiles']['ps2']['flatpakInstallation']=='user'
+            assert invoke('bootstrap')['favorites']['ps2']==[str(ps2game)]
+            invoke('set_favorite',{'id':'ps2','uid':str(ps2game),'favorite':False})
+            assert invoke('bootstrap')['favorites']['ps2']==[]
+            invoke('set_favorite',{'id':'ps2','uid':str(ps2game),'favorite':True})
+            request('DELETE',f'/session/{session}')
+            session=None
+            time.sleep(.5)
+            session=request('POST','/session',{'capabilities':{'alwaysMatch':{'tauri:options':{'application':str(binary)}}}})['sessionId']
+            request('POST',f'/session/{session}/timeouts',{'script':60000})
+            wait_for(lambda: js('return document.querySelectorAll(".console-card").length === 14 && document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"'))
+            click('[data-action="console"][data-id="ps2"]')
+            wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
+            assert invoke('bootstrap')['profiles']['ps2']['launcher']=='flatpak'
+            print('PASS: native favorites survive process restart and webview reload, remain console-scoped, and preserve profiles; Flatpak discovery/setup/launch argv use harmless fixtures')
             print('PASS: real Tauri/WebKit window, native IPC, 14 libraries, PS1/PS2 scanning, manual/cache artwork, console boundaries, persisted settings, three launcher argument paths')
             if cfg.online:
                 print('PASS: real desktop automatic PS1 and PS2 cover downloads (synthetic serial-labelled game fixtures)')

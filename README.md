@@ -44,13 +44,27 @@ Download **Matrix-Play_0.5.3_amd64.deb** from the [v0.5.3 release](https://githu
 
 - First-run directory creation for **14 systems**, under `$HOME/Games/Matrix Play/`, plus per-console folders named `* Games`.
 - Independent game scanning for each console using recognized disc/ROM extensions and selected extracted layouts.
-- Select an emulator executable/AppImage stored in its console directory; when unambiguous Matrix Play detects it. It can also detect several conventional emulator binaries already installed on `PATH`. Flatpak emulator discovery is not implemented yet.
+- Select an emulator executable/AppImage stored in its console directory; when unambiguous Matrix Play detects it. It can also detect several conventional emulator binaries already installed on `PATH`. Emulator setup now includes a native file browser for AppImages/executables and an installed-Flatpak chooser.
 - **Single-click launching:** in a native Matrix Play build, clicking a game card immediately invokes its assigned emulator, `steam -applaunch` or a registered Wine/desktop launcher. The small information button opens details without launching.
 - Steam game discovery using `appmanifest_*.acf` from standard Steam and Flatpak locations, plus Steam library folders declared in `libraryfolders.vdf`.
 - Windows game registration by referencing existing `.exe` (system Wine) and `.desktop` files; no game relocation.
 - **Local cover art:** searches for a game-name-matched `.png`, `.jpg` or `.webp` beside the ROM (or `cover.*` in a game folder), plus Steam's local library art cache. Supports manually chosen covers saved under `$XDG_DATA_HOME/matrix/covers/` (normally `~/.local/share/matrix/covers/`), with safe per-game hash-based filenames. Artwork is loaded only for on-screen cards.
-- Offline favorites and console-specific search, sorting and grid/list views.
+- Persistent per-console favorites with visible counts, plus console-specific search, sorting and grid/list views.
 - Safe process creation using discrete arguments, not shell-interpolated commands. Emulator configuration never automatically rewrites game files.
+
+## Add an AppImage or Flatpak emulator
+
+1. Open a console and choose **Set up emulator** (or **Edit emulator**).
+2. Choose **AppImage file**, click **Browse…**, select your downloaded AppImage and leave **Allow this AppImage to run** checked if it needs execute permission. It can stay anywhere on your computer. If FUSE is unavailable, select **Run without FUSE**.
+3. Or choose **Flatpak app** and pick an emulator from the installed-app list. Install it through Software first if missing, then click **Reload apps**. Click **Save emulator**.
+
+Flatpak profiles remember both the app ID and its user/system/custom installation. Launching adds read access to only this console's Games folder for that run; it does not write persistent Flatpak overrides. An emulator may still require its normal firmware/configuration or different advanced launch arguments. Matrix Play does not install or run an emulator merely by saving it. Flatpak CLI behavior follows the [Flatpak command reference](https://docs.flatpak.org/en/latest/flatpak-command-reference.html); execute permission follows the [AppImage quickstart](https://docs.appimage.org/introduction/quickstart.html).
+
+## Favorites for each console
+
+Select a game's **heart**, then choose **My favorites** or **Favorites (count)** inside that console. Each of the 14 consoles has its own saved list. Select the heart again to remove a favorite. Empty lists explain how to add games.
+
+Native favorites are saved with Matrix Play settings in `$XDG_CONFIG_HOME/matrix/frontend.json`, independent of the browser cache. Compatible favorites from older UI storage are imported once; removing a favorite does not cause it to return on the next launch. Unavailable games retain their saved entries and reappear as favorites when their exact paths return. Browser preview favorites still use browser storage.
 
 ## Automatic PS1 / PS2 cover art
 
@@ -68,7 +82,7 @@ Verified in source development (CI results are visible in the Actions tab):
 
 - `cargo test --manifest-path cover-core/Cargo.toml`: **12 passed**, one live test skipped by default. These execute the actual Rust cover engine with synthetic, non-proprietary disc fixtures and an injected transport for deterministic HTTP outcomes.
 - `cargo test --manifest-path cover-core/Cargo.toml live_provider_templates -- --ignored --nocapture`: **1 passed**. The real HTTPS transport retrieved and decoded default/3D covers for one PS1 and one PS2 serial; all four sample URLs worked. Temporary images were removed.
-- `cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib`: **6 passed**. This compiles and executes the same native backend functions with desktop-specific Tauri wiring excluded. The isolated-home lifecycle test verifies library separation, path validation, persisted cover settings without profile loss, loading the real online cache, local cover priority and invalid-image rejection.
+- `cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib`: **9 passed**. This compiles and executes the same native backend functions with desktop-specific Tauri wiring excluded. The isolated-home lifecycle test verifies library separation, path validation, persisted cover settings without profile loss, loading the real online cache, local cover priority and invalid-image rejection.
 - `python3 tests/test_structure.py`: all 14 console folder pairs and repeated creation preserve existing files.
 - `python3 tests/test_ui.py`: Chromium integration test passed with a **mock Tauri bridge**. It covers the 14 consoles, independent Steam/Windows tabs, launch dispatch, cover controls/status, explicit serial submission, manual save, TheCoverProject button, style/disable persistence requests, responsive layout and no page script errors.
 - `node --check web/app.js` and Rust formatting/parser checks passed.
@@ -156,7 +170,7 @@ UI-only preview: open `web/index.html` in Chromium, Firefox or another browser. 
 ## Limitations / next implementation work
 
 1. Real emulator/game testing on Zorin, installed-package use on user machines, and Wayland/native-display behavior. Compilation, DEB generation and the actual Tauri window have been tested in a virtual X11 display.
-2. Real emulator-specific adapters for unusual command-line syntax, PS3 installed games, Switch installed content, Wii U extracted directories, multidisc grouping and Flatpak emulators. Emulator support differs between versions; the generic launch template is not guaranteed to work for every executable.
+2. Real emulator-specific adapters for unusual command-line syntax, PS3 installed games, Switch installed content, Wii U extracted directories, multidisc grouping and emulator-specific Flatpak options. Emulator support differs between versions; the generic launch template is not guaranteed to work for every executable.
 3. Additional authorized artwork/metadata providers, nonstandard Sony serial formats and compressed-disc serial extraction. These are not implemented. PS1/PS2 serial-based xlenore downloads and manual cover imports are implemented; TheCoverProject automation is not.
 4. Windows runner/prefix profiles for existing non-Steam Proton/Wine games. `.exe` uses system Wine and a working directory, but custom Wine prefixes / launchers must currently be configured through a `.desktop` launcher; registry import from other tools is pending.
 5. Full gamepad navigation, controller setup, fullscreen experience, launch/exit monitoring and UI refinement.

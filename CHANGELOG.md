@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.4
+
+- Add guided emulator setup for AppImage, installed Flatpak and native executable profiles. Browse for emulator files, optionally grant only owner execute permission to a validated AppImage, and support extraction mode without FUSE.
+- Discover installed Flatpak apps, preserve installation scope, validate selections on save/launch and grant temporary read access to the current console's Games folder. Keep discrete arguments and original child cache environments.
+- Make each console's favorites list visible through My favorites, filter counts and empty-list guidance. Persist native favorites in settings, migrate compatible prior UI favorites once, and preserve separation across all 14 consoles and Steam/Windows.
+- Cover legacy profile compatibility, AppImage validation/permission consent, Flatpak discovery/launch arguments, favorites console boundaries/migration and persistence across an actual process restart. Real emulator gameplay remains unverified.
+- Preserve dated verification notes when updating install instructions for new releases.
+
 ## 0.5.3
 
 - Add an Update button: check public GitHub releases, download and verify signed Linux x86-64 packages, then install and restart. DEB installs request system authorization; AppImage installs replace the current file and retain a `.previous` backup. Development builds open the verified DEB in the system installer.
