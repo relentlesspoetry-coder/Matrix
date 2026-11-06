@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.8
 
 - Grant temporary game-directory write access to recognized SameBoy/mGBA Flatpaks for adjacent save files, while keeping setup access read-only and other libraries separate.
 - Route Steam launches through the installation that owns each scanned library, including external Flatpak libraries and legacy aliases. Correct PS3 digital/disc title names.
@@ -8,6 +8,7 @@
 - Serialize cover replacement across processes and preserve existing artwork on failed writes. Revoke discarded preview image URLs and keep async artwork/settings/Flatpak results from disrupting later navigation.
 - Keep update controls and keyboard focus stable during progress polling without turning a Cancel press into Install, reject stale updater responses, and allow Check again immediately after a failure or cancellation.
 - Require exact, nonempty, unique release-note headings and declare the DEB's pkexec runtime dependency. Run every JavaScript regression suite in CI.
+- Verify Linux installer builds, the packaged helper and the real Tauri desktop fixture suite before release. Launcher fixtures do not certify gameplay across emulators or perform a privileged upgrade.
 
 ## 0.5.7
 

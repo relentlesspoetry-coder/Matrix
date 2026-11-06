@@ -1,9 +1,15 @@
 # Test Matrix Play on Linux
 
-## Unreleased repair verification — 2026-11-06
+## Version 0.5.8 repair verification — 2026-11-06
 
-The combined repair branch remains version 0.5.7 and has not been published.
-It was integrated against main `c13edefbe81e73a6f3200d2a1ef57fe28baf83de`.
+The combined repairs were integrated against main
+`c13edefbe81e73a6f3200d2a1ef57fe28baf83de`. The exact repair commit
+`b981213b1e2126244331a4d14dcf2ead6f0ca083` passed
+[GitHub Actions run 42248122522](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42248122522):
+all Rust/JavaScript/Python regressions, DEB and AppImage builds, packaged helper
+validation, ordinary painted startup, and the real Tauri/WebKit desktop fixture
+suite. The release pipeline runs these gates again on versioned main before
+signing and publishing 0.5.8.
 Local Rust 1.99.1 checks passed: 13 updater-core tests, 12 cover-core tests
 (the opt-in live-provider test was skipped), and 45 headless native-backend
 tests. The release-mode `matrix-install-update` helper also compiled.
@@ -18,12 +24,18 @@ fixtures, Rust formatting, JavaScript/Python syntax and patch whitespace checks
 also passed. The release fixtures use disposable local remotes and keys, not
 the project's GitHub repository or signing credentials.
 
-These are synthetic tests, not real emulator/Steam/Wine gameplay or a privileged
-package upgrade. This cloud environment lacks the GTK/WebKit development
-packages needed for the desktop build and restricts browser IPC sockets.
-Desktop-window tests, installer builds and built-package validation still need
-the Linux CI run on the exact integrated commit. Previous release CI results
-below do not validate these unpublished changes.
+The native suite verified scoped sidecar-save Flatpak arguments, native/Flatpak
+Steam routing, delayed Windows runner diagnostics, artwork round-trips and
+settings/favorites across restart using harmless launchers. An initial CI run
+stopped because the added test expected "exit status 17" instead of Rust's
+"exit status: 17". The corrected assertion compares the actual backend message
+with the visible error notice and still requires the exit code and captured
+diagnostic; production launch code did not change for that correction.
+
+These are synthetic launch tests, not real emulator/Steam/Wine gameplay, real
+save-file creation or a privileged package upgrade. Local desktop testing was
+blocked by missing GTK/WebKit development packages and restricted browser IPC;
+the full desktop and built-package checks above ran in Linux CI instead.
 
 ## Reviewed-fix verification
 
@@ -67,16 +79,16 @@ checks output after the launching process exits and log-write failure using
 synthetic subprocesses. Run the normal Rust suites and desktop tests as well;
 these checks do not replace a real emulator test or privileged DEB upgrade test.
 
-This is the native testing release, version 0.5.7. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
+This is the native testing release, version 0.5.8. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04
 
-1. Open the [v0.5.7 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.7) — the repository and installers are public.
-2. Download `Matrix-Play_0.5.7_amd64.deb`.
+1. Open the [v0.5.8 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.8) — the repository and installers are public.
+2. Download `Matrix-Play_0.5.8_amd64.deb`.
 3. Open a terminal in the download folder and run:
 
    ```bash
-   sudo apt install ./Matrix-Play_0.5.7_amd64.deb
+   sudo apt install ./Matrix-Play_0.5.8_amd64.deb
    ```
 
 4. Open **Matrix Play** from the application menu. You can also run `matrix-frontend` in a terminal to capture diagnostics.
@@ -85,24 +97,24 @@ APT installs the GTK/WebKit runtime dependencies if needed. Rust, Node, the sour
 
 ## Portable AppImage alternative
 
-Download `Matrix-Play_0.5.7_amd64.AppImage` from the same release. In its download folder run:
+Download `Matrix-Play_0.5.8_amd64.AppImage` from the same release. In its download folder run:
 
 ```bash
-chmod +x Matrix-Play_0.5.7_amd64.AppImage
-./Matrix-Play_0.5.7_amd64.AppImage
+chmod +x Matrix-Play_0.5.8_amd64.AppImage
+./Matrix-Play_0.5.8_amd64.AppImage
 ```
 
 If FUSE is unavailable, run it in extraction mode:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.7_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.8_amd64.AppImage
 ```
 
 The AppImage's actual native window, IPC, scanning, local covers, settings and launcher dispatch passed the same isolated desktop test in extraction mode. Other Linux distributions and native FUSE mounting have not been validated. The DEB is recommended on Zorin/Ubuntu.
 
 ## Upgrade from the blank-window build
 
-Close Matrix Play, then install the v0.5.7 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
+Close Matrix Play, then install the v0.5.8 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
 
 If a new startup problem occurs, attach `~/.local/share/matrix/startup.log` to the issue. This contains bounded startup stages and renderer/load errors, not game data. In this incident, graphics workarounds did not resolve the problem; a fresh cache directory did, which the affected user confirmed. The specific problematic shared cache file was not identified or deleted.
 
