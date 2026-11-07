@@ -2,7 +2,7 @@
 
 ## Version 0.5.11 async ownership and console-library checks
 
-Local Rust 1.99.1 passes 111 headless backend tests, 16 cover-core tests (two
+Local Rust 1.99.1 passes 114 headless backend tests, 16 cover-core tests (two
 opt-in live-provider checks omitted), 31 updater-core tests and 114 JavaScript
 fixtures. Folder, release/signing, DEB-helper and log-lifetime checks also pass,
 along with formatting, syntax and patch-whitespace checks. Release fixtures use
@@ -77,6 +77,12 @@ coordinators require signed metadata and installer bytes. These tests do not
 perform a privileged APT installation. The root helper's system guard is checked
 by source and package inspection, not by changing the executor's system files.
 Unverifiable processes intentionally block updates rather than being killed.
+Shutdown retains each observed PID and birth identity while waiting within its
+existing timeout. Brief processes may exit normally; a still-running process
+cannot become safe merely by clearing its token or restoring environment access.
+Replacement also requires a clean scan after all tracked processes have exited.
+The raw native and extracted-AppImage checks each run twice, with both passes
+required and bounded test-only process diagnostics retained for each run.
 
 Versions through 0.5.10 do not implement these lifecycle gates. Save and close
 running work and Matrix Play, then install the first upgraded version manually.

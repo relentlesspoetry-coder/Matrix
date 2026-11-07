@@ -97,6 +97,16 @@ class ProcessAccountTests(unittest.TestCase):
         self.assertIn('cargo test --locked --manifest-path src-tauri/Cargo.toml '
                       '--no-default-features --lib -- --test-threads=1', native_script)
 
+    def test_native_lifecycle_checks_require_two_passes_with_distinct_diagnostics(self):
+        workflow = (ROOT/'.github/workflows/linux.yml').read_text()
+        for name, folder in [('Test actual desktop window', 'native-$iteration'),
+                             ('Test extracted AppImage shutdown', 'native-appimage-$iteration')]:
+            step = workflow.split(f'- name: {name}\n', 1)[1].split('\n      - ', 1)[0]
+            self.assertIn('for iteration in 1 2; do', step)
+            self.assertIn(f'--screenshots "/home/matrix-test/artifacts/{folder}"', step)
+            self.assertNotIn('continue-on-error', step)
+            self.assertNotIn('||', step)
+
 
 if __name__ == '__main__':
     unittest.main()

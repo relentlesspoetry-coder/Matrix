@@ -75,11 +75,13 @@ class NativeLifecycleFixtureTests(unittest.TestCase):
                 (launches/'ps2-fixture.log').write_text('launch failure retained')
                 (home/'leaked.log').symlink_to(external)
                 (home/'lifecycle-launch-status.json').write_text('{"phase":"error"}')
+                (home/'coordinator-shutdown.log').write_text('Matrix lifecycle unverified process: {"pid":123}\n')
                 lifecycle.preserve_diagnostics(home, destination)
             self.assertEqual((destination/'driver.log').stat().st_size, 65536)
             self.assertTrue((destination/'driver.log').read_bytes().endswith(b'recent driver failure'))
             self.assertEqual((destination/'launches/ps2-fixture.log').read_text(), 'launch failure retained')
             self.assertFalse((destination/'leaked.log').exists())
+            self.assertIn('"pid":123', (destination/'coordinator-shutdown.log').read_text())
             self.assertEqual(json.loads((destination/'lifecycle-launch-status.json').read_text())['phase'], 'error')
 
 

@@ -185,8 +185,9 @@ def main():
             assert js('return document.title').startswith('Matrix Play')
             if cfg.shutdown_only:
                 check_shutdown_prompt()
-                from native_update_lifecycle import exercise
+                from native_update_lifecycle import exercise, preserve_diagnostics
                 exercise(binary, env, home, invoke, js, wait_for, cfg.coordinator_tests)
+                preserve_diagnostics(home, cfg.screenshots/'lifecycle-logs' if cfg.screenshots else None)
                 return
             wait_for(lambda: js('return document.querySelector(".brand-logo")?.naturalWidth > 0'))
             discovered=invoke('bootstrap')
@@ -708,8 +709,9 @@ def main():
                 print('PASS: real desktop automatic PS1 and PS2 cover downloads (synthetic serial-labelled game fixtures)')
             # This final test deliberately closes the real native windows using
             # the production cooperative handler. Only test-owned PIDs qualify.
-            from native_update_lifecycle import exercise
+            from native_update_lifecycle import exercise, preserve_diagnostics
             exercise(binary, env, home, invoke, js, wait_for, cfg.coordinator_tests)
+            preserve_diagnostics(home, cfg.screenshots/'lifecycle-logs' if cfg.screenshots else None)
         except Exception:
             # Keep actual launch feedback even when the UI never polled an IPC
             # invocation made by this test. The temporary HOME is deleted below.

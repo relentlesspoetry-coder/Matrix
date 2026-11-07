@@ -90,7 +90,9 @@ jobs:
         run: |
           cargo install tauri-driver --version 2.1.0 --locked
           sudo install -o matrix-test -g matrix-test -m 0755 "$(command -v tauri-driver)" /home/matrix-test/bin/tauri-driver
-          scripts/run-ci-as-test-user.sh dbus-run-session -- xvfb-run -a python3 /home/matrix-test/work/tests/test_native.py /home/matrix-test/bin/matrix-frontend --coordinator-tests /home/matrix-test/bin/backend-tests --screenshots /home/matrix-test/artifacts/native
+          for iteration in 1 2; do
+            scripts/run-ci-as-test-user.sh dbus-run-session -- xvfb-run -a python3 /home/matrix-test/work/tests/test_native.py /home/matrix-test/bin/matrix-frontend --coordinator-tests /home/matrix-test/bin/backend-tests --screenshots "/home/matrix-test/artifacts/native-$iteration"
+          done
       - name: Test extracted AppImage shutdown
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
@@ -100,7 +102,9 @@ jobs:
         run: |
           images=(src-tauri/target/release/bundle/appimage/*.AppImage)
           sudo install -o matrix-test -g matrix-test -m 0755 "${images[0]}" /home/matrix-test/bin/Matrix.AppImage
-          scripts/run-ci-as-test-user.sh dbus-run-session -- xvfb-run -a python3 /home/matrix-test/work/tests/test_native.py /home/matrix-test/bin/Matrix.AppImage --coordinator-tests /home/matrix-test/bin/backend-tests --shutdown-only --screenshots /home/matrix-test/artifacts/native-appimage
+          for iteration in 1 2; do
+            scripts/run-ci-as-test-user.sh dbus-run-session -- xvfb-run -a python3 /home/matrix-test/work/tests/test_native.py /home/matrix-test/bin/Matrix.AppImage --coordinator-tests /home/matrix-test/bin/backend-tests --shutdown-only --screenshots "/home/matrix-test/artifacts/native-appimage-$iteration"
+          done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Matrix-Play-linux-x86_64

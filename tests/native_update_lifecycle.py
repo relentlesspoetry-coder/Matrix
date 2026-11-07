@@ -156,6 +156,10 @@ def _exercise(binary, env, home, invoke, js, wait_for, coordinator_tests):
         logfile.seek(0)
         output = logfile.read()
         logfile.close()
+        for line in output.splitlines():
+            marker = 'Matrix lifecycle unverified process:'
+            if marker in line:
+                print(line[line.index(marker):])
         assert status == 0, output
 
     pids = live_pids()
