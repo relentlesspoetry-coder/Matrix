@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.13
+
+- Fix updates blocked by unrelated protected Linux processes. Scope shutdown to registered Matrix windows and positively identified helpers; background apps and process churn no longer prevent an agreed update. Never force-stop games or unrelated processes.
+- Make Agree and update close Matrix, install the signed update and leave the client closed on success. Preserve save/close consent, busy-game guards, package verification, rollback and failure recovery.
+- Add protected-process, process-churn, known-helper and success-stays-closed regressions. Affected older clients may need one manual installation because their embedded updater cannot receive this fix before it runs.
+
 ## 0.5.12
 
 - Enable manual PS5 and Switch 2 emulator setup, saving and launching for Linux AppImages, executables and installed Flatpaks. Keep experimental support notices, explicit arguments and console capability boundaries; do not auto-link PS4/original-Switch emulators.

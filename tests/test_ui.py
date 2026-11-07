@@ -32,7 +32,7 @@ window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   if(name==='update_status') return window.__update;
   if(name==='check_updates') return (window.__update={...window.__update,latestVersion:'0.6.0',phase:'available',message:'A newer Matrix Play release is available.',notes:'Console artwork and updates.'});
   if(name==='download_update') return (window.__update={...window.__update,phase:'downloaded',message:'Verified update downloaded.'});
-  if(name==='install_update') return (window.__update={...window.__update,phase:'installed',message:'Update installed. Restart Matrix Play to finish.'});
+  if(name==='install_update') return (window.__update={...window.__update,phase:'installing',message:'Closing Matrix Play to install the update…'});
   if(name==='bootstrap') return {emulatorDiscovery:window.__discovery,favorites:window.__favorites,favoritesMigrated:window.__migrated,artwork:window.__artOptions,root:'/home/example/Games/Matrix',folders:Object.fromEntries(ids.map(id=>[id,`/home/example/Games/Matrix/${id}/${id} Games`])),profiles:{ps2:{emulatorName:'PCSX2',emulatorPath:'/usr/bin/pcsx2',launchArgs:['{game}']}},windows:window.__windows};
   if(name==='scan_console' && args.id==='ps5') return [{uid:'/collection/PS5/Collection.pkg',title:'PS5 Collection',path:'/collection/PS5/Collection.pkg',kind:'ps5'}];
   if(name==='scan_console') return args.id==='ps2' ? [{uid:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',title:'Test Game',path:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',kind:'ps2'}] : [];
@@ -149,8 +149,10 @@ with sync_playwright() as p:
     native.get_by_role('button',name='Update Matrix Play').click()
     native.locator('#update-games-closed').check()
     screenshot(native,'matrix-update-shutdown-confirmation.png')
-    native.get_by_role('button',name='Close Matrix Play and install').click()
-    assert native.get_by_role('button',name='Restart Matrix Play').is_visible()
+    assert 'stays closed when it succeeds' in native.locator('#update-hint').inner_text()
+    native.get_by_role('button',name='Agree and update').click()
+    assert native.locator('.update-message').inner_text()=='Closing Matrix Play to install the update…'
+    assert native.get_by_role('button',name='Restart Matrix Play').count()==0
     screenshot(native,'matrix-updates.png')
     native.keyboard.press('Escape')
     native.get_by_role('button',name='Browse PlayStation 2 library').click()

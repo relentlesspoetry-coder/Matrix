@@ -64,7 +64,7 @@ Regression checks now include an actual painted, non-WebDriver window, normal la
 
 ## Install the Linux test release
 
-Download **Matrix-Play_0.5.12_amd64.deb** from the [v0.5.12 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.12), then run `sudo apt install ./Matrix-Play_0.5.12_amd64.deb` in its download folder. Open **Matrix Play** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
+Download **Matrix-Play_0.5.13_amd64.deb** from the [v0.5.13 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.13), then run `sudo apt install ./Matrix-Play_0.5.13_amd64.deb` in its download folder. Open **Matrix Play** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
 
 ![Real compiled Matrix Play window in an isolated test display](screenshots/matrix-linux-home.png)
 
@@ -229,9 +229,9 @@ cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default
 ```
 
 Run backend test harnesses with `-- --test-threads=1`; their process-ownership
-fixtures must not overlap unrelated fixture launches. Protected background apps
-can cause a safe refusal during process tests. CI uses a separate unprivileged
-fixture account rather than weakening those checks or closing unrelated apps.
+fixtures must not overlap other Matrix fixture launches. Unrelated protected apps
+and background-process churn are explicitly tested and must not block updating.
+CI uses a separate unprivileged fixture account to keep runner credentials private.
 
 
 UI-only preview: open `web/index.html` in Chromium, Firefox or another browser. It uses sample games and **cannot** launch emulators or access installed game libraries. No npm install is needed.

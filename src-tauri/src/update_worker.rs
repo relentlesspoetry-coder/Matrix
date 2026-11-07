@@ -118,20 +118,35 @@ pub fn run() -> Result<(), String> {
             Err(e) => e.clone(),
         },
     };
-    let saved = lifecycle::save_outcome(&root, &outcome);
-    drop(transaction);
-    // Reopen once on success or recoverable failure. No game is relaunched.
-    let reopened = super::appimage_environment::command(&request.target)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .current_dir("/")
-        .spawn();
-    if let Err(error) = reopened {
-        return record_reopen_failure(&root, outcome, &error.to_string());
+    finish_update(&root, outcome, || {
+        drop(transaction);
+        // Reopen only after an installation failure to show recovery guidance.
+        // A successful update honors consent to close and stays closed.
+        super::appimage_environment::command(&request.target)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .current_dir("/")
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    })
+}
+
+fn finish_update(
+    root: &std::path::Path,
+    outcome: lifecycle::Outcome,
+    reopen: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let saved = lifecycle::save_outcome(root, &outcome);
+    if outcome.success {
+        return saved;
+    }
+    if let Err(error) = reopen() {
+        return record_reopen_failure(root, outcome, &error);
     }
     saved?;
-    result
+    Err(outcome.message)
 }
 
 fn record_reopen_failure(
@@ -148,6 +163,47 @@ fn record_reopen_failure(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn successful_update_persists_result_and_stays_closed() {
+        let root = tempfile::tempdir().unwrap();
+        finish_update(
+            root.path(),
+            lifecycle::Outcome {
+                success: true,
+                message: "Update installed. Open Matrix Play when ready.".into(),
+            },
+            || panic!("a successful update must not reopen the client"),
+        )
+        .unwrap();
+        let saved: lifecycle::Outcome =
+            serde_json::from_slice(&std::fs::read(root.path().join("last-update.json")).unwrap())
+                .unwrap();
+        assert!(saved.success);
+        assert!(saved.message.contains("Update installed"));
+    }
+    #[test]
+    fn failed_update_reopens_once_and_preserves_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let mut reopened = 0;
+        let error = finish_update(
+            root.path(),
+            lifecycle::Outcome {
+                success: false,
+                message: "Installation canceled; old client preserved.".into(),
+            },
+            || {
+                reopened += 1;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert_eq!(reopened, 1);
+        assert!(error.contains("old client preserved"));
+        let saved: lifecycle::Outcome =
+            serde_json::from_slice(&std::fs::read(root.path().join("last-update.json")).unwrap())
+                .unwrap();
+        assert!(!saved.success);
+    }
     #[test]
     fn reopen_failure_preserves_install_success_in_persisted_message() {
         let root = tempfile::tempdir().unwrap();

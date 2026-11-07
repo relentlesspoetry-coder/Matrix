@@ -34,8 +34,8 @@ jobs:
       - run: npm ci
       - name: Prepare isolated process-test account
         run: |
-          # Never reuse the runner UID: its protected service is intentionally
-          # unverifiable to Matrix's fail-closed process ownership checks.
+          # Keep runner credentials outside disposable native tests. Tests also
+          # create a protected same-user process to catch false update refusals.
           sudo useradd --create-home --user-group --shell /bin/bash matrix-test
           sudo chmod 0700 /home/matrix-test
           sudo install -d -o matrix-test -g matrix-test -m 0700 /home/matrix-test/runtime

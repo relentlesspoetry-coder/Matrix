@@ -193,9 +193,20 @@ def _exercise(binary, env, home, invoke, js, wait_for, coordinator_tests):
     covers = {p.relative_to(home):p.read_bytes() for p in (home/'.local/share/matrix/covers').rglob('*') if p.is_file()}
     second_log = (home/'second-matrix.log').open('w+')
     second = subprocess.Popen([str(binary)], env=env, cwd=home, stdout=second_log, stderr=subprocess.STDOUT)
-    # Unrelated harmless writer process must remain unaffected by coordination.
-    unrelated = subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.buffer.read(1)'], stdin=subprocess.PIPE)
+    # Reproduce the user's blocked update: an unrelated same-user application
+    # legitimately hides its environment. It must not block or be terminated.
+    unrelated_ready = home/'unrelated-protected.ready'
+    unrelated = subprocess.Popen([sys.executable, '-c',
+        'import ctypes,pathlib,sys; assert ctypes.CDLL(None).prctl(4,0,0,0,0)==0; '
+        'pathlib.Path(sys.argv[1]).touch(); sys.stdin.buffer.read(1)', str(unrelated_ready)], stdin=subprocess.PIPE)
     try:
+        wait_for(unrelated_ready.exists)
+        try:
+            Path(f'/proc/{unrelated.pid}/environ').read_bytes()
+        except PermissionError:
+            pass
+        else:
+            raise AssertionError('Protected-process fixture must deny environment access')
         wait_for(lambda: 'Interface ready' in (home/'second-matrix.log').read_text())
         expected = live_pids()
         assert len(expected) == 2

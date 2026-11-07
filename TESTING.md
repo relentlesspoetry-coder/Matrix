@@ -1,5 +1,21 @@
 # Test Matrix Play on Linux
 
+## Version 0.5.13 updater repair validation
+
+Local validation of the scoped update-and-close repair passed 133 headless backend
+tests, 31 updater-core tests, 16 cover-core tests (two explicit live-provider tests
+skipped), 118 JavaScript tests, managed-folder/release fixtures, 6 CI-account tests,
+5 native-fixture tests, 4 DEB-helper inspection tests and 3 launch-log lifetime tests.
+Both standalone update helpers compile. These checks ran under the ordinary shared
+user identity, including deliberately protected unrelated processes.
+
+The Chromium mock-UI run was attempted but the execution environment denied its
+local browser socket before the page loaded. GTK/WebKit and native desktop driver
+dependencies are unavailable locally. Actual native/packaged-AppImage shutdown and
+privileged installation were not run here; CI must validate desktop behavior before
+publication. No real client, game, package or user system setting was changed.
+
+
 ## Version 0.5.12 PS5 / Switch 2 custom-emulator support
 
 Local Rust 1.99.1 passes all 133 headless backend tests using the required
@@ -88,33 +104,30 @@ fixture targets to verify duplicate-install rollback preservation. Repeated core
 suites exercise inherited lock descriptors and concurrent transactions.
 
 Process-ownership fixtures run under a separate unprivileged CI account with a
-clean environment and copied test binaries. The runner's protected background
-service deliberately fails the production ownership check when it shares a UID;
-isolation avoids that unrelated test-environment blocker without relaxing the
-updater's fail-closed checks or sharing runner credentials. Built-DEB checks also
-inspect the executable, root-owned post-install hook without running it, and
+clean environment and copied test binaries to protect the runner's credentials.
+Isolation is not used to hide protected background services: both headless and
+native lifecycle tests intentionally start an unrelated non-dumpable process and
+verify that its unreadable environment neither blocks updating nor gets closed.
+Built-DEB checks inspect the root-owned post-install hook without running it and
 reject a replaceable update-lock file in the package payload.
 
-The expanded native pipeline opens two actual Matrix windows, refuses a third
-while the update gate is held, verifies both actual exits before a harmless
-replacement marker, and checks that a launched writer survives, finishes, and
-keeps its final log output. It repeats shutdown through the built AppImage in
-extraction mode. The marker is available only in test code; production update
-coordinators require signed metadata and installer bytes. These tests do not
-perform a privileged APT installation. The root helper's system guard is checked
-by source and package inspection, not by changing the executor's system files.
-Unverifiable processes intentionally block updates rather than being killed.
-Shutdown retains each observed PID and birth identity while waiting within its
-existing timeout. Brief processes may exit normally; a still-running process
-cannot become safe merely by clearing its token or restoring environment access.
-Replacement also requires a clean scan after all tracked processes have exited.
-Independent synchronized fixtures cover a child handing off to a grandchild
-after enumeration, disappearance between UID and identity reads, and a baseline
-process becoming a zombie before identity collection. Each keeps replacement
-blocked while the descendant lives. Newly observed dead identities invalidate a
-scan once and are retained, avoiding endless retries for stable zombies.
-The raw native and extracted-AppImage checks each run twice, with both passes
-required and bounded test-only process diagnostics retained for each run.
+The native pipeline opens two actual Matrix windows, refuses a third while the
+update gate is held, verifies both actual exits before a harmless replacement
+marker, and checks that a launched writer survives, finishes, and keeps its final
+log output. It repeats shutdown through the built AppImage in extraction mode.
+The marker is test-only; production coordinators require signed metadata and
+installer bytes. Tests do not perform a privileged APT installation.
+
+Scoped lifecycle regressions cover protected unrelated processes before and during
+shutdown, unrelated new-process churn, a verified non-dumpable Matrix child,
+current/prior-instance tagged orphans, AppImage runtime cleanup, PID reuse, busy
+launch leases, stale registry records and unresponsive Matrix windows. Known Matrix
+identities remain tracked by PID plus start time until exit; arbitrary opaque,
+reparented, untagged processes are not claimed as Matrix. The previous global
+quiescence fixtures were replaced because they enforced the reported false refusal.
+Worker completion tests verify successful updates remain closed and failures reopen
+only once with recovery details. The native and extracted-AppImage checks each run
+twice in CI. Local headless results do not imply those desktop checks have run.
 
 Installer transport fixtures reproduce the old raw broken-pipe error using a
 harmless closed reader, then check retained cancellation/rejection details,
@@ -315,16 +328,16 @@ checks output after the launching process exits and log-write failure using
 synthetic subprocesses. Run the normal Rust suites and desktop tests as well;
 these checks do not replace a real emulator test or privileged DEB upgrade test.
 
-This is the native testing release, version 0.5.12. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
+This is the native testing release, version 0.5.13. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04
 
-1. Open the [v0.5.12 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.12) — the repository and installers are public.
-2. Download `Matrix-Play_0.5.12_amd64.deb`.
+1. Open the [v0.5.13 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.13) — the repository and installers are public.
+2. Download `Matrix-Play_0.5.13_amd64.deb`.
 3. Open a terminal in the download folder and run:
 
    ```bash
-   sudo apt install ./Matrix-Play_0.5.12_amd64.deb
+   sudo apt install ./Matrix-Play_0.5.13_amd64.deb
    ```
 
 4. Open **Matrix Play** from the application menu. You can also run `matrix-frontend` in a terminal to capture diagnostics.
@@ -333,24 +346,24 @@ APT installs the GTK/WebKit runtime dependencies if needed. Rust, Node, the sour
 
 ## Portable AppImage alternative
 
-Download `Matrix-Play_0.5.12_amd64.AppImage` from the same release. In its download folder run:
+Download `Matrix-Play_0.5.13_amd64.AppImage` from the same release. In its download folder run:
 
 ```bash
-chmod +x Matrix-Play_0.5.12_amd64.AppImage
-./Matrix-Play_0.5.12_amd64.AppImage
+chmod +x Matrix-Play_0.5.13_amd64.AppImage
+./Matrix-Play_0.5.13_amd64.AppImage
 ```
 
 If FUSE is unavailable, run it in extraction mode:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.12_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.13_amd64.AppImage
 ```
 
 The AppImage's actual native window, IPC, scanning, local covers, settings and launcher dispatch passed the same isolated desktop test in extraction mode. Other Linux distributions and native FUSE mounting have not been validated. The DEB is recommended on Zorin/Ubuntu.
 
 ## Upgrade from the blank-window build
 
-Close Matrix Play, then install the v0.5.12 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
+Close Matrix Play, then install the v0.5.13 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
 
 If a new startup problem occurs, attach `~/.local/share/matrix/startup.log` to the issue. This contains bounded startup stages and renderer/load errors, not game data. In this incident, graphics workarounds did not resolve the problem; a fresh cache directory did, which the affected user confirmed. The specific problematic shared cache file was not identified or deleted.
 

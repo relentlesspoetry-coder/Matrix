@@ -497,3 +497,12 @@ for (const phase of ['error','recovery']) test(`opening Updates preserves ${phas
   assert.equal(f.calls.filter(c=>c.name==='check_updates').length,1);
   assert.equal(f.state.update.phase,'available');
 });
+
+
+test('agree and update clearly closes Matrix instead of promising a restart', () => {
+  const f=fixture();
+  f.state.overlay='updates'; f.state.update={phase:'downloaded', installMode:'system'};
+  f.renderUpdater();
+  assert.equal(f.node('#update-action').textContent, 'Agree and update');
+  assert.match(f.node('#update-hint').textContent, /stays closed when it succeeds/);
+});

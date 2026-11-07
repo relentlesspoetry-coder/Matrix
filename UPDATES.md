@@ -25,11 +25,16 @@ not authorize shutdown. The coordinator waits for actual exit, including verifie
 AppImage runtime ancestors and owned WebKit helpers, before invoking either existing
 installer. It is copied outside the old AppImage mount before any frontend exits.
 
-Unreadable or ambiguous process identity blocks rather than proving exit. This can
-conservatively reject an update because of an unrelated protected application; the
-app never closes that application. Legacy/unregistered Matrix copies need manual
-closure. The first upgrade from v0.5.10 or older must be performed manually after
-closing Matrix, since those older binaries lack the new startup/activity guards.
+The shutdown scope is Matrix's registered windows, verified descendants/runtime
+processes and positively identified instance-token helpers. A known Matrix identity
+whose exit cannot be verified still blocks installation. Unrelated protected apps,
+unreadable environments and ordinary background-process churn do not block updates.
+An arbitrary hidden process that has already detached and cleared its Matrix token
+cannot be identified; this is why the save/close confirmation remains required.
+Legacy/unregistered Matrix copies still need manual closure. Affected v0.5.11 and
+v0.5.12 clients may require this fix to be installed manually once, since their old
+coordinator refuses updates before new code can be installed. Versions through
+v0.5.10 also require manual upgrade because they lack the lifecycle guards.
 
 The DEB post-install script provisions a persistent root-owned
 `/var/lib/matrix-play/update.lock`, outside the replaceable package payload. System
@@ -46,8 +51,10 @@ preservation has a bounded synced-copy fallback for filesystems without hard lin
 Failed recovery retains identifiable recovery images rather than overwriting unrelated
 changes. Repeated installation keeps the original `.previous` rollback bytes.
 
-The coordinator reopens Matrix after success or a recoverable failure when possible.
-The outcome, including automatic-reopen failures, is preserved for the next startup.
+After the user selects Agree and update, the coordinator closes Matrix, installs
+the verified update, and leaves Matrix closed on success. The user can reopen it
+when ready. On a recoverable failure it attempts to reopen Matrix once to show the
+error. The outcome, including recovery-reopen failures, is preserved for next startup.
 An installer is never killed on timeout or cancellation; package-manager failures
 may require normal system-package repair. The native regression test uses a test-only
 replacement marker and harmless processes, not an actual privileged installation.

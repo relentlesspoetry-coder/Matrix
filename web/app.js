@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.12 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.13 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const AUTO_COVER_KINDS = ['ps1','ps2','gamecube','wii'];
@@ -873,7 +873,7 @@ function renderUpdater() {
   if (state.overlay !== 'updates') return;
   const info = state.update || {phase:'checking',message:'Checking GitHub…'};
   const busy = ['checking','downloading','installing'].includes(info.phase);
-  const action = {available:['download-update','Download update'], downloaded:['install-update',info.installMode === 'download' ? 'Installation instructions' : 'Close Matrix Play and install'],installed:['restart-update','Restart Matrix Play'],downloading:['cancel-update','Cancel download']}[info.phase];
+  const action = {available:['download-update','Download update'], downloaded:['install-update',info.installMode === 'download' ? 'Installation instructions' : 'Agree and update'],installed:['restart-update','Restart Matrix Play'],downloading:['cancel-update','Cancel download']}[info.phase];
   const percent = info.total ? Math.min(100,Math.round(info.received / info.total * 100)) : 0;
   const hint = info.installMode === 'system' ? 'Installation uses your Linux system installer and may ask for your password.' : info.installMode === 'appimage' ? 'Your AppImage will be replaced in its current folder. A .previous backup is kept.' : 'The downloaded Linux installer opens in your system installer.';
   // Keep interactive elements alive across polling ticks so keyboard focus,
@@ -891,7 +891,7 @@ function renderUpdater() {
   $('#update-progress-text').textContent=`${percent}% · ${((info.received || 0)/1048576).toFixed(1)} / ${((info.total || 0)/1048576).toFixed(1)} MB`;
   $('.update-notes').textContent=info.notes || '';
   $('.update-notes').hidden=!info.notes;
-  $('#update-hint').textContent=`${hint} Matrix Play closes before installation and reopens afterward. Running games, apps and installers are never force-stopped. Downloads are checked against a signed release before installation.`;
+  $('#update-hint').textContent=`${hint} Matrix Play closes to install the update and stays closed when it succeeds. Open it again when you are ready. Running games, apps and installers are never force-stopped. Downloads are checked against a signed release before installation.`;
   $('#update-close-confirm').hidden=info.phase!=='downloaded';
   $('#update-safety').hidden=info.phase!=='downloaded';
   const nextAction=action?.[0] || 'check-updates';
