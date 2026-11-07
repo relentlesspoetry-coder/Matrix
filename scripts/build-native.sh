@@ -18,8 +18,10 @@ fi
 cd "$repo"
 echo 'Running Rust cover engine and native unit tests...'
 cargo test --locked --manifest-path cover-core/Cargo.toml
-cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --lib
-cargo test --locked --manifest-path src-tauri/Cargo.toml
+cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --lib -- --test-threads=1
+# Direct desktop cargo tests validate resources before Tauri CLI's hook.
+cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default-features --bin matrix-install-update --bin matrix-update-coordinator
+cargo test --locked --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 echo 'Building DEB and AppImage...'
 "${tauri_command[@]}" build --ci --bundles deb,appimage -- --locked
 printf 'Bundle output: %s\n' "$repo/src-tauri/target/release/bundle/"

@@ -50,6 +50,8 @@ jobs:
           headless=$(python3 scripts/find-test-binary.py "$RUNNER_TEMP/matrix-headless-tests.json" lib src-tauri/src/lib.rs)
           sudo install -o matrix-test -g matrix-test -m 0755 "$headless" /home/matrix-test/bin/backend-tests
           scripts/run-ci-as-test-user.sh /home/matrix-test/bin/backend-tests --test-threads=1
+          # Direct desktop cargo tests validate resources before Tauri CLI's hook.
+          cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default-features --bin matrix-install-update --bin matrix-update-coordinator
           cargo test --locked --manifest-path src-tauri/Cargo.toml --bin matrix-frontend --no-run --message-format=json > "$RUNNER_TEMP/matrix-desktop-tests.json"
           desktop=$(python3 scripts/find-test-binary.py "$RUNNER_TEMP/matrix-desktop-tests.json" bin src-tauri/src/main.rs)
           sudo install -o matrix-test -g matrix-test -m 0755 "$desktop" /home/matrix-test/bin/desktop-tests

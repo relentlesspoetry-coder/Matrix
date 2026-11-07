@@ -576,11 +576,25 @@ fn tagged_processes(
             // it belongs to another application, including pre-existing orphans.
             Err(_) => return Err(format!("Cannot verify whether process {pid} belongs to Matrix Play. No update was installed and no process was force-stopped. Leave unrelated apps running; install manually only after confirming Matrix Play and its helpers are closed.")),
         };
-        if bytes.split(|b| *b == 0).any(|pair| {
-            tokens
-                .iter()
-                .any(|token| pair == format!("MATRIX_INSTANCE_TOKEN={token}").as_bytes())
-        }) {
+        let inherited_tokens: Vec<_> = bytes
+            .split(|b| *b == 0)
+            .filter_map(|pair| pair.strip_prefix(b"MATRIX_INSTANCE_TOKEN="))
+            .filter(|token| !token.is_empty())
+            .collect();
+        if inherited_tokens
+            .iter()
+            .any(|value| !tokens.iter().any(|token| token.as_bytes() == *value))
+        {
+            // A crashed frontend releases its registry lease before its WebKit
+            // helpers necessarily exit. Removing that stale record must not
+            // turn a readable, still-tagged orphan into an unrelated process.
+            // Tokens identify candidates to wait for/block on, never to signal.
+            if !identity.alive() {
+                continue;
+            }
+            return Err(format!("Cannot verify Matrix Play activity in process {pid}: its token belongs to an exited or unregistered instance. No update was installed and no process was force-stopped. Leave unrelated apps running; install manually only after confirming Matrix Play and its helpers are closed."));
+        }
+        if !inherited_tokens.is_empty() {
             found.push(identity);
         } else if !baseline.contains(&identity) && identity.alive() {
             // A late child may also deliberately clear its environment. A new,
@@ -816,6 +830,27 @@ mod tests {
                 return;
             }
         };
+        if mode == "orphan-tagged" {
+            let (_, module) = module_path!().split_once("::").unwrap();
+            Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    &format!("{module}::late_child_fixture"),
+                    "--nocapture",
+                ])
+                .env("MATRIX_LIFECYCLE_FIXTURE", &root)
+                .env("MATRIX_FIXTURE_MODE", &mode)
+                .env("MATRIX_INSTANCE_TOKEN", instance.token())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            wait_file(&root.join("late.ready"));
+            fs::write(root.join(format!("{name}.ready")), instance.token()).unwrap();
+            // Leave an unlocked registry record and a live tagged child, just
+            // as an exited/crashed frontend does. No signal is needed.
+            return;
+        }
         let _activity = if mode == "busy" {
             Some(activity(&root, false).unwrap())
         } else {
@@ -830,7 +865,11 @@ mod tests {
             if mode != "stubborn" && instance.stop_requested() {
                 if mode.starts_with("late-") {
                     let (_, module) = module_path!().split_once("::").unwrap();
-                    Command::new(std::env::current_exe().unwrap())
+                    let mut command = Command::new(std::env::current_exe().unwrap());
+                    if mode == "late-tagged" {
+                        command.env("MATRIX_INSTANCE_TOKEN", instance.token());
+                    }
+                    command
                         .args([
                             "--exact",
                             &format!("{module}::late_child_fixture"),
@@ -898,6 +937,78 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(10));
             }
         }
+    }
+    #[test]
+    fn prior_instance_tagged_orphan_never_allows_replacement() {
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let root = tempfile::tempdir().unwrap();
+        let mut prior = child(root.path(), "prior", "orphan-tagged");
+        wait_file(&root.path().join("prior.ready"));
+        assert!(prior.wait().unwrap().success());
+        let token = fs::read_to_string(root.path().join("prior.ready")).unwrap();
+        assert!(root.path().join(&token).exists());
+        let pid: u32 = fs::read_to_string(root.path().join("late.ready"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        let orphan = Identity::read(pid).unwrap();
+        assert!(process_environment(pid)
+            .unwrap()
+            .split(|b| *b == 0)
+            .any(|pair| pair == format!("MATRIX_INSTANCE_TOKEN={token}").as_bytes()));
+        let mut current = child(root.path(), "current", "normal");
+        wait_file(&root.path().join("current.ready"));
+        let result = Transaction::prepare(root.path(), &fake_exe(root.path()))
+            .and_then(|transaction| transaction.shutdown(Duration::from_secs(2)));
+        assert!(orphan.alive(), "the old child must not be force-stopped");
+        assert!(
+            result.is_err(),
+            "replacement was allowed while a readable prior-instance child remained alive"
+        );
+        assert!(result.unwrap_err().contains("unregistered instance"));
+        assert!(!root.path().join(&token).exists());
+        assert!(Transaction::prepare(root.path(), &fake_exe(root.path()))
+            .err()
+            .unwrap()
+            .contains("unregistered instance"));
+        assert!(current.try_wait().unwrap().is_none());
+        assert!(!root.path().join("current.blocked").exists());
+        assert!(gate(root.path(), false).is_ok());
+        fs::write(root.path().join("current.finish"), b"").unwrap();
+        assert!(current.wait().unwrap().success());
+        fs::write(root.path().join("late.finish"), b"").unwrap();
+    }
+    #[test]
+    fn current_instance_tagged_orphan_is_waited_for_without_force_stopping() {
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let root = tempfile::tempdir().unwrap();
+        let mut app = child(root.path(), "current", "late-tagged");
+        wait_file(&root.path().join("current.ready"));
+        let transaction = Transaction::prepare(root.path(), &fake_exe(root.path())).unwrap();
+        let error = transaction
+            .shutdown(Duration::from_millis(150))
+            .unwrap_err();
+        assert!(error.contains("did not exit"), "{error}");
+        assert!(app.wait().unwrap().success());
+        let pid: u32 = fs::read_to_string(root.path().join("late.ready"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        let orphan = Identity::read(pid).unwrap();
+        assert!(orphan.alive());
+        // The parent has definitely gone; recognition of its token, rather than
+        // the ancestry snapshot, must keep the transaction waiting for this child.
+        assert!(transaction
+            .shutdown(Duration::from_millis(100))
+            .unwrap_err()
+            .contains("did not exit"));
+        fs::write(root.path().join("late.finish"), b"").unwrap();
+        transaction.shutdown(Duration::from_secs(2)).unwrap();
+        assert!(!orphan.alive());
     }
     #[test]
     fn runtime_wrapper_fixture() {

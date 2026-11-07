@@ -80,6 +80,23 @@ class ProcessAccountTests(unittest.TestCase):
         self.assertIn('if coordinator_tests is not None:',native)
         self.assertIn('backend::update_lifecycle::tests::native_coordinator_fixture',native)
 
+    def test_packaged_helpers_are_built_before_direct_desktop_tests(self):
+        config = json.loads((ROOT/'src-tauri/tauri.conf.json').read_text())
+        prepare = config['build']['beforeBuildCommand']
+        self.assertEqual(config['build']['beforeDevCommand'], prepare)
+        self.assertEqual(prepare, 'cargo build --locked --release --manifest-path src-tauri/Cargo.toml '
+                         '--no-default-features --bin matrix-install-update --bin matrix-update-coordinator')
+        for path, desktop in [
+            ('.github/workflows/linux.yml', 'cargo test --locked --manifest-path src-tauri/Cargo.toml --bin matrix-frontend'),
+            ('scripts/build-native.sh', 'cargo test --locked --manifest-path src-tauri/Cargo.toml -- --test-threads=1'),
+        ]:
+            with self.subTest(path=path):
+                source = (ROOT/path).read_text()
+                self.assertLess(source.index(prepare), source.index(desktop))
+        native_script = (ROOT/'scripts/build-native.sh').read_text()
+        self.assertIn('cargo test --locked --manifest-path src-tauri/Cargo.toml '
+                      '--no-default-features --lib -- --test-threads=1', native_script)
+
 
 if __name__ == '__main__':
     unittest.main()

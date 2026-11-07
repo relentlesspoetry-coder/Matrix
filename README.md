@@ -219,6 +219,21 @@ npm run tauri -- dev             # native development window
 
 The build script checks Cargo, WebKitGTK 4.1 and the local npm Tauri CLI (or a Cargo-installed Tauri CLI) before building. When successful, outputs are in `src-tauri/target/release/bundle/`.
 
+Tauri development/build commands and the build script prepare both update helpers
+before compiling desktop code. If using direct desktop `cargo check`, `cargo build`
+or `cargo test`, first run this from the repository root with the standard target
+folder (the coordinator is a required Tauri resource):
+
+```bash
+cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default-features --bin matrix-install-update --bin matrix-update-coordinator
+```
+
+Run backend test harnesses with `-- --test-threads=1`; their process-ownership
+fixtures must not overlap unrelated fixture launches. Protected background apps
+can cause a safe refusal during process tests. CI uses a separate unprivileged
+fixture account rather than weakening those checks or closing unrelated apps.
+
+
 UI-only preview: open `web/index.html` in Chromium, Firefox or another browser. It uses sample games and **cannot** launch emulators or access installed game libraries. No npm install is needed.
 
 ## Limitations / next implementation work

@@ -2,7 +2,7 @@
 
 ## Version 0.5.11 async ownership and console-library checks
 
-Local Rust 1.99.1 passes 103 headless backend tests, 16 cover-core tests (two
+Local Rust 1.99.1 passes 105 headless backend tests, 16 cover-core tests (two
 opt-in live-provider checks omitted), 31 updater-core tests and 114 JavaScript
 fixtures. Folder, release/signing, DEB-helper and log-lifetime checks also pass,
 along with formatting, syntax and patch-whitespace checks. Release fixtures use
@@ -53,7 +53,8 @@ shutdown changes; their exact versioned commit must pass the expanded pipeline.
 The shutdown fixtures require an unchecked save-and-close confirmation, reject
 known active launches even after confirmation, and preserve games, log sinks,
 installers and unrelated processes. Independent disposable-process checks cover
-late hidden children, PID identity, duplicate updaters, startup gates, partial
+late hidden children, retained helpers from crashed prior instances, PID identity,
+duplicate updaters, startup gates, partial
 failure and reopening. Recovery and cancellation messages remain visible until an
 explicit retry rather than being erased by an automatic update check. A real signed AppImage was staged only onto disposable
 fixture targets to verify duplicate-install rollback preservation. Repeated core

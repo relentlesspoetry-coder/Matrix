@@ -5,6 +5,7 @@
   "identifier": "com.matrix.frontend",
   "build": {
     "frontendDist": "../web",
+    "beforeDevCommand": "cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default-features --bin matrix-install-update --bin matrix-update-coordinator",
     "beforeBuildCommand": "cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default-features --bin matrix-install-update --bin matrix-update-coordinator"
   },
   "app": {
