@@ -57,7 +57,7 @@ Regression checks now include an actual painted, non-WebDriver window, normal la
 
 ## Install the Linux test release
 
-Download **Matrix-Play_0.5.9_amd64.deb** from the [v0.5.9 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.9), then run `sudo apt install ./Matrix-Play_0.5.9_amd64.deb` in its download folder. Open **Matrix Play** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
+Download **Matrix-Play_0.5.10_amd64.deb** from the [v0.5.10 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.10), then run `sudo apt install ./Matrix-Play_0.5.10_amd64.deb` in its download folder. Open **Matrix Play** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
 
 ![Real compiled Matrix Play window in an isolated test display](screenshots/matrix-linux-home.png)
 

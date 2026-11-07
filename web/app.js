@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.9 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.10 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const AUTO_COVER_KINDS = ['ps1','ps2','gamecube','wii'];

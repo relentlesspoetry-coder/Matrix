@@ -1,6 +1,6 @@
 # Test Matrix Play on Linux
 
-## Version 0.6.0 library and navigation slice
+## Version 0.5.10 library, navigation and repair validation
 
 Local Rust 1.99.1 checks pass: 67 headless backend tests, 16 cover-core tests
 (two explicit live-provider tests omitted) and 13 updater-core tests. JavaScript
@@ -8,11 +8,18 @@ regressions cover gamepad commands, dialog boundaries, external-folder ownership
 draft preservation, exact cover queues and Steam registration parameters. Folder,
 release/signing, DEB-helper fixtures and launch-log lifetime checks pass locally.
 
-New native fixtures cover external-folder dialog/IPC, retained favorites/imported
+Feature commit `0eacb38db31a022e3addd657808d3a6e83948380` passed
+[Linux CI run 42396471855](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42396471855):
+67 backend tests in both headless and desktop builds, 16 cover-core tests,
+13 updater-core tests, all 92 JavaScript regressions, Python gates, DEB/AppImage
+builds, packaged-helper verification, ordinary painted startup and the actual
+Tauri/WebKit fixture suite. Both live-provider smoke tests passed in CI.
+The exact versioned commit repeats these gates before signed publication.
+
+The native fixtures cover external-folder dialog/IPC, retained favorites/imported
 artwork, PS1 playlist arguments, disconnected roots, Snap/custom Steam routing,
 and simulated WebKit gamepad input. They use synthetic game files and harmless
-launchers. Native execution, installer builds and screenshots require Linux CI
-because this executor lacks GTK/WebKit development packages and desktop drivers.
+launchers. The folder dialog and startup screenshots were visually inspected.
 Do not treat synthetic gamepad input as physical-controller certification.
 
 The current executor rejects both old xlenore and new GameTDB production HTTP
@@ -29,7 +36,7 @@ a universal installed-title importer. Other distributions, physical controllers,
 real emulator save creation, encrypted content and a privileged package upgrade
 still need their own integration checks.
 
-## Version 0.5.10 reviewed bug repairs
+### Reviewed bug repairs
 
 Repair commit `e417aa97279514984c86da0b9d8c4839ebe6fe5c` passed
 [Linux CI run 42395357141](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42395357141):
@@ -167,16 +174,16 @@ checks output after the launching process exits and log-write failure using
 synthetic subprocesses. Run the normal Rust suites and desktop tests as well;
 these checks do not replace a real emulator test or privileged DEB upgrade test.
 
-This is the native testing release, version 0.5.9. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
+This is the native testing release, version 0.5.10. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04
 
-1. Open the [v0.5.9 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.9) — the repository and installers are public.
-2. Download `Matrix-Play_0.5.9_amd64.deb`.
+1. Open the [v0.5.10 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.10) — the repository and installers are public.
+2. Download `Matrix-Play_0.5.10_amd64.deb`.
 3. Open a terminal in the download folder and run:
 
    ```bash
-   sudo apt install ./Matrix-Play_0.5.9_amd64.deb
+   sudo apt install ./Matrix-Play_0.5.10_amd64.deb
    ```
 
 4. Open **Matrix Play** from the application menu. You can also run `matrix-frontend` in a terminal to capture diagnostics.
@@ -185,24 +192,24 @@ APT installs the GTK/WebKit runtime dependencies if needed. Rust, Node, the sour
 
 ## Portable AppImage alternative
 
-Download `Matrix-Play_0.5.9_amd64.AppImage` from the same release. In its download folder run:
+Download `Matrix-Play_0.5.10_amd64.AppImage` from the same release. In its download folder run:
 
 ```bash
-chmod +x Matrix-Play_0.5.9_amd64.AppImage
-./Matrix-Play_0.5.9_amd64.AppImage
+chmod +x Matrix-Play_0.5.10_amd64.AppImage
+./Matrix-Play_0.5.10_amd64.AppImage
 ```
 
 If FUSE is unavailable, run it in extraction mode:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.9_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.10_amd64.AppImage
 ```
 
 The AppImage's actual native window, IPC, scanning, local covers, settings and launcher dispatch passed the same isolated desktop test in extraction mode. Other Linux distributions and native FUSE mounting have not been validated. The DEB is recommended on Zorin/Ubuntu.
 
 ## Upgrade from the blank-window build
 
-Close Matrix Play, then install the v0.5.9 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
+Close Matrix Play, then install the v0.5.10 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
 
 If a new startup problem occurs, attach `~/.local/share/matrix/startup.log` to the issue. This contains bounded startup stages and renderer/load errors, not game data. In this incident, graphics workarounds did not resolve the problem; a fresh cache directory did, which the affected user confirmed. The specific problematic shared cache file was not identified or deleted.
 
@@ -214,9 +221,9 @@ The application menu now shows **Matrix Play** with the supplied logo. APT repla
 
 Matrix Play creates `~/Games/Matrix Play/` and 18 console subfolders. Place your legally obtained game files inside the appropriate nested `* Games` folder, such as `PS2/PS2 Games`. Existing Steam and Windows games stay in their existing locations.
 
-1. Open a console library, choose **Edit emulator**, and verify the executable and argument tokens. Matrix Play can detect one executable/AppImage in a console's parent folder, plus selected system-installed emulators.
-2. Select **Refresh** to rescan libraries. PS1/PS2 artwork downloads run in the background. Under **Emulators & folders → Cover artwork**, choose Default or 3D, or disable automatic downloads.
-3. A filename with an exact Sony serial or a supported uncompressed SYSTEM.CNF layout can identify artwork. For unknown or conflicting serials, open game details with the information button and confirm the exact serial. Compressed images may need a filename serial or confirmation. Matrix Play does not guess from similar titles.
+1. Open a console library, choose **Edit emulator**, and verify the executable and argument tokens. Matrix Play lists recognized executable/AppImage choices in a console's parent folder and supported system installations. Ambiguous matches require a choice.
+2. Select **Refresh** to rescan libraries. PS1/PS2 and exact-ID GameCube/Wii artwork downloads run in the background. Under **Emulators & folders → Cover artwork**, choose Default or 3D, or disable automatic downloads.
+3. A filename with an exact Sony serial or a supported uncompressed SYSTEM.CNF layout can identify artwork. GameCube/Wii artwork uses a validated uncompressed disc header or explicit filename ID. For unknown or conflicting identities, open game details with the information button and confirm the exact serial or game ID. Compressed images may need a filename serial or confirmation. Matrix Play does not guess from similar titles.
 4. Use **Choose cover** to import a local PNG/JPEG/WebP image. Local covers take priority. TheCoverProject is manual-only.
 5. Clicking a game card sends a launch request immediately. Use its small information button to view details without launching.
 6. Check **Steam Games** and **Windows Games** independently. Windows registration accepts only an existing `.desktop` shortcut that works outside Matrix Play. Direct `.exe` registration and launch are rejected, including saved legacy entries. Legacy entries and their artwork are preserved; register a working shortcut to replace them. External compatibility software is not supplied or configured by Matrix Play.
