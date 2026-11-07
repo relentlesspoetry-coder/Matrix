@@ -20,6 +20,30 @@ pub fn install_appimage(download: &Downloaded, target: &Path) -> Result<PathBuf,
 }
 
 #[cfg(target_os = "linux")]
+struct DirectoryLock<'a>(&'a File);
+
+#[cfg(target_os = "linux")]
+impl<'a> DirectoryLock<'a> {
+    fn acquire(directory: &'a File) -> Result<Self, String> {
+        directory.try_lock().map_err(|e| {
+            format!("Cannot lock the AppImage folder; another update may be running: {e}")
+        })?;
+        Ok(Self(directory))
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for DirectoryLock<'_> {
+    fn drop(&mut self) {
+        // flock belongs to an open file description, not a particular fd.
+        // Closing our fd alone can leave the lock alive in a child forked by
+        // another thread until that child reaches exec (despite CLOEXEC).
+        // Explicitly unlock only after this transaction and its cleanup finish.
+        let _ = self.0.unlock();
+    }
+}
+
+#[cfg(target_os = "linux")]
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Step {
     Staged,
@@ -173,9 +197,7 @@ fn install_with_preserver(
     // Lock the stable directory inode, never the executable we replace. A lock
     // sidecar that is unlinked after use lets a third process bypass a waiter.
     // The OS releases this advisory lock even when an updater process crashes.
-    directory.try_lock().map_err(|e| {
-        format!("Cannot lock the AppImage folder; another update may be running: {e}")
-    })?;
+    let _lock = DirectoryLock::acquire(&directory)?;
     let original = snapshot(&target)?;
     let mut old = File::open(&target).map_err(|e| e.to_string())?;
     if !unchanged(&old.metadata().map_err(|e| e.to_string())?, &original) {

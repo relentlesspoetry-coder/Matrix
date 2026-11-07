@@ -234,6 +234,8 @@ h1,h2,h3,p { margin: 0 }
 .update-notes { margin-top: 18px; padding: 16px; background: #0c1321; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; color: #a9bad5; font-size: 12px; line-height: 1.7 }
 .update-dialog progress { width: 100%; margin-top: 18px; accent-color: #8eb6ff }
 .update-dialog .dialog-actions { flex-wrap: wrap }
+#update-close-confirm { display: flex; align-items: flex-start; gap: 10px; margin-top: 18px; padding: 14px; border: 1px solid #7d9dff50; border-radius: 10px; background: #111d34; color: #d4e1ff; font-size: 13px; line-height: 1.5; cursor: pointer }
+#update-games-closed { flex: 0 0 auto; margin-top: 3px; accent-color: #8eb6ff }
 button:disabled { opacity: .55; cursor: wait }
 @media(max-width:1030px) { .topbar-actions { gap: 8px }.top-chip { display: none } }
 @media(max-width:670px) {

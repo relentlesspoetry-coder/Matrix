@@ -469,3 +469,60 @@ fn full_transaction_and_rollback_work_with_copy_fallback() {
         }
     }
 }
+
+#[test]
+fn completed_transaction_unlocks_even_when_a_duplicate_descriptor_survives() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = File::open(root.path()).unwrap();
+    let lock = DirectoryLock::acquire(&directory).unwrap();
+    // dup and fork both retain this same open file description. CLOEXEC alone
+    // cannot release it while a concurrent child has not reached exec yet.
+    let inherited = directory.try_clone().unwrap();
+    let contender = File::open(root.path()).unwrap();
+    assert!(DirectoryLock::acquire(&contender).is_err());
+    drop(lock);
+    drop(directory);
+    let next = DirectoryLock::acquire(&contender).unwrap();
+    let third = File::open(root.path()).unwrap();
+    assert!(DirectoryLock::acquire(&third).is_err());
+    // Closing the old inherited descriptor must not release the new owner's
+    // independent open-file-description lock.
+    drop(inherited);
+    assert!(DirectoryLock::acquire(&third).is_err());
+    drop(next);
+    DirectoryLock::acquire(&third).unwrap();
+}
+
+#[test]
+fn completed_transaction_unlocks_while_an_unrelated_child_is_still_before_exec() {
+    use std::os::unix::process::CommandExt;
+    let root = tempfile::tempdir().unwrap();
+    let directory = File::open(root.path()).unwrap();
+    let lock = DirectoryLock::acquire(&directory).unwrap();
+    let (mut ready_reader, mut ready_writer) = std::io::pipe().unwrap();
+    let (mut resume_reader, mut resume_writer) = std::io::pipe().unwrap();
+    let child = std::thread::spawn(move || {
+        let mut command = std::process::Command::new("/bin/true");
+        // SAFETY: The post-fork closure only calls read/write on prepared pipe
+        // handles. It does not allocate, lock, panic, or invoke the Rust runtime.
+        unsafe {
+            command.pre_exec(move || {
+                ready_writer.write_all(&[1])?;
+                resume_reader.read_exact(&mut [0])
+            });
+        }
+        command.status()
+    });
+    ready_reader.read_exact(&mut [0]).unwrap();
+    let contender = File::open(root.path()).unwrap();
+    let excluded_before_exit = DirectoryLock::acquire(&contender).is_err();
+    drop(lock);
+    drop(directory);
+    let acquired_after_exit = DirectoryLock::acquire(&contender);
+    // Unblock and reap before asserting so a regression never leaves a stalled
+    // child holding inherited descriptors from unrelated parallel tests.
+    resume_writer.write_all(&[1]).unwrap();
+    assert!(child.join().unwrap().unwrap().success());
+    assert!(excluded_before_exit);
+    assert!(acquired_after_exit.is_ok());
+}

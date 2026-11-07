@@ -869,13 +869,13 @@ function renderUpdater() {
   if (state.overlay !== 'updates') return;
   const info = state.update || {phase:'checking',message:'Checking GitHub…'};
   const busy = ['checking','downloading','installing'].includes(info.phase);
-  const action = {available:['download-update','Download update'], downloaded:['install-update',info.installMode === 'download' ? 'Open installer' : 'Install update'],installed:['restart-update','Restart Matrix Play'],downloading:['cancel-update','Cancel download']}[info.phase];
+  const action = {available:['download-update','Download update'], downloaded:['install-update',info.installMode === 'download' ? 'Installation instructions' : 'Close Matrix Play and install'],installed:['restart-update','Restart Matrix Play'],downloading:['cancel-update','Cancel download']}[info.phase];
   const percent = info.total ? Math.min(100,Math.round(info.received / info.total * 100)) : 0;
   const hint = info.installMode === 'system' ? 'Installation uses your Linux system installer and may ask for your password.' : info.installMode === 'appimage' ? 'Your AppImage will be replaced in its current folder. A .previous backup is kept.' : 'The downloaded Linux installer opens in your system installer.';
   // Keep interactive elements alive across polling ticks so keyboard focus,
   // screen-reader position and a pointer press survive progress updates.
   if (!$('.update-dialog')) {
-    $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title"><button type="button" class="close" data-action="close" aria-label="Close updates">${glyph('close')}</button><div class="eyebrow">MATRIX PLAY</div><h2 id="update-title">App updates</h2><p class="muted">Installed <strong id="update-current"></strong><span id="update-latest-label"> · Latest <strong id="update-latest"></strong></span></p><p class="update-message" role="status"></p><div id="update-progress"><progress max="100" value="0" aria-label="Update download"></progress><p class="muted" id="update-progress-text"></p></div><div class="update-notes"></div><p class="muted" id="update-hint"></p><div class="dialog-actions"><button type="button" class="button button-ghost" data-action="update-releases">GitHub releases</button><button type="button" class="button button-primary" id="update-action"></button></div></section></div>`;
+    $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title"><button type="button" class="close" data-action="close" aria-label="Close updates">${glyph('close')}</button><div class="eyebrow">MATRIX PLAY</div><h2 id="update-title">App updates</h2><p class="muted">Installed <strong id="update-current"></strong><span id="update-latest-label"> · Latest <strong id="update-latest"></strong></span></p><p class="update-message" role="status"></p><div id="update-progress"><progress max="100" value="0" aria-label="Update download"></progress><p class="muted" id="update-progress-text"></p></div><div class="update-notes"></div><p class="muted" id="update-hint"></p><p class="muted" id="update-safety">Before updating, save your progress and close games, emulators and other apps launched through Matrix Play. Let installers and updates finish before closing them.</p><label id="update-close-confirm"><input type="checkbox" id="update-games-closed"> I have saved my progress, closed running apps, and waited for installers and updates to finish. Close all Matrix Play windows to install.</label><div class="dialog-actions"><button type="button" class="button button-ghost" data-action="update-releases">GitHub releases</button><button type="button" class="button button-primary" id="update-action"></button></div></section></div>`;
   }
   const shell=$('.app-shell');if (shell) shell.inert=true;
   $('#update-current').textContent=info.currentVersion || '—';
@@ -887,7 +887,9 @@ function renderUpdater() {
   $('#update-progress-text').textContent=`${percent}% · ${((info.received || 0)/1048576).toFixed(1)} / ${((info.total || 0)/1048576).toFixed(1)} MB`;
   $('.update-notes').textContent=info.notes || '';
   $('.update-notes').hidden=!info.notes;
-  $('#update-hint').textContent=`${hint} Downloads are checked against a signed release before installation.`;
+  $('#update-hint').textContent=`${hint} Matrix Play closes before installation and reopens afterward. Running games, apps and installers are never force-stopped. Downloads are checked against a signed release before installation.`;
+  $('#update-close-confirm').hidden=info.phase!=='downloaded';
+  $('#update-safety').hidden=info.phase!=='downloaded';
   const nextAction=action?.[0] || 'check-updates';
   let button=$('#update-action');
   if (button.dataset.action && button.dataset.action!==nextAction) {
@@ -910,6 +912,8 @@ let updaterOpening = 0;
 async function runUpdate(command) {
   if (!state.native) { toast('App updates are available in the Linux application.'); return; }
   if (state.updateBusy) return;
+  const gamesClosed=command==='install_update' && $('#update-games-closed')?.checked===true;
+  if (command==='install_update' && !gamesClosed) { toast('Save your progress, close launched apps, and wait for installers/updates to finish. Then check the confirmation.'); return; }
   state.updateBusy = true;
   const operation=++updateOperation;
   if (state.update) {
@@ -924,7 +928,7 @@ async function runUpdate(command) {
     try { const info = await nativeInvoke('update_status'); if (state.updateBusy && operation===updateOperation) { state.update = info; renderUpdater(); } } catch (_) { /* The operation reports its own error. */ }
     finally { polling = false; }
   }, 500);
-  try { state.update = await nativeInvoke(command); }
+  try { state.update = await nativeInvoke(command, command==='install_update' ? {gamesClosed} : undefined); }
   catch(error) { state.update = {...state.update, phase:'error',message:String(error)}; }
   finally { clearInterval(timer); state.updateBusy = false; renderUpdater(); }
 }
@@ -943,7 +947,7 @@ async function openUpdater() {
     if (!busyAtOpen && !state.updateBusy && operationAtOpen===updateOperation) state.update={phase:'error',message:String(error)};
   }
   renderUpdater();
-  if (!state.updateBusy && ['idle','current','error'].includes(state.update?.phase)) void runUpdate('check_updates');
+  if (!state.updateBusy && ['idle','current'].includes(state.update?.phase)) void runUpdate('check_updates');
 }
 
 async function handleAction(button) {

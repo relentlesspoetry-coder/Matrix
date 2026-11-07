@@ -17,6 +17,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = 'usr/lib/matrix-play/matrix-install-update'
 FRONTEND = 'usr/bin/matrix-frontend'
+COORDINATOR = 'matrix-update-coordinator'
 PACKAGE = 'matrix-play'
 AMD64_ELF = (2, 1, 62)  # ELF64, little-endian, EM_X86_64
 
@@ -58,13 +59,15 @@ def verify_deb(package, version):
                 while name.startswith('./'):
                     name = name[2:]
                 name = name.lstrip('/')
-                if name not in (HELPER, FRONTEND):
+                if name.startswith('usr/lib/') and name.endswith('/' + COORDINATOR):
+                    name = COORDINATOR
+                if name not in (HELPER, FRONTEND, COORDINATOR):
                     continue
                 if name in found:
                     raise ValueError(f'{name}: duplicate archive member')
                 if not member.isfile():
                     raise ValueError(f'{name}: must be a regular file')
-                if name == HELPER:
+                if name in (HELPER, COORDINATOR):
                     if (member.uid, member.gid) != (0, 0):
                         raise ValueError(f'{name}: must be owned by root:root')
                     if member.mode & 0o022 or member.mode & 0o111 != 0o111:
@@ -73,13 +76,14 @@ def verify_deb(package, version):
                         raise ValueError(f'{name}: unexpected special permission bits')
                 with archive.extractfile(member) as binary:
                     found[name] = elf_architecture(binary.read(64), name)
-            for name in (HELPER, FRONTEND):
+            for name in (HELPER, FRONTEND, COORDINATOR):
                 if name not in found:
                     raise ValueError(f'{name}: missing from package')
             if found[FRONTEND] != AMD64_ELF:
                 raise ValueError(f'{FRONTEND}: expected amd64 ELF architecture')
-            if found[HELPER] != found[FRONTEND]:
-                raise ValueError(f'{HELPER}: ELF architecture does not match frontend')
+            for name in (HELPER, COORDINATOR):
+                if found[name] != found[FRONTEND]:
+                    raise ValueError(f'{name}: ELF architecture does not match frontend')
 
 
 def synthetic_elf(machine=62, elf_class=2):
@@ -91,7 +95,7 @@ def synthetic_elf(machine=62, elf_class=2):
 
 def fixture_deb(path, *, package=PACKAGE, version='1.2.3', architecture='amd64',
                 helper=True, uid=0, gid=0, mode=0o755, kind=tarfile.REGTYPE,
-                helper_elf=None, frontend_elf=None, duplicate=False, depends='pkexec'):
+                helper_elf=None, frontend_elf=None, duplicate=False, depends='pkexec', coordinator=True):
     """Write a minimal ar/DEB with controlled tar metadata, without root access."""
     def tar_bytes(entries):
         output = io.BytesIO()
@@ -110,6 +114,10 @@ def fixture_deb(path, *, package=PACKAGE, version='1.2.3', architecture='amd64',
         entries.append((entry, helper_elf if helper_elf is not None else synthetic_elf()))
         if duplicate:
             entries.append(entries[-1])
+    if coordinator:
+        entry = tarfile.TarInfo('./usr/lib/matrix-play/' + COORDINATOR)
+        entry.mode = 0o755
+        entries.append((entry, synthetic_elf()))
     with path.open('wb') as output:
         output.write(b'!<arch>\n')
         for name, data in [('debian-binary', b'2.0\n'),
@@ -134,6 +142,10 @@ class PackageTests(unittest.TestCase):
     def test_bundle_declares_installer_dependency(self):
         config = json.loads((ROOT / 'src-tauri/tauri.conf.json').read_text())
         self.assertIn('pkexec', config['bundle']['linux']['deb']['depends'])
+        self.assertEqual(config['bundle']['resources']['target/release/matrix-update-coordinator'], 'matrix-update-coordinator')
+        hook = ROOT / 'src-tauri' / config['bundle']['linux']['deb']['postInstallScript']
+        self.assertIn('update.lock', hook.read_text())
+        self.assertIn('--bin matrix-update-coordinator', config['build']['beforeBuildCommand'])
 
     def test_invalid_packages(self):
         cases = [
@@ -142,6 +154,7 @@ class PackageTests(unittest.TestCase):
             ({'depends': 'not-pkexec'}, 'requires pkexec'),
             ({'depends': 'pkexec | other-package'}, 'requires pkexec'),
             ({'helper': False}, 'missing'),
+            ({'coordinator': False}, 'missing'),
             ({'uid': 1000}, 'root:root'),
             ({'gid': 1000}, 'root:root'),
             ({'mode': 0o775}, 'group/other-writable'),

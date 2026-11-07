@@ -42,7 +42,11 @@ fn append(record: &Arc<Mutex<Record>>, text: &str) {
     }
 }
 // A separate copy of this executable drains output even after the GUI exits.
-fn capture_output(command: &mut Command, file: &fs::File) -> std::io::Result<mpsc::Receiver<()>> {
+fn capture_output(
+    command: &mut Command,
+    file: &fs::File,
+    activity: Option<&fs::File>,
+) -> std::io::Result<mpsc::Receiver<()>> {
     // Re-exec the running inode even if a package update replaced/unlinked its
     // original path. This also prevents accidentally executing a newer binary.
     #[cfg(not(test))]
@@ -55,6 +59,21 @@ fn capture_output(command: &mut Command, file: &fs::File) -> std::io::Result<mps
     helper
         .args(["--exact", &launch_log::fixture_name(), "--nocapture"])
         .env("MATRIX_TEST_LOG_SINK", "1");
+    if let Some(activity) = activity {
+        use std::os::fd::AsRawFd;
+        let fd = activity.as_raw_fd();
+        // Only the owned log sink inherits the activity lease. Never give the
+        // game a coordinator descriptor or depend on the launcher staying alive.
+        unsafe {
+            helper.pre_exec(move || {
+                if libc::dup2(fd, 3) < 0 || libc::fcntl(3, libc::F_SETFD, 0) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        helper.env("MATRIX_LOG_ACTIVITY_FD", "3");
+    }
     let mut sink = helper
         .stdin(Stdio::piped())
         .stdout(Stdio::from(file.try_clone()?))
@@ -120,9 +139,18 @@ pub(crate) fn start(command: Command, id: &str) -> Result<Info, String> {
     let root = dirs::data_local_dir()
         .ok_or("Cannot locate Matrix Play launch logs")?
         .join("matrix/launches");
-    start_in_root(command, id, &root)
+    let launch = update_lifecycle::begin_launch()?;
+    start_in_root_guarded(command, id, &root, Some(launch))
 }
-fn start_in_root(mut command: Command, id: &str, root: &Path) -> Result<Info, String> {
+fn start_in_root(command: Command, id: &str, root: &Path) -> Result<Info, String> {
+    start_in_root_guarded(command, id, root, None)
+}
+fn start_in_root_guarded(
+    mut command: Command,
+    id: &str,
+    root: &Path,
+    launch: Option<update_lifecycle::Launch>,
+) -> Result<Info, String> {
     let label = launcher_name(id);
     fs::create_dir_all(root).map_err(|e| e.to_string())?;
     let stamp = SystemTime::now()
@@ -173,7 +201,7 @@ fn start_in_root(mut command: Command, id: &str, root: &Path) -> Result<Info, St
     }
     let capture = {
         let r = record.lock().map_err(|_| "Launch status unavailable")?;
-        capture_output(&mut command, &r.file)
+        capture_output(&mut command, &r.file, launch.as_ref().map(|l| &l.activity))
     };
     let capture_done = match capture {
         Ok(done) => done,
@@ -186,6 +214,11 @@ fn start_in_root(mut command: Command, id: &str, root: &Path) -> Result<Info, St
             return Ok(r.info.clone());
         }
     };
+    let activity = launch
+        .as_ref()
+        .map(|l| l.activity.try_clone())
+        .transpose()
+        .map_err(|e| e.to_string())?;
     let mut child = match command.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -204,6 +237,7 @@ fn start_in_root(mut command: Command, id: &str, root: &Path) -> Result<Info, St
     drop(command);
     let watcher = record.clone();
     std::thread::spawn(move || {
+        let _activity = activity;
         let status = child.wait();
         // A descendant may keep stdout open indefinitely. Allow a bounded flush
         // window, then publish status even if that descendant is still running.
@@ -348,7 +382,8 @@ mod tests {
         let mut command = Command::new("/bin/sh");
         command.args(["-c", "for i in $(seq 1 500); do [ -e \"$1\" ] && break; sleep 0.01; done; [ -e \"$1\" ] || exit 1; /usr/bin/head -c 200000 /dev/zero; /usr/bin/head -c 200000 /dev/zero >&2; printf 'late diagnostic' >&2; touch \"$2\"", "fixture"])
             .arg(root.join("ready")).arg(root.join("done"));
-        let _completion = capture_output(&mut command, &file).unwrap();
+        let activity = update_lifecycle::activity(&root, false).unwrap();
+        let _completion = capture_output(&mut command, &file, Some(&activity)).unwrap();
         let _child = command.spawn().unwrap();
         drop(command);
         std::process::exit(0);
@@ -371,13 +406,24 @@ mod tests {
             root.path().join("output.log").is_file(),
             "launcher fixture did not run"
         );
+        assert!(
+            update_lifecycle::activity(root.path(), true).is_err(),
+            "log sink must retain game activity after launcher exit"
+        );
         // Only release the writer after its launcher process has exited.
         fs::write(root.path().join("ready"), b"").unwrap();
         for _ in 0..500 {
             let data = fs::read(root.path().join("output.log")).unwrap();
             if root.path().join("done").exists() && data.ends_with(b"late diagnostic") {
                 assert_eq!(data.len(), 65536);
-                return;
+                // The sink releases its lease only when the writer closes EOF.
+                for _ in 0..100 {
+                    if update_lifecycle::activity(root.path(), true).is_ok() {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                panic!("completed log sink retained its activity lease");
             }
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -413,7 +459,7 @@ mod tests {
         command
             .arg("-c")
             .arg("/usr/bin/head -c 200000 /dev/zero; printf stderr >&2");
-        let done = capture_output(&mut command, &file).unwrap();
+        let done = capture_output(&mut command, &file, None).unwrap();
         let mut child = command.spawn().unwrap();
         drop(command);
         assert!(child.wait().unwrap().success());

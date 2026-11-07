@@ -140,7 +140,9 @@ with sync_playwright() as p:
     native.wait_for_timeout(100)
     assert native.locator('.update-dialog').count()==0
     native.get_by_role('button',name='Update Matrix Play').click()
-    native.get_by_role('button',name='Install update').click()
+    native.locator('#update-games-closed').check()
+    screenshot(native,'matrix-update-shutdown-confirmation.png')
+    native.get_by_role('button',name='Close Matrix Play and install').click()
     assert native.get_by_role('button',name='Restart Matrix Play').is_visible()
     screenshot(native,'matrix-updates.png')
     native.keyboard.press('Escape')

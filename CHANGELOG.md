@@ -2,6 +2,8 @@
 
 ## 0.5.11
 
+- Prompt users to save progress, close launched games/apps and wait for installers to finish. Block detected activity, close only cooperating Matrix windows, and verify their exit before installation through a separate coordinator. Never terminate games/installers or signal unrelated processes.
+- Gate new Matrix starts during installation, preserve independent privileged-installer protection, and stop on ambiguous legacy/protected process identity. Earlier versions need one manual upgrade after closing Matrix; the new protections cannot apply retroactively.
 - Preserve the original AppImage rollback copy across repeated or concurrent updates, with cross-process locking, unchanged-target checks and recovery on failed replacement.
 - Reject non-regular Steam manifest, desktop-entry and PCSX2 configuration files without blocking scans or launch preflight. Keep bounded regular-file reads and existing regular symlink targets.
 - Require an explicit absolute Dolphin user-folder path for ambiguous -u/--user profiles. Reject unsafe launch/save attempts with repair guidance while retaining existing profiles and game/save files unchanged.

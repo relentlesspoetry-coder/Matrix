@@ -17,6 +17,8 @@ mod launches;
 mod libraries;
 mod settings;
 mod steam_libraries;
+mod update_lifecycle;
+mod update_worker;
 mod updates;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -1429,6 +1431,7 @@ fn launch_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
             }
         }
     }
+    command.env_remove("MATRIX_INSTANCE_TOKEN");
     command
 }
 
@@ -1485,6 +1488,19 @@ fn graphics_diagnostics() -> BTreeMap<String, String> {
 
 #[cfg(feature = "desktop")]
 fn main() {
+    static SYSTEM_GUARD: std::sync::OnceLock<std::fs::File> = std::sync::OnceLock::new();
+    let installed =
+        std::env::current_exe().is_ok_and(|p| p == Path::new("/usr/bin/matrix-frontend"));
+    match update_lifecycle::system_startup_guard(installed) {
+        Ok(Some(guard)) => {
+            let _ = SYSTEM_GUARD.set(guard);
+        }
+        Ok(None) => (),
+        Err(error) => {
+            eprintln!("Matrix Play: {error}");
+            return;
+        }
+    }
     // The log reader is a separate process that must outlive the GUI. Dispatch
     // before initializing WebKit, application state or startup/cache files.
     if std::env::args_os()
@@ -1492,6 +1508,20 @@ fn main() {
         .is_some_and(|arg| arg == "--matrix-launch-log-sink")
     {
         std::process::exit(if launch_log::run().is_ok() { 0 } else { 1 });
+    }
+    // The private lease lives until actual process exit, not merely window close.
+    static INSTANCE: std::sync::OnceLock<update_lifecycle::Instance> = std::sync::OnceLock::new();
+    let registered =
+        update_lifecycle::directory().and_then(|root| update_lifecycle::Instance::register(&root));
+    match registered {
+        Ok(instance) => {
+            std::env::set_var("MATRIX_INSTANCE_TOKEN", instance.token());
+            let _ = INSTANCE.set(instance);
+        }
+        Err(error) => {
+            eprintln!("Matrix Play: {error}");
+            return;
+        }
     }
     initialize_startup_log();
     isolate_runtime_cache();
@@ -1502,6 +1532,17 @@ fn main() {
             startup_log(&format!("Page {:?}: {}", page.event(), page.url()));
         })
         .setup(|app| {
+            let handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                if INSTANCE
+                    .get()
+                    .is_some_and(|instance| instance.stop_requested())
+                {
+                    handle.exit(0);
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            });
             #[cfg(target_os = "linux")]
             {
                 use tauri::Manager;

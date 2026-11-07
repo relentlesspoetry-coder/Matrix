@@ -2,8 +2,8 @@
 
 ## Version 0.5.11 async ownership and console-library checks
 
-Local Rust 1.99.1 passes 83 headless backend tests, 16 cover-core tests (two
-opt-in live-provider checks omitted), the updater-core suite and 109 JavaScript
+Local Rust 1.99.1 passes 102 headless backend tests, 16 cover-core tests (two
+opt-in live-provider checks omitted), 31 updater-core tests and 114 JavaScript
 fixtures. Folder, release/signing, DEB-helper and log-lifetime checks also pass,
 along with formatting, syntax and patch-whitespace checks. Release fixtures use
 disposable local repositories and keys, not a real project publication.
@@ -44,6 +44,33 @@ requires the user to choose an absolute existing save/config location; it does n
 silently rebase relative paths. The local reader checks regular files before and
 after a nonblocking open, preserving ordinary symlinked configuration files.
 Controller Back and failed-latest-cover recovery regressions also pass.
+
+The earlier repair batch at `25d3d473589f18caa8f58678ac657bb2daedd63e` passed
+[Linux CI run 42403804510](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42403804510),
+including native and installer checks. This does not certify the later coordinated
+shutdown changes; their exact versioned commit must pass the expanded pipeline.
+
+The shutdown fixtures require an unchecked save-and-close confirmation, reject
+known active launches even after confirmation, and preserve games, log sinks,
+installers and unrelated processes. Independent disposable-process checks cover
+late hidden children, PID identity, duplicate updaters, startup gates, partial
+failure and reopening. Recovery and cancellation messages remain visible until an
+explicit retry rather than being erased by an automatic update check. A real signed AppImage was staged only onto disposable
+fixture targets to verify duplicate-install rollback preservation. Repeated core
+suites exercise inherited lock descriptors and concurrent transactions.
+
+The expanded native pipeline opens two actual Matrix windows, refuses a third
+while the update gate is held, verifies both actual exits before a harmless
+replacement marker, and checks that a launched writer survives, finishes, and
+keeps its final log output. It repeats shutdown through the built AppImage in
+extraction mode. The marker is available only in test code; production update
+coordinators require signed metadata and installer bytes. These tests do not
+perform a privileged APT installation. The root helper's system guard is checked
+by source and package inspection, not by changing the executor's system files.
+Unverifiable processes intentionally block updates rather than being killed.
+
+Versions through 0.5.10 do not implement these lifecycle gates. Save and close
+running work and Matrix Play, then install the first upgraded version manually.
 
 PS3/Wii U automatic artwork is not included: a separately staged provider change
 needs correction and production-transport verification.

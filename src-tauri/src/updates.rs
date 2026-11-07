@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Info {
     pub current_version: String,
@@ -69,15 +69,41 @@ fn mode() -> String {
     }
     .into()
 }
+fn clean_appimage_environment(command: &mut std::process::Command) {
+    if std::env::var_os("APPIMAGE").is_some() {
+        command
+            .env_remove("APPDIR")
+            .env_remove("APPIMAGE")
+            .env_remove("ARGV0");
+        if let Some(original) = std::env::var_os("LD_LIBRARY_PATH_ORIG") {
+            command.env("LD_LIBRARY_PATH", original);
+        } else {
+            command.env_remove("LD_LIBRARY_PATH");
+        }
+        command.env_remove("LD_PRELOAD");
+    }
+}
 impl Default for Service {
     fn default() -> Self {
+        Self::with_outcome(super::update_lifecycle::outcome())
+    }
+}
+impl Service {
+    fn with_outcome(outcome: Option<super::update_lifecycle::Outcome>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(Runtime {
                 info: Info {
                     current_version: env!("CARGO_PKG_VERSION").into(),
                     latest_version: None,
-                    phase: "idle".into(),
-                    message: "Check GitHub for the newest Matrix Play release.".into(),
+                    phase: if outcome.is_some() {
+                        "recovery"
+                    } else {
+                        "idle"
+                    }
+                    .into(),
+                    message: outcome.map(|o| o.message).unwrap_or_else(|| {
+                        "Check GitHub for the newest Matrix Play release.".into()
+                    }),
                     notes: String::new(),
                     received: 0,
                     total: 0,
@@ -218,7 +244,10 @@ impl Service {
             Err(e) => self.fail(e),
         }
     }
-    fn install(&self) -> Result<Info, String> {
+    fn install(&self, helper: &std::path::Path, games_closed: bool) -> Result<Info, String> {
+        if !games_closed {
+            return Err("Save and close your games and other work. Wait for installers and updates to finish, then confirm before updating.".into());
+        }
         let (download, install_mode) = {
             let mut s = self.inner.lock().map_err(|_| "Update state unavailable")?;
             if s.info.phase != "downloaded" {
@@ -226,68 +255,76 @@ impl Service {
             }
             let d = s.download.clone().ok_or("No verified installer is ready")?;
             s.info.phase = "installing".into();
-            s.info.message = "Installing update…".into();
+            s.info.message =
+                "Preparing to close all Matrix Play windows before installation…".into();
             (d, s.info.install_mode.clone())
         };
         let result = (|| {
-            core::validate_file(
-                &download.path,
-                &download.release.asset,
-                &download.release.kind,
-            )?;
-            if !core::is_newer(
-                &download.release.manifest.version,
-                env!("CARGO_PKG_VERSION"),
-            )? {
-                return Err("This update is no longer newer".into());
-            }
-            if install_mode == "appimage" {
-                let target = running_appimage().ok_or("Cannot identify the running Matrix Play AppImage. Use the downloaded installer manually.")?;
-                return core::install_appimage(&download, &target).map(Some);
-            }
-            if install_mode == "system" {
-                let mut child = super::launch_command("/usr/bin/pkexec")
-                    .arg("/usr/lib/matrix-play/matrix-install-update")
-                    .stdin(std::process::Stdio::piped())
-                    .current_dir("/")
-                    .spawn()
-                    .map_err(|_| "Could not open the secure system installer. Install the update manually if this installation predates the secure helper.")?;
-                let sent = core::deb::write_request(
-                    &download,
-                    &mut child.stdin.take().ok_or("Installer input unavailable")?,
-                );
-                // Always reap the helper, including a rejected/truncated request.
-                let status = child.wait().map_err(|e| e.to_string())?;
-                sent?;
-                if !status.success() {
-                    return Err("Installation was cancelled or the system installer could not complete it. Your current Matrix Play remains available.".into());
-                }
-                return Ok(Some(PathBuf::from("/usr/bin/matrix-frontend")));
-            }
-            super::launch_command("xdg-open")
-                .arg(&download.path)
+            let target = match install_mode.as_str() {
+                "appimage" => running_appimage().ok_or("Cannot identify this Matrix Play AppImage")?,
+                "system" => PathBuf::from("/usr/bin/matrix-frontend"),
+                _ => return Err(format!("This development build cannot install automatically. Close every Matrix Play window, then open the verified installer manually: {}", download.path.display())),
+            };
+            let request = super::update_worker::Request {
+                signed_manifest: download.release.signed_manifest,
+                signature: download.release.signature,
+                package: download.path,
+                mode: install_mode,
+                target,
+                frontend_exe: std::env::current_exe().map_err(|e| e.to_string())?,
+                games_closed,
+            };
+            // Verify before any shutdown, and again in the independent helper.
+            request.verified()?;
+            let root = super::update_lifecycle::directory()?;
+            let staging = tempfile::Builder::new()
+                .prefix("coordinator-")
+                .tempdir_in(&root)
+                .map_err(|e| e.to_string())?;
+            let executable = staging.path().join("matrix-update-coordinator");
+            std::fs::copy(helper, &executable).map_err(|e|format!("Cannot prepare the update coordinator: {e}. Install this version manually after closing Matrix Play."))?;
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
+            let mut command = super::launch_command(&executable);
+            clean_appimage_environment(&mut command);
+            let mut child = command
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .current_dir("/")
                 .spawn()
-                .map_err(|e| format!("Cannot open the downloaded installer: {e}"))?;
-            Ok(None)
+                .map_err(|e| format!("Cannot start the update coordinator: {e}"))?;
+            let mut input = child.stdin.take().ok_or("Coordinator input unavailable")?;
+            let sent = serde_json::to_writer(&mut input, &request).map_err(|e| e.to_string());
+            drop(input);
+            use std::io::{BufRead, Read};
+            let mut reply = String::new();
+            let read = std::io::BufReader::new(
+                child
+                    .stdout
+                    .take()
+                    .ok_or("Coordinator output unavailable")?,
+            )
+            .take(16385)
+            .read_line(&mut reply)
+            .map_err(|e| e.to_string());
+            // The temporary executable is independent of the old AppImage mount.
+            // Keep it until the coordinator exits; frontend shutdown may orphan it,
+            // but the helper has no need to execute it again.
+            std::thread::spawn(move || {
+                let _ = child.wait();
+                drop(staging);
+            });
+            sent?;
+            read?;
+            let ready: Result<(), String> = serde_json::from_str(&reply)
+                .map_err(|_| "Update coordinator stopped before confirming safe shutdown")?;
+            ready?;
+            self.status()
         })();
         match result {
-            Ok(installed) => {
-                let mut s = self.inner.lock().map_err(|_| "Update state unavailable")?;
-                s.installed = installed;
-                s.info.phase = if s.installed.is_some() {
-                    "installed"
-                } else {
-                    "downloaded"
-                }
-                .into();
-                s.info.message = if s.installed.is_some() {
-                    "Update installed. Restart Matrix Play to finish."
-                } else {
-                    "The system installer has been opened. Complete installation there."
-                }
-                .into();
-                Ok(s.info.clone())
-            }
+            Ok(info) => Ok(info),
             Err(e) => self.fail(e),
         }
     }
@@ -315,9 +352,19 @@ pub(crate) async fn download_update(service: tauri::State<'_, Service>) -> Resul
 }
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) async fn install_update(service: tauri::State<'_, Service>) -> Result<Info, String> {
+pub(crate) async fn install_update(
+    app: tauri::AppHandle,
+    service: tauri::State<'_, Service>,
+    games_closed: bool,
+) -> Result<Info, String> {
+    use tauri::Manager;
+    let helper = app
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?
+        .join("matrix-update-coordinator");
     let service = service.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || service.install())
+    tauri::async_runtime::spawn_blocking(move || service.install(&helper, games_closed))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -369,6 +416,24 @@ pub(crate) fn open_update_releases() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn persisted_install_outcome_is_retained_until_explicit_retry() {
+        for success in [false, true] {
+            let message = "Installation result; review package-manager guidance before retrying.";
+            let service = Service::with_outcome(Some(super::super::update_lifecycle::Outcome {
+                success,
+                message: message.into(),
+            }));
+            assert_eq!(service.status().unwrap().phase, "recovery");
+            assert_eq!(service.status().unwrap().message, message);
+            let retried = service
+                .check_with(|_| Ok((None, env!("CARGO_PKG_VERSION").into())))
+                .unwrap();
+            assert_eq!(retried.phase, "current");
+            assert_ne!(retried.message, message);
+        }
+    }
 
     #[test]
     fn check_again_retries_failed_checks_immediately() {
@@ -497,6 +562,17 @@ mod tests {
         assert!(service.cancel.load(Ordering::Relaxed));
         resume.send(()).unwrap();
         worker.join().unwrap();
+    }
+
+    #[test]
+    fn install_without_closed_games_confirmation_never_starts_helper() {
+        let service = Service::default();
+        service.inner.lock().unwrap().info.phase = "downloaded".into();
+        assert!(service
+            .install(std::path::Path::new("not-executed"), false)
+            .unwrap_err()
+            .contains("Save and close"));
+        assert_eq!(service.status().unwrap().phase, "downloaded");
     }
 
     #[test]

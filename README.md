@@ -42,7 +42,13 @@ The Linux package is now `matrix-play`. Its package metadata replaces/conflicts 
 
 Use **Update** in the top bar to check public GitHub releases, read the release notes and download the newest Linux x86-64 package. Downloads persist under `$XDG_DATA_HOME/matrix/updates/`; the app checks an Ed25519 signature pinned in the application, package size and SHA-256 before installation. GitHub sign-in is not required.
 
-For a DEB installation, **Install update** opens Linux's system authorization dialog and runs the system package installer. For an AppImage, it replaces the running AppImage in its writable folder and keeps a `.previous` backup. **Restart Matrix Play** finishes either update. A development build opens the verified DEB with your system installer. If an update cannot complete, use **GitHub releases** in the dialog to download an installer manually. Earlier versions need one manual upgrade to obtain this button.
+Before installation, Matrix Play prompts you to save progress, close games/emulators and other apps opened through it, and wait for every installer or update to finish. Confirm this explicitly. Detected launcher/log activity and installer locks still block the update, even if the box is checked. Detached or independently launched games cannot all be detected, so the confirmation matters. Matrix never terminates games or installers for you.
+
+A separate coordinator closes cooperating Matrix Play windows and verifies their processes and owned helpers have exited before replacing files. New Matrix startups/launches are blocked during installation. Unverified legacy or protected processes cause a clear stop, not a forced shutdown; unrelated sandboxed apps may conservatively block automatic updating. Do not terminate an unrelated process merely to bypass that check.
+
+For a DEB installation, Linux handles authorization and a protected installer gate remains held through the package installer. For an AppImage, a coordinator copied outside the old mount installs into the writable folder and retains `.previous`; repeated installation of the same package preserves the original rollback copy. Matrix reopens automatically when possible and reports the outcome. Development builds give manual installation instructions. If automatic updating is blocked, verify Matrix is closed and use the downloaded installer manually.
+
+These lifecycle protections start with v0.5.11. Older installed versions cannot honor them retroactively: save and close games, wait for installers to finish, close all Matrix copies and use the v0.5.11 installer manually for the first upgrade.
 
 Maintainers: commit the changes and the next version's CHANGELOG notes, then run `python3 scripts/release.py X.Y.Z`. It updates the version, commits and pushes to main. GitHub Actions builds both packages and runs the Rust and real desktop tests. Only a successful build publishes a signed testing release; an existing published version is never overwritten. The encrypted `MATRIX_UPDATE_SIGNING_KEY` repository secret is required. See [UPDATES.md](UPDATES.md).
 
@@ -71,7 +77,7 @@ Download **Matrix-Play_0.5.11_amd64.deb** from the [v0.5.11 release](https://git
 - Steam game discovery using `appmanifest_*.acf` from standard Steam and Flatpak locations, plus Steam library folders declared in `libraryfolders.vdf`.
 - Windows game registration by referencing existing `.desktop` shortcuts; no game relocation. Direct `.exe` launching is not supported. Existing direct-executable registrations and artwork are retained, but cannot launch; add a working shortcut to replace the entry.
 - **Local cover art:** searches for a game-name-matched `.png`, `.jpg` or `.webp` beside the ROM (or `cover.*` in a game folder), plus Steam's local library art cache. Supports manually chosen covers saved under `$XDG_DATA_HOME/matrix/covers/` (normally `~/.local/share/matrix/covers/`), with safe per-game hash-based filenames. Artwork is loaded only for on-screen cards.
-- Persistent per-console favorites with visible counts, plus console-specific search, sorting and grid/list views.
+- Persistent per-console favorites with visible counts, plus console-specific search, title sorting and grid/list views. Release-year sorting is enabled only when actual year metadata is present.
 - Safe process creation using discrete arguments, not shell-interpolated commands. Emulator configuration never automatically rewrites game files.
 
 ## Automatic emulator detection

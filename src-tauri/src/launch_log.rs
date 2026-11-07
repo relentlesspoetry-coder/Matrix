@@ -8,6 +8,14 @@ use std::{
 pub(crate) const LIMIT: usize = 65536;
 
 pub(crate) fn run() -> io::Result<()> {
+    use std::os::fd::FromRawFd;
+    // Keep the update blocked while any descendant still writes game output.
+    // This descriptor is set only in the sink child, never the game command.
+    let _activity = if std::env::var("MATRIX_LOG_ACTIVITY_FD").as_deref() == Ok("3") {
+        Some(unsafe { File::from_raw_fd(3) })
+    } else {
+        None
+    };
     // stdout is the private, already-open log file supplied by the launcher.
     let mut file = File::from(io::stdout().as_fd().try_clone_to_owned()?);
     drain(io::stdin().lock(), &mut file)

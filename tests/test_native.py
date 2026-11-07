@@ -46,6 +46,7 @@ def main():
     args.add_argument('--driver', default='tauri-driver')
     args.add_argument('--webkit-driver', default='WebKitWebDriver')
     args.add_argument('--online', action='store_true')
+    args.add_argument('--shutdown-only', action='store_true', help='Only the real native update-confirmation and process lifecycle integration')
     args.add_argument('--check-updates', action='store_true', help='Check the real public GitHub updater (network required)')
     args.add_argument('--download-update', action='store_true', help='Download and verify a newer release through the actual UI; never install it')
     args.add_argument('--unset-parent-cache', action='store_true')
@@ -151,6 +152,28 @@ def main():
                 data=request('GET', f'/session/{session}/screenshot')
                 (cfg.screenshots/name).write_bytes(base64.b64decode(data))
 
+        def check_shutdown_prompt():
+            update=invoke('update_status')
+            # Real WebKit layout/interaction check with synthetic status only.
+            # Backend state remains idle with no verified package, so even a
+            # broken UI cannot install. Deterministic JS tests separately spy on
+            # invocation; this real window checks the same no-operation state.
+            js("""state.overlay='updates';state.update={currentVersion:'0.0.0 fixture',latestVersion:'99.0.0 fixture',phase:'downloaded',installMode:'appimage',message:'Synthetic verified-download status for UI testing only.',notes:'No package will be installed.'};renderUpdater();""")
+            assert 'Let installers and updates finish' in js('return document.querySelector("#update-safety").textContent')
+            assert 'saved my progress' in js('return document.querySelector("#update-close-confirm").textContent')
+            assert not js('return document.querySelector("#update-games-closed").checked')
+            click('[data-action="install-update"]')
+            assert not js('return state.updateBusy')
+            assert invoke('update_status')['phase'] == 'idle'
+            assert js('return state.update.phase') == 'downloaded'
+            js('window.__confirmationNode=document.querySelector("#update-games-closed");window.__confirmationNode.checked=true;window.__confirmationNode.focus();')
+            for _ in range(3): js('renderUpdater()')
+            assert js('return window.__confirmationNode===document.querySelector("#update-games-closed") && window.__confirmationNode.checked && document.activeElement===window.__confirmationNode')
+            assert js('return document.documentElement.scrollWidth <= window.innerWidth')
+            screenshot('matrix-linux-update-shutdown-confirmation.png')
+            js('dismissOverlay();state.update=arguments[0]', update)
+            print('PASS: actual WebKit shutdown-confirmation layout, unchecked install prevention and checkbox/focus preservation with synthetic status; no installation attempted')
+
         try:
             wait_for(lambda: request('GET', '/status'))
             result=request('POST','/session',{'capabilities':{'alwaysMatch':{'tauri:options':{'application':str(binary)}}}})
@@ -159,6 +182,11 @@ def main():
             wait_for(lambda: js('return document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelectorAll(".console-card").length === 18'))
             assert len([p for p in library.iterdir() if p.is_dir()]) == 18
             assert js('return document.title').startswith('Matrix Play')
+            if cfg.shutdown_only:
+                check_shutdown_prompt()
+                from native_update_lifecycle import exercise
+                exercise(binary, env, home, invoke, js, wait_for)
+                return
             wait_for(lambda: js('return document.querySelector(".brand-logo")?.naturalWidth > 0'))
             discovered=invoke('bootstrap')
             assert discovered['profiles']['n64']['flatpakId']=='com.github.Rosalie241.RMG'
@@ -332,6 +360,7 @@ def main():
             wait_for(lambda: js('return [...document.querySelectorAll(".console-image")].length === 18 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)'))
             update=invoke('update_status')
             assert update['phase'] == 'idle' and update['currentVersion'] == diagnostics['version']
+            check_shutdown_prompt()
             if cfg.check_updates or cfg.download_update:
                 click('[data-action="updates"]')
                 wait_for(lambda: invoke('update_status')['phase'] in ['current','available','error'], 75)
@@ -676,6 +705,10 @@ def main():
             print('PASS: real Tauri/WebKit window, native IPC, 18 libraries, PS1/PS2 scanning, manual/cache artwork, console boundaries, persisted settings, three launcher argument paths')
             if cfg.online:
                 print('PASS: real desktop automatic PS1 and PS2 cover downloads (synthetic serial-labelled game fixtures)')
+            # This final test deliberately closes the real native windows using
+            # the production cooperative handler. Only test-owned PIDs qualify.
+            from native_update_lifecycle import exercise
+            exercise(binary, env, home, invoke, js, wait_for)
         except Exception:
             try:
                 print('Native UI failure state:', json.dumps(js('return {page:state.page, overlay:state.overlay, busy:state.launchBusy, launches:state.launches, active:document.activeElement.outerHTML, keyEvents:window.__keyEvents, tabStops:[...document.querySelectorAll("#overlay-root button,#overlay-root input,#overlay-root select,#overlay-root textarea,#overlay-root summary")].map(node=>({html:node.outerHTML,tabIndex:node.tabIndex,disabled:node.matches(":disabled"),hidden:!!node.closest("[hidden],[inert]"),rects:node.getClientRects().length,visibility:getComputedStyle(node).visibility})), launchStatus:document.querySelector("#launch-status")?.textContent}')))

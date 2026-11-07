@@ -15,7 +15,7 @@ function fixture() {
   const nodes = new Map(), responders = {}, calls = [], messages = [], blobs = new Set(), revoked = [];
   const intervals = new Map(), cards = [], listeners = {};
   let nextBlob = 0, nextTimer = 0, overlayWrites = 0;
-  const updaterSelectors = ['.update-dialog', '.update-dialog .close', '#update-current', '#update-latest', '#update-latest-label', '.update-message', '#update-progress', '.update-dialog progress', '#update-progress-text', '.update-notes', '#update-hint', '#update-action'];
+  const updaterSelectors = ['.update-dialog', '.update-dialog .close', '#update-current', '#update-latest', '#update-latest-label', '.update-message', '#update-progress', '.update-dialog progress', '#update-progress-text', '.update-notes', '#update-hint', '#update-close-confirm', '#update-safety', '#update-games-closed', '#update-action'];
   const document = { addEventListener(name, handler) { (listeners[name] ||= []).push(handler); }, activeElement: null, querySelector: selector => nodes.get(selector) ?? null,
     querySelectorAll: () => cards, createElement: () => makeNode() };
   function makeNode() {
@@ -202,6 +202,7 @@ test('stale updater poll cannot overwrite a later operation', async () => {
   const downloading = f.runUpdate('download_update');
   const pendingPoll = [...f.intervals.values()][0]();
   first.resolve({ phase: 'downloaded' }); await downloading;
+  f.node('#update-games-closed').checked = true;
   const installing = f.runUpdate('install_update');
   poll.resolve({ phase: 'downloading' }); await pendingPoll;
   assert.equal(f.state.update.phase, 'installing');
@@ -446,4 +447,53 @@ test('failed cover reconciliation cannot overwrite a subsequent selection',async
   await f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([2]).buffer});
   const newest=f.state.art.get('ps2|test.iso');reading.resolve('data:older-disk');await failed;
   assert.equal(f.state.art.get('ps2|test.iso'),newest);
+});
+
+
+test('update installation requires an explicit saved-and-closed games confirmation', async () => {
+  const f = fixture(); f.state.overlay = 'updates';
+  f.state.update = {phase: 'downloaded', installMode: 'appimage'};
+  f.renderUpdater(); f.node('#update-games-closed').checked = false;
+  await f.runUpdate('install_update');
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.state.update.phase, 'downloaded');
+  assert.match(f.messages.at(-1), /Save your progress/);
+  assert.match(f.messages.at(-1), /installers\/updates to finish/);
+  f.node('#update-games-closed').checked = true;
+  f.responders.install_update = args => { assert.equal(args.gamesClosed, true); return {phase:'installing'}; };
+  await f.runUpdate('install_update');
+  assert.equal(f.calls.filter(c => c.name==='install_update').length, 1);
+});
+
+
+test('confirming closed work never overrides a busy backend activity guard', async () => {
+  const f=fixture(); f.state.overlay='updates'; f.state.update={phase:'downloaded',installMode:'appimage'};
+  f.renderUpdater(); f.node('#update-games-closed').checked=true;
+  f.responders.install_update=args=>{ assert.equal(args.gamesClosed,true); return {phase:'error',message:'A Matrix launch or log helper is still active. Nothing will be force-stopped.'}; };
+  await f.runUpdate('install_update');
+  assert.equal(f.state.update.phase,'error');
+  assert.match(f.state.update.message,/still active/);
+  assert.equal(f.state.overlay,'updates');
+});
+
+test('update prompt tells users to save progress and let installers finish', () => {
+  const source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
+  assert.match(source,/Before updating, save your progress and close games, emulators and other apps launched through Matrix Play/);
+  assert.match(source,/Let installers and updates finish before closing them/);
+});
+
+
+for (const phase of ['error','recovery']) test(`opening Updates preserves ${phase} feedback until explicit retry`, async () => {
+  const f=fixture();
+  const message='Installation was cancelled or failed. Check the system package manager before retrying.';
+  f.responders.update_status=()=>Promise.resolve({phase,message,installMode:'system'});
+  f.responders.check_updates=()=>Promise.resolve({phase:'available',message:'Update available'});
+  await f.openUpdater();
+  assert.equal(f.state.update.message,message);
+  assert.equal(f.state.update.phase,phase);
+  assert.equal(f.calls.filter(c=>c.name==='check_updates').length,0);
+  assert.equal(f.node('#update-action').dataset.action,'check-updates');
+  await f.runUpdate('check_updates');
+  assert.equal(f.calls.filter(c=>c.name==='check_updates').length,1);
+  assert.equal(f.state.update.phase,'available');
 });

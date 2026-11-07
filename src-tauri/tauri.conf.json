@@ -5,7 +5,7 @@
   "identifier": "com.matrix.frontend",
   "build": {
     "frontendDist": "../web",
-    "beforeBuildCommand": "cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default-features --bin matrix-install-update"
+    "beforeBuildCommand": "cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default-features --bin matrix-install-update --bin matrix-update-coordinator"
   },
   "app": {
     "withGlobalTauri": true,
@@ -52,8 +52,12 @@
         ],
         "files": {
           "/usr/lib/matrix-play/matrix-install-update": "target/release/matrix-install-update"
-        }
+        },
+        "postInstallScript": "debian/postinst.sh"
       }
+    },
+    "resources": {
+      "target/release/matrix-update-coordinator": "matrix-update-coordinator"
     }
   }
 }

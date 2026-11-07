@@ -6,7 +6,51 @@ A release contains `update-manifest.json`, a raw detached 64-byte Ed25519 `updat
 
 The signed manifest binds schema, repository, version, tag, Linux architecture/package, exact file name, size and SHA-256. URL construction is fixed to this repository, HTTPS redirects are limited to GitHub's release hosts, and metadata/package reads are bounded. Unknown manifest fields, invalid signatures, unexpected packages and size/hash mismatches fail closed. Downloading uses a temporary file and promotes only a verified complete package; cancellation removes the partial file. Valid cached downloads can be reused. Files are checked again immediately before installation.
 
-DEB installations at `/usr/bin/matrix-frontend` use `pkexec /usr/lib/matrix-play/matrix-install-update`; Linux handles authorization, and Matrix Play never reads a password. The DEB packages this compiled helper as a root-owned executable and declares `pkexec` as a required dependency. The app sends the original signed manifest, signature and bounded package bytes through stdin. The helper accepts no command-line arguments, hashes or caller-selected file paths. It independently verifies the pinned signing key, repository, version, architecture and DEB identity, then copies the package into a new root-owned 0700 directory under `/var/cache` (never a caller-supplied TMPDIR). It checks the exact staged file against the authenticated size, hash and package header before invoking absolute `/usr/bin/apt-get` with a cleared environment. That private staging directory remains alive through APT completion and is then removed. Replacing or modifying the user-writable download after verification cannot alter the installed bytes. Existing installations without the helper must install this security update manually; there is no fallback to privileged installation of a mutable user path. AppImage mode requires the running Matrix Play executable to be inside its declared mounted/extracted APPDIR, preventing an inherited APPIMAGE from targeting another program. AppImage installation stages and verifies a new image in the same directory, preserves the existing file as `.previous`, then atomically replaces it. The folder must be writable. A development binary offers to open the verified DEB in the system installer instead. Game folders, settings and covers are not updated by this process.
+DEB installations at `/usr/bin/matrix-frontend` use `pkexec /usr/lib/matrix-play/matrix-install-update`; Linux handles authorization, and Matrix Play never reads a password. The DEB packages this compiled helper as a root-owned executable and declares `pkexec` as a required dependency. The app sends the original signed manifest, signature and bounded package bytes through stdin. The helper accepts no command-line arguments, hashes or caller-selected file paths. It independently verifies the pinned signing key, repository, version, architecture and DEB identity, then copies the package into a new root-owned 0700 directory under `/var/cache` (never a caller-supplied TMPDIR). It checks the exact staged file against the authenticated size, hash and package header before invoking absolute `/usr/bin/apt-get` with a cleared environment. That private staging directory remains alive through APT completion and is then removed. Replacing or modifying the user-writable download after verification cannot alter the installed bytes. Existing installations without the helper must install this security update manually; there is no fallback to privileged installation of a mutable user path. AppImage mode requires the running Matrix Play executable to be inside its declared mounted/extracted APPDIR, preventing an inherited APPIMAGE from targeting another program. AppImage installation stages and verifies a new image in the same directory, preserves the existing file as `.previous`, then atomically replaces it. The folder must be writable. A development binary gives manual-installation guidance instead of starting an uncoordinated installer. Game folders, settings and covers are not updated by this process.
+
+## Save, close and coordinate before installation
+
+Starting with v0.5.11, the built-in updater requires an explicit prompt confirmation:
+save progress, close games/emulators and other apps opened through Matrix, and wait
+for installers/updates to finish. Known active launchers and log sinks hold leases
+that block installation regardless of the checkbox. Detached launchers and apps
+started independently cannot all be observed; the user must confirm they are closed.
+No game, installer, process group or arbitrary matching process name is terminated.
+
+A packaged unprivileged `matrix-update-coordinator` verifies the signed request and
+package again, takes a per-user update gate, and requests cooperative shutdown of
+registered frontend instances. PID plus kernel start time, live leases, process
+ancestry and inherited instance markers establish ownership; stale PID records do
+not authorize shutdown. The coordinator waits for actual exit, including verified
+AppImage runtime ancestors and owned WebKit helpers, before invoking either existing
+installer. It is copied outside the old AppImage mount before any frontend exits.
+
+Unreadable or ambiguous process identity blocks rather than proving exit. This can
+conservatively reject an update because of an unrelated protected application; the
+app never closes that application. Legacy/unregistered Matrix copies need manual
+closure. The first upgrade from v0.5.10 or older must be performed manually after
+closing Matrix, since those older binaries lack the new startup/activity guards.
+
+The DEB post-install script provisions a persistent root-owned
+`/var/lib/matrix-play/update.lock`, outside the replaceable package payload. System
+frontends and log helpers require its shared lease; portable copies honor it when
+present. The privileged helper rejects non-root calls before taking the exclusive
+lease and never provisions the gate itself. It holds the gate independently through
+APT completion, so a coordinator failure cannot reopen Matrix during installation.
+A missing/unsafe gate requires package repair or reinstallation, not weakened checks.
+
+AppImage replacement also has a cross-process directory lock, target-change checks,
+a same-content no-op and transactional rollback. Explicit unlock releases a completed
+transaction even when an unrelated fork temporarily inherited a descriptor. Hard-link
+preservation has a bounded synced-copy fallback for filesystems without hard links.
+Failed recovery retains identifiable recovery images rather than overwriting unrelated
+changes. Repeated installation keeps the original `.previous` rollback bytes.
+
+The coordinator reopens Matrix after success or a recoverable failure when possible.
+The outcome, including automatic-reopen failures, is preserved for the next startup.
+An installer is never killed on timeout or cancellation; package-manager failures
+may require normal system-package repair. The native regression test uses a test-only
+replacement marker and harmless processes, not an actual privileged installation.
 
 `python3 scripts/release.py X.Y.Z` requires a clean main checkout and committed, nonempty release notes under exactly one complete `## X.Y.Z` heading. Both the version helper and signer reject prefix matches such as `0.6.10` or `0.6.1-rc.1` when releasing `0.6.1`. It bumps all application versions, commits and pushes. The Actions build runs tests before the publish job receives the signing secret. Publishing uses only the tested main commit, creates a draft with all assets, then publishes it. Already-published versions are skipped. A failed build or missing signing secret leaves the new version unpublished; fix the issue and rerun or push the correction. Never manually replace signed release assets under an existing version.
 
@@ -17,4 +61,4 @@ Validation must be reported precisely: updater core tests exercise signature/ide
 
 ## Secure DEB helper regression checks
 
-Run `cargo test --locked --manifest-path update-core/Cargo.toml` for the privileged protocol tests: forged/oversized metadata, signed downgrade rejection, modified/truncated/oversized package streams, source mutation after staging, and unsafe staging directory rejection. These tests use synthetic packages and a test-only signing key and never invoke APT or pkexec. `cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default-features --bin matrix-install-update` builds the helper; Tauri runs this automatically before packaging. Run `python3 tests/test_deb_package.py path/to/package.deb` to confirm the built DEB requires `pkexec` and contains a root-owned, non-writable-by-ordinary-users `/usr/lib/matrix-play/matrix-install-update`. A real authorization/package installation remains a separate, explicitly authorized integration test.
+Run `cargo test --locked --manifest-path update-core/Cargo.toml` for the privileged protocol tests: forged/oversized metadata, signed downgrade rejection, modified/truncated/oversized package streams, source mutation after staging, and unsafe staging directory rejection. These tests use synthetic packages and a test-only signing key and never invoke APT or pkexec. `cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default-features --bin matrix-install-update --bin matrix-update-coordinator` builds the helpers; Tauri runs this automatically before packaging. Run `python3 tests/test_deb_package.py path/to/package.deb` to confirm the built DEB requires `pkexec` and contains a root-owned, non-writable-by-ordinary-users `/usr/lib/matrix-play/matrix-install-update`. A real authorization/package installation remains a separate, explicitly authorized integration test.
