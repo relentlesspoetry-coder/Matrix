@@ -13,10 +13,10 @@ function deferred() {
 }
 function fixture() {
   const nodes = new Map(), responders = {}, calls = [], messages = [], blobs = new Set(), revoked = [];
-  const intervals = new Map(), cards = [];
+  const intervals = new Map(), cards = [], listeners = {};
   let nextBlob = 0, nextTimer = 0, overlayWrites = 0;
   const updaterSelectors = ['.update-dialog', '.update-dialog .close', '#update-current', '#update-latest', '#update-latest-label', '.update-message', '#update-progress', '.update-dialog progress', '#update-progress-text', '.update-notes', '#update-hint', '#update-action'];
-  const document = { activeElement: null, querySelector: selector => nodes.get(selector) ?? null,
+  const document = { addEventListener(name, handler) { (listeners[name] ||= []).push(handler); }, activeElement: null, querySelector: selector => nodes.get(selector) ?? null,
     querySelectorAll: () => cards, createElement: () => makeNode() };
   function makeNode() {
     return { dataset: {}, value: '', checked: true, disabled: false, hidden: false, isConnected: true,
@@ -43,7 +43,7 @@ function fixture() {
     html = value;
     if (value.includes('update-dialog')) for (const selector of updaterSelectors) node(selector);
   } });
-  const context = vm.createContext({ consoles: [
+  const context = vm.createContext({ FormData: class { constructor(node) {this.values=node.values;} get(key) {return this.values[key];} has(key) {return key in this.values;} }, consoles: [
     { id: 'ps2', name: 'PlayStation 2', abbrev: 'PS2', games: [], group: 'Sony' },
     { id: 'n64', name: 'Nintendo 64', abbrev: 'N64', games: [], group: 'Nintendo' },
   ], window: { __TAURI__: { core: { invoke(name, args) {
@@ -68,13 +68,14 @@ function fixture() {
   vm.runInContext(source.replace(startup, '') + `
     toast = onToast;
     globalThis.api = { state, loadCover, goConsole, goSettings, dismissOverlay, saveArtworkOptions,
-      loadFlatpakChoices, refreshNative, fetchArtwork, renderUpdater, runUpdate, openUpdater };
+      loadFlatpakChoices, refreshNative, fetchArtwork, renderUpdater, runUpdate, openUpdater, handleAction, toggleFavorite };
+    setupEvents();
   `, context);
   const api = context.api;
   api.state.artwork.enabled = false;
   api.state.imported.ps2 = [{ uid: 'test.iso', title: 'Test Game' }];
   return { ...api, nodes, node, root, document, responders, calls, messages, blobs, revoked, intervals, cards,
-    overlayWrites: () => overlayWrites };
+    listeners, overlayWrites: () => overlayWrites };
 }
 const cover = { type: 'image/png', size: 3, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer };
 
@@ -244,4 +245,57 @@ test('late opening status cannot roll back an operation completed while it waite
   status.resolve({ phase: 'downloading' }); await opening;
   assert.equal(f.state.update.phase, 'downloaded');
   assert.equal(f.node('#update-action').dataset.action, 'install-update');
+});
+
+for (const outcome of ['resolve', 'reject']) test(`old emulator save ${outcome} leaves newer same-console form intact`, async () => {
+  const f=fixture(), saving=deferred(); f.responders.save_emulator=()=>saving.promise;
+  const old=f.node('#config-form'); old.id='config-form';old.dataset.id='ps2';
+  old.values={emulatorName:'PCSX2', emulatorPath:'/test/pcsx2', folderPath:'/games', launcher:'executable'};
+  const submit=f.node('#submit');f.node('#config-error');f.state.overlay='configure';
+  const event={target:old,submitter:submit,preventDefault(){}};
+  f.listeners.submit[0](event); f.listeners.submit[0](event);
+  assert.equal(f.calls.filter(c=>c.name==='save_emulator').length,1);
+  const replacement={dataset:{id:'ps2'}};f.nodes.set('#config-form',replacement);
+  f.node('#config-error').textContent='New form';const writes=f.overlayWrites();
+  if (outcome==='resolve') saving.resolve();else saving.reject(Error('Old failure'));
+  await tick();
+  assert.equal(f.state.overlay,'configure');assert.equal(f.overlayWrites(),writes);
+  assert.equal(f.node('#config-error').textContent,'New form');
+  assert.equal(submit.disabled,false);assert.equal(old.dataset.saving,undefined);
+});
+test('completed Windows registration cannot close replacement registration dialog', async () => {
+  const f=fixture(), saving=deferred();f.responders.add_windows_game=()=>saving.promise;
+  const old=f.node('#windows-form');old.id='windows-form';old.values={title:'Game',target:'/test.desktop'};
+  f.state.overlay='windows-add';const event={target:old,preventDefault(){}};
+  f.listeners.submit[0](event);f.listeners.submit[0](event);
+  f.nodes.set('#windows-form',{});const writes=f.overlayWrites();saving.resolve();await tick();
+  assert.equal(f.calls.filter(c=>c.name==='add_windows_game').length,1);
+  assert.equal(f.state.overlay,'windows-add');assert.equal(f.overlayWrites(),writes);
+});
+test('completed removal cannot close newer game details', async () => {
+  const f=fixture(), saving=deferred();f.responders.remove_windows_game=()=>saving.promise;
+  f.state.overlay='external';f.root.firstElementChild={};
+  const button={dataset:{action:'remove-windows',uid:'old'},disabled:false};
+  const pending=f.handleAction(button);await f.handleAction(button);
+  f.root.firstElementChild={};f.state.selectedGame={id:'windows',uid:'new'};
+  const writes=f.overlayWrites();saving.resolve();await pending;
+  assert.equal(f.calls.filter(c=>c.name==='remove_windows_game').length,1);
+  assert.equal(f.state.overlay,'external');assert.equal(f.state.selectedGame.uid,'new');assert.equal(f.overlayWrites(),writes);
+});
+test('favoriting updates details in place without replacing draft serial or focus', async () => {
+  const f=fixture();f.responders.set_favorite=()=>Promise.resolve(['test.iso']);
+  f.state.page='console';f.state.consoleId='ps2';f.state.overlay='game';f.state.selectedGame={id:'ps2',uid:'test.iso'};
+  const serial=f.node('#cover-serial');serial.value='SLUS-20999';serial.focus();
+  const control=f.node('#overlay-root [data-action="favorite"]');const writes=f.overlayWrites();
+  f.toggleFavorite('ps2','test.iso',control);await tick();
+  assert.equal(serial.value,'SLUS-20999');assert.equal(f.document.activeElement,serial);
+  assert.equal(f.overlayWrites(),writes);assert.match(control.innerHTML,/Unfavorite/);
+});
+test('collapsed navigation and topbar buttons have explicit accessible names', () => {
+  const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
+  for (const id of ['nav-consoles','nav-steam','nav-windows','nav-settings']) {
+    const button=html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))[0];
+    assert.match(button,/aria-label="[^\"]+"/);
+  }
+  for (const action of ['refresh','configure-first']) assert.match(html.match(new RegExp(`<button[^>]*data-action="${action}"[^>]*>`))[0],/aria-label="[^\"]+"/);
 });

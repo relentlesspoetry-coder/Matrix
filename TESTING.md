@@ -1,5 +1,20 @@
 # Test Matrix Play on Linux
 
+## Version 0.5.10 reviewed bug repairs
+
+The repair covers scoped melonDS Flatpak sidecar-save permissions, complete native
+emulator discovery, async dialog ownership, draft artwork identity preservation
+and accessible names on narrow navigation. New tests exercise multiple installed
+choices, aliased executables, ambiguous selections, nested/direct ROM parents,
+outside-root and symlink rejection, repeated form submissions and newer dialogs.
+The desktop suite also checks melonDS permission arguments through actual Tauri IPC
+with a harmless launcher. These tests do not prove real emulator gameplay or save
+creation, and they do not certify additional distributions or hardware.
+
+Local checks use Rust 1.99.1. GTK/WebKit development packages are absent in this
+executor; the exact release commit must pass the Linux CI native-window and
+DEB/AppImage packaging gates before publication.
+
 ## Version 0.5.9 keyboard and desktop-shortcut checks
 
 The Windows library accepts only existing `.desktop` shortcuts and dispatches

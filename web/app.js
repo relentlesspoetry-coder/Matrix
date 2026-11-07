@@ -303,7 +303,11 @@ function toggleFavorite(id,uid,button) {
     } else if (favorite) state.favorites.add(key);else state.favorites.delete(key);
     savePrefs();
     if (state.page==='console' && state.consoleId===id) renderConsole();
-    if (state.overlay==='game' && state.selectedGame?.id===id && state.selectedGame?.uid===uid) openGame(id,uid);
+    if (state.overlay==='game' && state.selectedGame?.id===id && state.selectedGame?.uid===uid) {
+      // Keep the live details form, draft serial and focus intact.
+      const control=$('#overlay-root [data-action="favorite"]');
+      if (control) { control.innerHTML=`${glyph('heart')} ${favorite ? 'Unfavorite' : 'Favorite'}`;control.setAttribute('aria-pressed',String(favorite)); }
+    }
     toast(favorite ? `Added to ${byId[id].name} favorites.` : `Removed from ${byId[id].name} favorites.`);
   }).catch(error=>toast(`Could not save favorite: ${error}`)).finally(()=>{button.disabled=false;});
 }
@@ -420,7 +424,7 @@ function openExternalGame(kind, uid) {
 }
 function openAddWindows() {
   state.lastFocus = document.activeElement; state.overlay = 'windows-add';
-  $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="windows-title"><button class="close" data-action="close">${glyph('close')}</button>
+  $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="windows-title"><button type="button" class="close" data-action="close" aria-label="Close add game">${glyph('close')}</button>
    <div class="eyebrow">WINDOWS LIBRARY</div><h2 id="windows-title">Add existing game.</h2><p class="muted">Register a .desktop shortcut that already works on Linux. No files are moved or copied.</p>
    <form id="windows-form"><div class="field"><label for="windows-name">Game title</label><input id="windows-name" name="title" required maxlength="150" placeholder="Game title"></div>
    <div class="field"><label for="windows-target">Existing desktop shortcut</label><input id="windows-target" name="target" required placeholder="/home/you/.local/share/applications/My Game.desktop"><small>Only .desktop shortcuts are supported. Direct .exe launching is unavailable. Matrix Play does not provide or configure a Windows compatibility runtime.</small></div>
@@ -877,8 +881,12 @@ async function handleAction(button) {
   }
   else if (action === 'remove-windows') {
     if (!state.native) { toast('Native Matrix Play required.'); return; }
-    try { await nativeInvoke('remove_windows_game', {uid}); dismissOverlay(); await refreshNative(); toast('Removed library entry only. Installed files were preserved.'); }
+    const dialog=$('#overlay-root').firstElementChild;
+    if (button.disabled) return;
+    button.disabled=true;
+    try { await nativeInvoke('remove_windows_game', {uid}); if (dialog===$('#overlay-root').firstElementChild) dismissOverlay(); await refreshNative(); toast('Removed library entry only. Installed files were preserved.'); }
     catch(error) { toast(String(error)); }
+    finally {button.disabled=false;}
   }
   else if (action === 'console-favorites') { state.gameFilter='Favorites';state.query='';renderConsole(); }
   else if (action === 'reload-flatpaks') void loadFlatpakChoices();
@@ -946,16 +954,18 @@ function setupEvents() {
     if (event.target.id === 'windows-form') {
       event.preventDefault();
       if (!state.native) { toast('Windows game registration requires native Matrix Play.'); return; }
-      const form = new FormData(event.target);
+      const owner=event.target; if (owner.dataset.saving==='true') return;owner.dataset.saving='true';
+      const form = new FormData(owner);
       void nativeInvoke('add_windows_game', {
         title:String(form.get('title') || '').trim(), target:String(form.get('target') || '').trim(), runner:'desktop'
-      }).then(async () => { dismissOverlay(); await refreshNative(); toast('Game added to Windows library.'); })
-        .catch(error => toast(String(error)));
+      }).then(async () => { if (owner===$('#windows-form')) dismissOverlay(); await refreshNative(); toast('Game added to Windows library.'); })
+        .catch(error => toast(String(error))).finally(()=>{delete owner.dataset.saving;});
       return;
     }
     if (event.target.id !== 'config-form') return;
     event.preventDefault();
-    const id = event.target.dataset.id, form = new FormData(event.target);
+    const owner=event.target; if (owner.dataset.saving==='true') return;
+    const id = owner.dataset.id, form = new FormData(owner);
     const emulatorName = String(form.get('emulatorName') || '').trim();
     const emulatorPath = String(form.get('emulatorPath') || '').trim();
     const folderPath = String(form.get('folderPath') || '').trim();
@@ -965,13 +975,15 @@ function setupEvents() {
     if (!emulatorName || !folderPath || (launcher==='flatpak' ? !flatpakId : !emulatorPath)) return;
     const profile={emulatorName,emulatorPath,launchArgs,launcher,flatpakId,flatpakInstallation,extractAppimage:form.has('extractAppimage'),flatpakRuntimeFonts:form.has('flatpakRuntimeFonts')};
     if (state.native) {
+      owner.dataset.saving='true';
       const submit=event.submitter || event.target.querySelector('[type=submit]:not([data-open-after-save])');const openAfterSave=event.submitter?.dataset.openAfterSave==='true';submit.disabled=true;$('#config-error').textContent='';
       void nativeInvoke('save_emulator', {id,...profile,allowExecute:form.has('allowExecute')}).then(() => {
         state.configs[id]=profile;
-        if (state.overlay==='configure' && $('#config-form')?.dataset.id===id) dismissOverlay();
-        render();toast(`${byId[id].name} emulator saved.`);if (openAfterSave) void launchConsole(id);
-      }).catch(error => {if ($('#config-form')?.dataset.id===id) $('#config-error').textContent=String(error);else toast(String(error));})
-        .finally(()=>{submit.disabled=false;});
+        const current=state.overlay==='configure' && $('#config-form')===owner;
+        if (current) dismissOverlay();
+        render();toast(`${byId[id].name} emulator saved.`);if (openAfterSave && current) void launchConsole(id);
+      }).catch(error => {if ($('#config-form')===owner) $('#config-error').textContent=String(error);else toast(String(error));})
+        .finally(()=>{submit.disabled=false;delete owner.dataset.saving;});
     } else {
       state.configs[id]={...profile,folderPath};savePrefs();dismissOverlay();render();toast('Browser preview settings saved.');
     }

@@ -307,17 +307,23 @@ fn default_args(id: &str) -> Vec<String> {
     }
 }
 
-/// Detects a single executable in the user-supplied console directory.
-/// Multiple candidates are deliberately not guessed: user chooses one in Settings.
-fn detect_emulator(s: &ConsoleSpec) -> Option<PathBuf> {
-    let dir = matrix_root().ok()?.join(s.dir);
+/// List executable candidates without guessing when several are available.
+fn detect_emulators(s: &ConsoleSpec) -> Vec<PathBuf> {
+    matrix_root()
+        .map(|root| detect_emulators_in(s, &root.join(s.dir)))
+        .unwrap_or_default()
+}
+fn detect_emulators_in(s: &ConsoleSpec, dir: &Path) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
-    for file in fs::read_dir(dir).ok()?.flatten() {
+    for file in fs::read_dir(dir).into_iter().flatten().flatten() {
         let path = file.path();
         if !path.is_file() {
             continue;
         }
-        let name = path.file_name()?.to_str()?.to_lowercase();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let name = name.to_lowercase();
         let recognized = name.ends_with(".appimage")
             || name.ends_with(".sh")
             || name.contains(&guessed_emulator(s.id).to_lowercase().replace(' ', ""));
@@ -327,22 +333,25 @@ fn detect_emulator(s: &ConsoleSpec) -> Option<PathBuf> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            if fs::metadata(&path).ok()?.permissions().mode() & 0o111 == 0 {
+            if !fs::metadata(&path).is_ok_and(|m| m.permissions().mode() & 0o111 != 0) {
                 continue;
             }
         }
         candidates.push(path);
     }
-    if candidates.len() == 1 {
-        candidates.pop()
-    } else {
-        None
-    }
+    candidates.sort();
+    candidates
 }
 
-/// Detect native executables already installed on PATH, without changing their files.
-/// Flatpak and atypical installations can be configured manually.
-fn detect_installed_emulator(id: &str) -> Option<PathBuf> {
+/// List all installed native choices, without executing or changing their files.
+fn detect_installed_emulators(id: &str) -> Vec<PathBuf> {
+    std::env::var_os("PATH")
+        .map(|paths| {
+            detect_installed_emulators_in(id, &std::env::split_paths(&paths).collect::<Vec<_>>())
+        })
+        .unwrap_or_default()
+}
+fn detect_installed_emulators_in(id: &str, paths: &[PathBuf]) -> Vec<PathBuf> {
     let names: &[&str] = match id {
         "switch" => &["eden", "ryujinx"],
         "ps1" => &["duckstation-qt", "duckstation"],
@@ -353,7 +362,7 @@ fn detect_installed_emulator(id: &str) -> Option<PathBuf> {
         "gamecube" | "wii" => &["dolphin-emu"],
         "dreamcast" => &["flycast"],
         "wiiu" => &["cemu"],
-        "gb" => &["sameboy"],
+        "gb" => &["sameboy", "mgba-qt", "mgba"],
         "gba" => &["mgba-qt", "mgba"],
         "nds" => &["melonDS", "melonds"],
         "3ds" => &["azahar"],
@@ -361,8 +370,9 @@ fn detect_installed_emulator(id: &str) -> Option<PathBuf> {
         "vita" => &["Vita3K", "vita3k"],
         _ => &[],
     };
-    let paths = std::env::var_os("PATH")?;
-    for directory in std::env::split_paths(&paths) {
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+    for directory in paths {
         for name in names {
             let path = directory.join(name);
             if !path.is_file() {
@@ -371,14 +381,17 @@ fn detect_installed_emulator(id: &str) -> Option<PathBuf> {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                if fs::metadata(&path).ok()?.permissions().mode() & 0o111 == 0 {
+                if !fs::metadata(&path).is_ok_and(|m| m.permissions().mode() & 0o111 != 0) {
                     continue;
                 }
             }
-            return Some(path.canonicalize().unwrap_or(path));
+            let canonical = path.canonicalize().unwrap_or(path);
+            if seen.insert(canonical.clone()) {
+                candidates.push(canonical);
+            }
         }
     }
-    None
+    candidates
 }
 
 fn create_layout() -> Result<(), String> {

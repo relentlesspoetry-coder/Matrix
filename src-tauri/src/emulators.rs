@@ -141,7 +141,9 @@ fn flatpak_game_access(
     let mut args = vec![format!("--filesystem={}:ro", folder.display())];
     let sidecar_saves = matches!(
         (profile.flatpak_id.as_str(), id),
-        ("io.github.sameboy.SameBoy", "gb") | ("io.mgba.mGBA", "gb" | "gba")
+        ("io.github.sameboy.SameBoy", "gb")
+            | ("io.mgba.mGBA", "gb" | "gba")
+            | ("net.kuribo64.melonDS", "nds")
     );
     if let Some(game) = game.filter(|_| sidecar_saves) {
         let game = game.canonicalize().map_err(|e| e.to_string())?;
@@ -288,6 +290,49 @@ mod tests {
         std::os::unix::fs::symlink(&outside, folder.join("Escape.gba")).unwrap();
         assert!(
             flatpak_game_access(&profile, "gba", &folder, Some(&folder.join("Escape.gba")))
+                .is_err()
+        );
+    }
+    #[test]
+    fn melonds_gets_scoped_save_access_only_for_nds_game_launches() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("NDS Games");
+        let nested = folder.join("One Game");
+        fs::create_dir_all(&nested).unwrap();
+        let game = nested.join("Game.nds");
+        fs::write(&game, b"fixture").unwrap();
+        let profile = EmulatorProfile {
+            flatpak_id: "net.kuribo64.melonDS".into(),
+            ..Default::default()
+        };
+        let readonly = format!("--filesystem={}:ro", folder.display());
+        assert_eq!(
+            flatpak_game_access(&profile, "nds", &folder, Some(&game)).unwrap(),
+            [
+                readonly.clone(),
+                format!("--filesystem={}:rw", nested.display())
+            ]
+        );
+        assert_eq!(
+            flatpak_game_access(&profile, "nds", &folder, None).unwrap(),
+            [readonly.clone()]
+        );
+        assert_eq!(
+            flatpak_game_access(&profile, "gba", &folder, Some(&game)).unwrap(),
+            [readonly]
+        );
+        let direct = folder.join("Direct.nds");
+        fs::write(&direct, b"fixture").unwrap();
+        assert_eq!(
+            flatpak_game_access(&profile, "nds", &folder, Some(&direct)).unwrap(),
+            [format!("--filesystem={}:rw", folder.display())]
+        );
+        let outside = root.path().join("Outside.nds");
+        fs::write(&outside, b"fixture").unwrap();
+        assert!(flatpak_game_access(&profile, "nds", &folder, Some(&outside)).is_err());
+        std::os::unix::fs::symlink(&outside, folder.join("Escape.nds")).unwrap();
+        assert!(
+            flatpak_game_access(&profile, "nds", &folder, Some(&folder.join("Escape.nds")))
                 .is_err()
         );
     }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.10
+
+- Fix melonDS Flatpak game launches so the current ROM directory permits sidecar saves, without granting write access to unrelated folders or setup-only launches.
+- List all installed native emulator choices and console-folder candidates instead of silently selecting the first match. Preserve saved choices and leave ambiguous discoveries for selection.
+- Keep pending emulator saves and Windows shortcut additions/removals from closing or changing a newer dialog. Repeated submissions are blocked.
+- Preserve an unsaved artwork serial and keyboard focus when favoriting a game. Add accessible names to collapsed navigation and header controls.
+- Add backend, JavaScript and native desktop regression coverage. Real emulator gameplay/save creation and other Linux distributions remain unverified.
+
 ## 0.5.9
 
 - Remove direct Windows executable launching and runtime selection. Keep the Windows tab for existing `.desktop` shortcuts and preserve Steam launching through its owning installation. Matrix Play does not provide a Windows compatibility runtime.

@@ -416,9 +416,9 @@ def main():
             assert Path(failed['logPath']).read_text().strip()=='runtime failed to start'
             assert invoke('get_launch_status',{'id':'ps2'})['phase']=='error'
             # Scoped save-write flags for known sidecar-saving Flatpaks.
-            save_flatpak = healthy_flatpak.replace('com.github.Rosalie241.RMG\\tRMG\\tsystem\\n', 'com.github.Rosalie241.RMG\\tRMG\\tsystem\\nio.github.sameboy.SameBoy\\tSameBoy\\tuser\\nio.mgba.mGBA\\tmGBA\\tuser\\n')
+            save_flatpak = healthy_flatpak.replace('com.github.Rosalie241.RMG\\tRMG\\tsystem\\n', 'com.github.Rosalie241.RMG\\tRMG\\tsystem\\nio.github.sameboy.SameBoy\\tSameBoy\\tuser\\nio.mgba.mGBA\\tmGBA\\tuser\\nnet.kuribo64.melonDS\\tmelonDS\\tuser\\n')
             flatpak.write_text(save_flatpak)
-            for console, folder, engine, extension in [('gb','Game Boy','io.github.sameboy.SameBoy','gbc'),('gba','GBA','io.mgba.mGBA','gba')]:
+            for console, folder, engine, extension in [('gb','Game Boy','io.github.sameboy.SameBoy','gbc'),('gba','GBA','io.mgba.mGBA','gba'),('nds','Nintendo DS','net.kuribo64.melonDS','nds')]:
                 game_root = library/folder/(folder+' Games')
                 game = game_root/'Nested Game'/('Fixture.'+extension)
                 game.parent.mkdir(parents=True)

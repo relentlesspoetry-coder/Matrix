@@ -355,6 +355,48 @@ pub(crate) fn auto_link(settings: &mut Settings, report: &mut Report) {
         }
     }
 }
+fn add_native(map: &mut BTreeMap<String, Candidate>, spec: &ConsoleSpec, path: PathBuf) {
+    let known = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .and_then(engine_for_name);
+    if known.is_some_and(|e| !e.consoles.contains(&spec.id)) {
+        return;
+    }
+    let image_ext = path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("appimage"));
+    if image_ext && known.is_some() && !appimage(&path) {
+        return;
+    }
+    let path = path.canonicalize().unwrap_or(path);
+    insert(
+        map,
+        Candidate {
+            id: format!("file|{}", path.display()),
+            console_ids: vec![spec.id.into()],
+            profile: EmulatorProfile {
+                emulator_name: known
+                    .map(|e| e.name)
+                    .unwrap_or(guessed_emulator(spec.id))
+                    .into(),
+                emulator_path: path.to_string_lossy().into_owned(),
+                launcher: if appimage(&path) {
+                    Launcher::Appimage
+                } else {
+                    Launcher::Executable
+                },
+                launch_args: known
+                    .map(|e| args(e, spec.id))
+                    .unwrap_or_else(|| default_args(spec.id)),
+                auto_detected: true,
+                ..Default::default()
+            },
+            source: "Installed executable or explicit console folder".into(),
+            ready: executable(&path),
+        },
+    );
+}
 pub(crate) fn discover() -> Result<Report, String> {
     let mut report = Report::default();
     let mut map = BTreeMap::new();
@@ -424,50 +466,11 @@ pub(crate) fn discover() -> Result<Report, String> {
                 add_image(&mut map, &entry.path());
             }
         }
-        for path in [detect_emulator(spec), detect_installed_emulator(spec.id)]
+        for path in detect_emulators(spec)
             .into_iter()
-            .flatten()
+            .chain(detect_installed_emulators(spec.id))
         {
-            let known = path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .and_then(engine_for_name);
-            if known.is_some_and(|e| !e.consoles.contains(&spec.id)) {
-                continue;
-            }
-            let image_ext = path
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("appimage"));
-            if image_ext && known.is_some() && !appimage(&path) {
-                continue;
-            }
-            let path = path.canonicalize().unwrap_or(path);
-            insert(
-                &mut map,
-                Candidate {
-                    id: format!("file|{}", path.display()),
-                    console_ids: vec![spec.id.into()],
-                    profile: EmulatorProfile {
-                        emulator_name: known
-                            .map(|e| e.name)
-                            .unwrap_or(guessed_emulator(spec.id))
-                            .into(),
-                        emulator_path: path.to_string_lossy().into_owned(),
-                        launcher: if appimage(&path) {
-                            Launcher::Appimage
-                        } else {
-                            Launcher::Executable
-                        },
-                        launch_args: known
-                            .map(|e| args(e, spec.id))
-                            .unwrap_or_else(|| default_args(spec.id)),
-                        auto_detected: true,
-                        ..Default::default()
-                    },
-                    source: "Installed executable or explicit console folder".into(),
-                    ready: executable(&path),
-                },
-            );
+            add_native(&mut map, spec, path);
         }
     }
     report.candidates = map.into_values().collect();
@@ -476,6 +479,66 @@ pub(crate) fn discover() -> Result<Report, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn executable_fixture(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::write(path, b"#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    #[test]
+    fn native_discovery_lists_all_choices_and_does_not_auto_choose() {
+        let root = tempfile::tempdir().unwrap();
+        let first = root.path().join("first");
+        let second = root.path().join("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        executable_fixture(&first.join("eden"));
+        executable_fixture(&second.join("ryujinx"));
+        fs::write(first.join("ryujinx"), b"not executable").unwrap();
+        let paths = detect_installed_emulators_in("switch", &[first.clone(), second, first]);
+        assert_eq!(paths.len(), 2);
+        let mut map = BTreeMap::new();
+        for path in paths {
+            add_native(&mut map, spec("switch").unwrap(), path);
+        }
+        let mut report = Report {
+            candidates: map.into_values().collect(),
+            ..Default::default()
+        };
+        let mut settings = Settings::default();
+        auto_link(&mut settings, &mut report);
+        assert_eq!(report.candidates.len(), 2);
+        assert!(report.ambiguous.iter().any(|id| id == "switch"));
+        assert!(!settings.profiles.contains_key("switch"));
+    }
+    #[test]
+    fn native_discovery_deduplicates_symlinks_and_includes_mgba_for_gb() {
+        let root = tempfile::tempdir().unwrap();
+        executable_fixture(&root.path().join("mgba-qt"));
+        std::os::unix::fs::symlink(root.path().join("mgba-qt"), root.path().join("mgba")).unwrap();
+        let paths = detect_installed_emulators_in("gb", &[root.path().to_path_buf()]);
+        assert_eq!(paths, [root.path().join("mgba-qt")]);
+        let mut map = BTreeMap::new();
+        add_native(&mut map, spec("gb").unwrap(), paths[0].clone());
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.values().next().unwrap().profile.emulator_name, "mGBA");
+    }
+    #[test]
+    fn console_directory_lists_multiple_executables_instead_of_hiding_them() {
+        let root = tempfile::tempdir().unwrap();
+        executable_fixture(&root.path().join("first.sh"));
+        executable_fixture(&root.path().join("second.sh"));
+        fs::write(root.path().join("third.sh"), b"not executable").unwrap();
+        let paths = detect_emulators_in(spec("ps2").unwrap(), root.path());
+        assert_eq!(
+            paths,
+            [root.path().join("first.sh"), root.path().join("second.sh")]
+        );
+        let mut map = BTreeMap::new();
+        for path in paths {
+            add_native(&mut map, spec("ps2").unwrap(), path);
+        }
+        assert_eq!(map.len(), 2);
+    }
     #[test]
     fn discovery_merge_preserves_saves_made_during_the_scan() {
         let root = tempfile::tempdir().unwrap();

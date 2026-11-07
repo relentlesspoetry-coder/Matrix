@@ -70,15 +70,15 @@ remain outside this standalone test's coverage.
 ## Save files, Steam provenance and external diagnostics
 
 Flatpak launches remain read-only for the managed console library by default.
-For the recognized SameBoy Game Boy and mGBA Game Boy/GBA profiles, a game launch
-also grants write access to that game's canonical containing directory so the
+For the recognized SameBoy Game Boy, mGBA Game Boy/GBA and melonDS Nintendo DS
+profiles, a game launch also grants write access to that game's canonical containing directory so the
 emulator can create battery saves, save states and their temporary replacements.
 Nested titles do not grant writes to sibling game directories. A ROM directly in
 the console's games directory needs that directory writable. Open emulator does
 not add this permission. The ROM must resolve to a file within that console's
 library; escaped symlinks and unrelated paths are rejected. Matrix does not move,
 rewrite or delete any ROMs or existing saves. Filesystem mount flags are covered
-by synthetic tests; actual SameBoy/mGBA saving still needs an installed-emulator
+by synthetic tests; actual SameBoy/mGBA/melonDS saving still needs an installed-emulator
 check.
 
 Steam discovery retains the native or Flatpak origin of primary libraries and
@@ -99,3 +99,13 @@ output, but cannot infer an unreported descendant process's exit status.
 PS3 EBOOT titles use the directory above `USRDIR` for digital layouts, or above
 `PS3_GAME/USRDIR` for disc layouts. Scan, favorite validation and artwork lookup
 use the same title function without changing any paths.
+
+## Native discovery choices
+
+Native discovery lists every executable match on PATH and every executable
+candidate in a console's own emulator folder, rather than hiding alternatives
+behind a first match. Symlink aliases to the same executable are deduplicated.
+Game Boy also offers mGBA when installed. Multiple ready choices remain unlinked
+until the user chooses; existing working or manually configured profiles are
+preserved. Unit fixtures cover enumeration, alias deduplication and ambiguous
+selection. They do not certify emulator installation or gameplay.

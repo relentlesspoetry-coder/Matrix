@@ -21,16 +21,16 @@
       </button>
       <div class="sidebar-label">LIBRARY</div>
       <nav class="main-nav">
-        <button type="button" class="nav-item active" id="nav-consoles" data-action="home" aria-current="page">
+        <button type="button" class="nav-item active" id="nav-consoles" aria-label="Consoles" title="Consoles" data-action="home" aria-current="page">
           <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg><span>Consoles</span>
         </button>
-        <button type="button" class="nav-item" id="nav-steam" data-action="steam">
+        <button type="button" class="nav-item" id="nav-steam" aria-label="Steam Games" title="Steam Games" data-action="steam">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="16.3" cy="7.7" r="2.3"/><path d="m14.8 9.5-4.4 4.4-5-1.7M10.4 13.9l2.5 2.1-1.4 2.4-3.5-1.7"/></svg><span>Steam Games</span>
         </button>
-        <button type="button" class="nav-item" id="nav-windows" data-action="windows">
+        <button type="button" class="nav-item" id="nav-windows" aria-label="Windows Games" title="Windows Games" data-action="windows">
           <svg viewBox="0 0 24 24"><path d="M3 6 11 4.5v7H3zM13 4l8-1v8.5h-8zM3 13h8v7L3 18zM13 13h8v8l-8-1.5z"/></svg><span>Windows Games</span>
         </button>
-        <button type="button" class="nav-item" id="nav-settings" data-action="settings">
+        <button type="button" class="nav-item" id="nav-settings" aria-label="Emulators &amp; folders" title="Emulators &amp; folders" data-action="settings">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M19 13.5v-3l-2-1-1-2 1-2-2.5-1.5-1.5 1.5h-2L9.5 4 7 5.5l1 2-1 2-2 1v3l2 1 1 2-1 2L9.5 20l1.5-1.5h2l1.5 1.5L17 18.5l-1-2 1-2z"/></svg><span>Emulators & folders</span>
         </button>
       </nav>
@@ -44,8 +44,8 @@
         <div class="topbar-actions">
           <button type="button" class="button button-ghost top-action" data-action="updates" title="Check for app updates" aria-label="Update Matrix Play"><svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5"/></svg><span>Update</span></button>
           <span class="top-chip"><span class="signal-dot"></span> <span id="mode-indicator">UI PREVIEW</span></span>
-          <button type="button" class="button button-ghost top-action" data-action="refresh" title="Rescan library"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.4 5.6M20 4v7h-7"/></svg><span>Refresh</span></button>
-          <button type="button" class="button button-ghost top-action" data-action="configure-first"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Add emulator</span></button>
+          <button type="button" class="button button-ghost top-action" data-action="refresh" aria-label="Refresh library" title="Rescan library"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.4 5.6M20 4v7h-7"/></svg><span>Refresh</span></button>
+          <button type="button" class="button button-ghost top-action" data-action="configure-first" aria-label="Add emulator"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Add emulator</span></button>
         </div>
       </header>
       <section class="screen" id="screen" aria-live="polite"></section>
