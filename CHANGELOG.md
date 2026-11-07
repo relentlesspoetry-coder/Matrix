@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Recognize PSP CHD, GameCube WIA/CISO and Wii GCZ/CISO images using the existing PPSSPP and Dolphin launch adapters, with matching preview filters. No conversion or game-file changes are performed.
+- Read bounded local PARAM.SFO display titles for registered PS3 installed/disc EBOOT folders and extracted PS4 eboots. Keep canonical game paths, favorites, artwork and launch arguments unchanged; malformed or unavailable metadata falls back to folder names.
+- Add malformed-metadata, scope, format, customization-preservation and literal-argv fixtures, plus native IPC/UI coverage. These synthetic checks do not certify real emulator gameplay.
+
 ## 0.5.10
 
 - Add external console library folder management with a native folder picker, retained managed folders, offline registrations and safe removal without moving or deleting games, saves, favorites or artwork. Existing RPCS3 installed EBOOT folders can be registered.

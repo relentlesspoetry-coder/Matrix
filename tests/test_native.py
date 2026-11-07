@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import struct
 import socket
 import shutil
 import subprocess
@@ -254,6 +255,57 @@ def main():
             click('[data-action="home"]')
             log.unlink()
             print('PASS: external-folder dialog, PS1 M3U grouping, malformed-list preservation, scoped Flatpak argv, offline removal and retained favorites/artwork')
+            # Supported compressed extensions use the same real IPC/argv path.
+            # These files and launchers are synthetic, not actual emulator gameplay.
+            for console_id, engine, extension in [('psp','ppsspp','CHD'), ('gamecube','dolphin-emu','WIA'),
+                                                   ('gamecube','dolphin-emu','ciso'), ('wii','dolphin-emu','GCZ'), ('wii','dolphin-emu','ciso')]:
+                folder = home/f'External {console_id} {extension}'
+                folder.mkdir()
+                compressed = folder/f'Game with spaces; literal.{extension}'
+                compressed.write_text('Synthetic compressed-game fixture')
+                invoke('add_library_folder', {'id':console_id,'path':str(folder)})
+                rows = invoke('scan_console', {'id':console_id})
+                assert any(row['uid']==str(compressed) for row in rows), rows
+                emulator = home/'bin'/engine
+                emulator.write_text(launcher)
+                emulator.chmod(0o755)
+                invoke('save_emulator', {'id':console_id,'emulatorName':'Synthetic format fixture','emulatorPath':str(emulator),'launchArgs':[], 'launcher':'executable'})
+                invoke('launch_console_game', {'id':console_id,'uid':str(compressed)})
+                expected = ['--fullscreen',str(compressed)] if console_id=='psp' else ['-C','Dolphin.Display.Fullscreen=True','-b','-e',str(compressed)]
+                wait_for(lambda: log.read_text().splitlines()==expected)
+                wait_for(lambda: invoke('get_launch_status', {'id':console_id})['phase']=='exited')
+                assert compressed.read_text()=='Synthetic compressed-game fixture'
+                invoke('remove_library_folder', {'id':console_id,'path':str(folder)})
+            for console_id, game_relative, sfo_relative in [
+                ('ps3','TITLE0001/USRDIR/EBOOT.BIN','TITLE0001/PARAM.SFO'),
+                ('ps4','TITLE0002/eboot.bin','TITLE0002/sce_sys/param.sfo')]:
+                folder = home/f'Installed {console_id}'
+                game, metadata = folder/game_relative, folder/sfo_relative
+                game.parent.mkdir(parents=True)
+                metadata.parent.mkdir(parents=True,exist_ok=True)
+                game.write_text('Synthetic installed-game fixture')
+                title = 'Installed <Game> [Edition] & Friends'
+                value = title.encode()+b'\0'
+                metadata.write_bytes(struct.pack('<4sIIIIHHIII',b'\0PSF',0x101,36,44,1,0,0x0204,len(value),len(value),0)+b'TITLE\0\0\0'+value)
+                invoke('add_library_folder', {'id':console_id,'path':str(folder)})
+                rows = invoke('scan_console', {'id':console_id})
+                assert len(rows)==1 and rows[0]['title']==title and rows[0]['uid']==str(game), rows
+                invoke('save_cover', {'kind':console_id,'uid':str(game),'bytes':list(fixture_cover.read_bytes())})
+                click('[data-action="refresh"]')
+                wait_for(lambda: js('return state.imported[arguments[0]]?.[0]?.title', console_id)==title)
+                click('[data-action="home"]')
+                click(f'[data-action="console"][data-id="{console_id}"]')
+                wait_for(lambda: js('return document.querySelector(".game-card")?.getAttribute("aria-label")')=='Launch '+title)
+                assert not js('return Boolean(document.querySelector(".game-card game"))'), 'Metadata titles must be escaped'
+                metadata.write_text('Invalid optional metadata')
+                rows = invoke('scan_console', {'id':console_id})
+                assert rows[0]['uid']==str(game) and rows[0]['title'] in ['TITLE0001','TITLE0002'], rows
+                assert invoke('get_cover', {'kind':console_id,'uid':str(game)}).startswith('data:image/png;base64,')
+                invoke('remove_library_folder', {'id':console_id,'path':str(folder)})
+                assert game.read_text()=='Synthetic installed-game fixture'
+            click('[data-action="home"]')
+            log.unlink()
+            print('PASS: additional compressed formats, literal PPSSPP/Dolphin argv, installed SFO names, HTML escaping, metadata fallback and stable artwork identity')
             wait_for(lambda: js('return [...document.querySelectorAll(".console-image")].length === 18 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)'))
             update=invoke('update_status')
             assert update['phase'] == 'idle' and update['currentVersion'] == diagnostics['version']

@@ -66,9 +66,9 @@ function deviceArt(id) {
 
 const EXTS = {
   switch: ['nsp', 'xci'], ps1: ['cue','chd','iso','pbp','m3u'], ps2: ['iso','chd','cso'],
-  ps3: ['iso'], psp: ['iso','cso','pbp'], n64: ['z64','n64','v64'],
-  gamecube: ['iso','gcm','rvz','gcz'], dreamcast: ['gdi','cdi','chd'],
-  wii: ['wbfs','iso','rvz','wia'], wiiu: ['wua','wud','wux','rpx'],
+  ps3: ['iso'], psp: ['iso','cso','pbp','chd'], n64: ['z64','n64','v64'],
+  gamecube: ['iso','gcm','rvz','gcz','wia','ciso'], dreamcast: ['gdi','cdi','chd'],
+  wii: ['wbfs','iso','rvz','wia','gcz','ciso'], wiiu: ['wua','wud','wux','rpx'],
   gb: ['gb','gbc'], gba: ['gba'], nds: ['nds'], '3ds': ['3ds','cci','cxi'], ps4:['elf','bin'], ps5:['pkg','iso'], vita:['vpk','zip'], switch2:['nsp','xci'],
 };
 const tones = { Sony: '#536cae', Nintendo: '#66547d', Sega: '#8d5e55' };

@@ -4,10 +4,13 @@
 )]
 
 mod artwork;
+#[cfg(test)]
+mod console_library_tests;
 mod discovery;
 mod emulators;
 mod favorites;
 mod immersive;
+mod installed_titles;
 mod launch_log;
 mod launches;
 mod libraries;
@@ -64,7 +67,7 @@ const SPECS: &[ConsoleSpec] = &[
         id: "psp",
         dir: "PSP",
         games: "PSP Games",
-        extensions: &["iso", "cso", "pbp"],
+        extensions: &["iso", "cso", "pbp", "chd"],
     },
     ConsoleSpec {
         id: "n64",
@@ -76,7 +79,7 @@ const SPECS: &[ConsoleSpec] = &[
         id: "gamecube",
         dir: "GameCube",
         games: "GameCube Games",
-        extensions: &["iso", "gcm", "rvz", "gcz"],
+        extensions: &["iso", "gcm", "rvz", "gcz", "wia", "ciso"],
     },
     ConsoleSpec {
         id: "dreamcast",
@@ -88,7 +91,7 @@ const SPECS: &[ConsoleSpec] = &[
         id: "wii",
         dir: "Wii",
         games: "Wii Games",
-        extensions: &["wbfs", "iso", "rvz", "wia"],
+        extensions: &["wbfs", "iso", "rvz", "wia", "gcz", "ciso"],
     },
     ConsoleSpec {
         id: "wiiu",
@@ -510,6 +513,23 @@ fn is_ps4_eboot(id: &str, path: &Path) -> bool {
             .is_some_and(|p| p.join("sce_sys/param.sfo").is_file())
 }
 
+// Scanning and direct validation must present the same title without changing
+// the canonical path used by launches, favorites or artwork.
+fn console_game_title(id: &str, path: &Path, roots: &[PathBuf]) -> String {
+    if let Some(title) = installed_titles::title(id, path, roots) {
+        return title;
+    }
+    if is_ps3_eboot(id, path) {
+        return ps3_title(path);
+    }
+    let name = if is_ps4_eboot(id, path) {
+        path.parent().and_then(Path::file_name)
+    } else {
+        path.file_stem()
+    };
+    prettify(name.and_then(|v| v.to_str()).unwrap_or("Untitled"))
+}
+
 fn supported_console_file(s: &ConsoleSpec, path: &Path) -> bool {
     let extension = path
         .extension()
@@ -582,8 +602,6 @@ fn scan_console_with_customizations(
                 .and_then(|v| v.to_str())
                 .unwrap_or("")
                 .to_lowercase();
-            let ps3_eboot = is_ps3_eboot(id, path);
-            let ps4_eboot = is_ps4_eboot(id, path);
             if !supported_console_file(s, path) {
                 continue;
             }
@@ -614,22 +632,7 @@ fn scan_console_with_customizations(
             if seen.insert(uid.clone()) {
                 games.push(Game {
                     uid: uid.clone(),
-                    title: if ps3_eboot {
-                        ps3_title(path)
-                    } else if ps4_eboot {
-                        prettify(
-                            path.parent()
-                                .and_then(Path::file_name)
-                                .and_then(|v| v.to_str())
-                                .unwrap_or("PS4 Game"),
-                        )
-                    } else {
-                        prettify(
-                            path.file_stem()
-                                .and_then(|v| v.to_str())
-                                .unwrap_or("Untitled"),
-                        )
-                    },
+                    title: console_game_title(id, &canonical, roots),
                     path: uid,
                     kind: id.into(),
                     app_id: None,
@@ -1143,25 +1146,7 @@ fn validate_game(kind: &str, uid: &str) -> Result<Game, String> {
     if libraries::is_playlist(kind, &game_path) {
         libraries::playlist_members(kind, &game_path, &roots)?;
     }
-    let ps3_eboot = is_ps3_eboot(kind, &game_path);
-    let ps4_eboot = is_ps4_eboot(kind, &game_path);
-    let name = game_path
-        .file_stem()
-        .and_then(|v| v.to_str())
-        .unwrap_or("Untitled");
-    let title = if ps3_eboot {
-        ps3_title(&game_path)
-    } else if ps4_eboot {
-        prettify(
-            game_path
-                .parent()
-                .and_then(Path::file_name)
-                .and_then(|v| v.to_str())
-                .unwrap_or("PS4 Game"),
-        )
-    } else {
-        prettify(name)
-    };
+    let title = console_game_title(kind, &game_path, &roots);
     let uid = game_path.to_string_lossy().into_owned();
     Ok(Game {
         uid: uid.clone(),

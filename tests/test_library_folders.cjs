@@ -24,7 +24,7 @@ function fixture() {
   const startup='readPrefs(); setupEvents(); render(); window.matrixStartup?.complete(); void initializeArt(); void initializeNative();';
   assert.ok(source.includes(startup));
   vm.runInContext(source.replace(startup,'')+`\nrefreshNative=async()=>onRefresh();toast=onToast;
-    globalThis.api={state,openLibraryFolders,browseLibraryFolder,changeLibraryFolder,showLibraryFolderRows,scanArtwork,coverMessage};`,context);
+    globalThis.api={EXTS,state,openLibraryFolders,browseLibraryFolder,changeLibraryFolder,showLibraryFolderRows,scanArtwork,coverMessage};`,context);
   return {...context.api,calls,messages,responders,document,owner:()=>owner,html:()=>html,refreshes:()=>refreshes,
     button(action,folderPath){return {dataset:{action,path:folderPath},disabled:false};}};
 }
@@ -141,4 +141,11 @@ test('recovery response after closing cannot replace newer dialog rows',async()=
   const request=f.changeLibraryFolder(f.button('add-library-folder'));await new Promise(resolve=>setImmediate(resolve));
   delete f.responders.list_library_folders;await f.openLibraryFolders('wii');const rows=f.owner().list.innerHTML;
   pending.resolve([{path:'/old'}]);await request;assert.equal(f.owner().list.innerHTML,rows);assert.equal(f.owner().error.textContent,'');
+});
+
+test('preview format filters include only the verified new compressed formats',()=>{
+  const {EXTS}=fixture();
+  for(const [id,exts] of Object.entries({psp:['chd'],gamecube:['wia','ciso'],wii:['gcz','ciso']}))
+    for(const ext of exts)assert.ok(EXTS[id].includes(ext),`${id}: ${ext}`);
+  assert.ok(!EXTS.psp.includes('zso'));assert.ok(!EXTS.gamecube.includes('chd'));assert.ok(!EXTS.wiiu.includes('gcz'));
 });

@@ -132,3 +132,39 @@ including origin retention, offline registrations, alias deduplication, bounded
 reads and settings preservation. These are not real Snap/Flatpak Steam gameplay
 checks. Matrix does not change client sandbox permissions; external-drive access
 must already work in the selected Steam client.
+
+
+## Additional image formats and installed display titles — checked 2026-11-07
+
+- **PSP CHD:** [PPSSPP loader](https://github.com/hrydgard/ppsspp/blob/master/Core/Loaders.cpp)
+  recognizes `.iso`, `.cso` and `.chd` images, and explicitly rejects PS1 CHD
+  content. Matrix adds `.chd` to the PSP file filter and uses the existing PPSSPP
+  fullscreen argument path. The emulator validates the content, not Matrix.
+- **GameCube WIA/CISO and Wii GCZ/CISO:** [Dolphin boot loader](https://github.com/dolphin-emu/dolphin/blob/master/Source/Core/Core/Boot/Boot.cpp)
+  recognizes these extensions among its disc image formats. Matrix passes each
+  canonical image path through the existing `-b -e` and fullscreen preset. It
+  does not decompress, convert or install content. Existing formats stay enabled.
+- **PS3/PS4 display metadata:** optional `TITLE` values are read from a PS3
+  installed/disc title's `PARAM.SFO`, or a PS4 extracted title's
+  `sce_sys/param.sfo`. The PSF header/index layout and UTF-8 text type are checked
+  against [RPCS3's reader](https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Loader/PSF.cpp)
+  and [shadPS4's definitions](https://github.com/shadps4-emu/shadPS4/blob/main/src/core/file_format/psf.h).
+  Reads require a regular local file inside both the title directory and a
+  registered console root. Final-file symlinks are excluded. Files over 64 KiB,
+  more than 1,024 entries, titles over 1,024 bytes, invalid offsets, duplicate
+  keys, malformed UTF-8, unsupported versions and nontext titles are ignored.
+  PSF 1.0 and 1.1 are recognized; whitespace is normalized and title punctuation
+  is retained. Invalid or missing metadata falls back to existing folder names.
+  Registering only `USRDIR` does not permit reading metadata in its parent.
+
+These are file recognition and display improvements, not new emulator engines.
+Launch adapters, path-based favorite/artwork identities, console separation and
+sandbox write permissions are unchanged. Compressed disc artwork may still need
+an explicit confirmed disc ID or local image. PS3 PKG remains an install package,
+PS4 remains experimental, and PS5/Switch 2 remain library-only.
+
+Installed Vita import remains deferred: the [current Vita3K parser](https://github.com/Vita3K/Vita3K/blob/master/vita3k/config/src/config.cpp)
+resolves `--installed-path`/`-r` against the title IDs in its own configured
+`ux0/app` directory. A scanned eboot or arbitrary external directory is not enough
+information to choose the correct emulator store safely. Existing VPK/ZIP handling
+is unchanged. No new firmware, license, key or game download path is added.

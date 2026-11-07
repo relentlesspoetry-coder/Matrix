@@ -1,5 +1,31 @@
 # Test Matrix Play on Linux
 
+## Unreleased installed-title and compressed-format checks
+
+Local Rust 1.99.1 passes 72 headless backend tests, 16 cover-core tests (two
+opt-in live-provider checks omitted), 13 updater-core tests and 93 JavaScript
+fixtures. Folder, release/signing, DEB-helper and log-lifetime checks also pass,
+along with formatting, syntax and patch-whitespace checks. Release fixtures use
+disposable local repositories and keys, not a real project publication.
+New isolated-home tests register external PSP CHD, GameCube WIA/CISO and Wii
+GCZ/CISO images, validate and favorite them, round-trip imported artwork, launch
+harmless named PPSSPP/Dolphin shims, and verify exact literal arguments for paths
+containing spaces and shell punctuation. Unregistration preserves files and
+customizations; re-registration restores access. These are synthetic fixtures,
+not real image decoding or gameplay.
+
+SFO tests cover PS3 installed/disc and PS4 extracted layouts, UTF-8 titles and
+punctuation, truncated files, invalid offsets/lengths/types, size limits, invalid
+UTF-8, control characters, missing terminators, symlink exclusion, registration
+boundaries and malformed-metadata fallback. Title changes preserve canonical
+UIDs, favorites, artwork and original game bytes. Native IPC/UI cases also cover
+new-format launch arguments and escaping of metadata-derived titles.
+
+Native desktop execution and installer builds remain unrun locally: GTK/WebKit
+development libraries and desktop drivers are absent. The new native fixtures
+need the existing Linux CI environment before release. No release version is
+bumped and no gameplay compatibility claim is made.
+
 ## Version 0.5.10 library, navigation and repair validation
 
 Local Rust 1.99.1 checks pass: 67 headless backend tests, 16 cover-core tests
