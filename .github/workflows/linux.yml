@@ -44,6 +44,10 @@ jobs:
           python3 tests/test_launch_log_lifetime.py
           node --check web/app.js
           node --test tests/test_*.cjs
+      - name: Check live artwork providers (informational)
+        continue-on-error: true
+        timeout-minutes: 3
+        run: cargo test --locked --manifest-path cover-core/Cargo.toml live_ -- --ignored
       - name: Build Linux installers
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'

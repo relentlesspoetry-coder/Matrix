@@ -1,6 +1,41 @@
 # Test Matrix Play on Linux
 
+## Version 0.6.0 library and navigation slice
+
+Local Rust 1.99.1 checks pass: 66 headless backend tests, 16 cover-core tests
+(two explicit live-provider tests omitted) and 13 updater-core tests. JavaScript
+regressions cover gamepad commands, dialog boundaries, external-folder ownership,
+draft preservation, exact cover queues and Steam registration parameters. Folder,
+release/signing, DEB-helper fixtures and launch-log lifetime checks pass locally.
+
+New native fixtures cover external-folder dialog/IPC, retained favorites/imported
+artwork, PS1 playlist arguments, disconnected roots, Snap/custom Steam routing,
+and simulated WebKit gamepad input. They use synthetic game files and harmless
+launchers. Native execution, installer builds and screenshots require Linux CI
+because this executor lacks GTK/WebKit development packages and desktop drivers.
+Do not treat synthetic gamepad input as physical-controller certification.
+
+The current executor rejects both old xlenore and new GameTDB production HTTP
+requests with an unknown-issuer TLS error. TLS checks were not bypassed. Two
+public GameTDB samples downloaded and decoded through the system HTTP client;
+the release workflow separately records the production live-provider smoke test
+as informational because network/provider outages should not break offline use.
+
+Playlists are PS1 .m3u only. DuckStation source supports that format; standalone
+Flycast does not provide the same playlist adapter, so Dreamcast grouping and
+.m3u8 are excluded. Customized disc rows remain visible with the playlist.
+PS3 installed EBOOT directories work through explicit folder registration, not
+a universal installed-title importer. Other distributions, physical controllers,
+real emulator save creation, encrypted content and a privileged package upgrade
+still need their own integration checks.
+
 ## Version 0.5.10 reviewed bug repairs
+
+Repair commit `e417aa97279514984c86da0b9d8c4839ebe6fe5c` passed
+[Linux CI run 42395357141](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42395357141):
+all Rust/JavaScript/Python gates, DEB/AppImage builds, packaged-helper checks,
+ordinary painted startup and the actual Tauri/WebKit fixture suite.
+Versioned main repeats these gates before signed publication.
 
 The repair covers scoped melonDS Flatpak sidecar-save permissions, complete native
 emulator discovery, async dialog ownership, draft artwork identity preservation
@@ -14,6 +49,7 @@ creation, and they do not certify additional distributions or hardware.
 Local checks use Rust 1.99.1. GTK/WebKit development packages are absent in this
 executor; the exact release commit must pass the Linux CI native-window and
 DEB/AppImage packaging gates before publication.
+
 
 ## Version 0.5.9 keyboard and desktop-shortcut checks
 

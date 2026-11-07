@@ -253,8 +253,7 @@ for (const outcome of ['resolve', 'reject']) test(`old emulator save ${outcome} 
   old.values={emulatorName:'PCSX2', emulatorPath:'/test/pcsx2', folderPath:'/games', launcher:'executable'};
   const submit=f.node('#submit');f.node('#config-error');f.state.overlay='configure';
   const event={target:old,submitter:submit,preventDefault(){}};
-  f.listeners.submit[0](event); f.listeners.submit[0](event);
-  assert.equal(f.calls.filter(c=>c.name==='save_emulator').length,1);
+  f.listeners.submit[0](event);
   const replacement={dataset:{id:'ps2'}};f.nodes.set('#config-form',replacement);
   f.node('#config-error').textContent='New form';const writes=f.overlayWrites();
   if (outcome==='resolve') saving.resolve();else saving.reject(Error('Old failure'));
@@ -267,7 +266,7 @@ test('completed Windows registration cannot close replacement registration dialo
   const f=fixture(), saving=deferred();f.responders.add_windows_game=()=>saving.promise;
   const old=f.node('#windows-form');old.id='windows-form';old.values={title:'Game',target:'/test.desktop'};
   f.state.overlay='windows-add';const event={target:old,preventDefault(){}};
-  f.listeners.submit[0](event);f.listeners.submit[0](event);
+  f.listeners.submit[0](event);
   f.nodes.set('#windows-form',{});const writes=f.overlayWrites();saving.resolve();await tick();
   assert.equal(f.calls.filter(c=>c.name==='add_windows_game').length,1);
   assert.equal(f.state.overlay,'windows-add');assert.equal(f.overlayWrites(),writes);
@@ -276,9 +275,9 @@ test('completed removal cannot close newer game details', async () => {
   const f=fixture(), saving=deferred();f.responders.remove_windows_game=()=>saving.promise;
   f.state.overlay='external';f.root.firstElementChild={};
   const button={dataset:{action:'remove-windows',uid:'old'},disabled:false};
-  const pending=f.handleAction(button);await f.handleAction(button);
+  const pending=f.handleAction(button), duplicate=f.handleAction(button);
   f.root.firstElementChild={};f.state.selectedGame={id:'windows',uid:'new'};
-  const writes=f.overlayWrites();saving.resolve();await pending;
+  const writes=f.overlayWrites();saving.resolve();await Promise.all([pending,duplicate]);
   assert.equal(f.calls.filter(c=>c.name==='remove_windows_game').length,1);
   assert.equal(f.state.overlay,'external');assert.equal(f.state.selectedGame.uid,'new');assert.equal(f.overlayWrites(),writes);
 });
@@ -298,4 +297,17 @@ test('collapsed navigation and topbar buttons have explicit accessible names', (
     assert.match(button,/aria-label="[^\"]+"/);
   }
   for (const action of ['refresh','configure-first']) assert.match(html.match(new RegExp(`<button[^>]*data-action="${action}"[^>]*>`))[0],/aria-label="[^\"]+"/);
+});
+
+test('duplicate emulator and Windows submits issue only one pending write per form', async()=>{
+  for (const kind of ['config','windows']) {
+    const f=fixture(),saving=deferred(),command=kind==='config'?'save_emulator':'add_windows_game';
+    f.responders[command]=()=>saving.promise;f.node('#config-error');
+    const form=f.node(`#${kind}-form`);form.id=`${kind}-form`;form.dataset.id='ps2';
+    form.values={title:'Game',target:'/test.desktop',emulatorName:'PCSX2',emulatorPath:'/test/pcsx2',folderPath:'/games',launcher:'executable'};
+    const event={target:form,submitter:f.node('#submit'),preventDefault(){}};
+    f.listeners.submit[0](event);f.listeners.submit[0](event);
+    assert.equal(f.calls.filter(c=>c.name===command).length,1);
+    saving.resolve();await tick();assert.equal(form.dataset.saving,undefined);
+  }
 });

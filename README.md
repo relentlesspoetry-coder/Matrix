@@ -20,6 +20,15 @@ The original 14 libraries remain separate. The supplied PS4, PS5, PS Vita and Sw
 
 Steam and Windows retain their independent tabs and existing launch behavior. Their fullscreen settings belong to each game/launcher.
 
+## Library folders, controllers and disc artwork
+
+- **Manage folders** in any console library, or **Folders** in Settings, adds existing game directories on external drives without moving files. The managed folder remains available. Remove unregisters a directory only; files, saves, artwork and favorites are kept. Disconnected registrations remain listed for reconnection.
+- Existing **RPCS3 installed games** can be found by adding its game directory; recognized `USRDIR/EBOOT.BIN` files retain the existing RPCS3 adapter. This is not a universal importer for emulator databases or encrypted installed content.
+- **PS1 `.m3u` playlists** with valid local relative disc entries appear as one title for DuckStation. Missing, unsafe or unsupported playlists do not hide their discs. Existing favorited discs or discs with an imported Matrix cover remain visible alongside the playlist to preserve their customization. Dreamcast and `.m3u8` grouping are not enabled because the current standalone launchers do not share that support.
+- **Standard-mapped gamepads** navigate with the D-pad/left stick, A selects, B goes back and bumpers move through controls. Directions change select options; bumpers leave the select. Modal focus, reconnect/release handling and held-button protection are included. Text entry and system file pickers still need keyboard/mouse. Actual hardware mappings and native WebKit Gamepad API availability require hardware testing.
+- **Steam** detects native, Flatpak and Snap installations. **Manage Steam libraries** registers other Steam/steamapps folders with their owning client. Explicit choices win over detection and persist while drives are disconnected. Matrix Play does not configure the software Steam uses to run a game.
+- **GameCube/Wii artwork** uses exact GameTDB disc IDs, with validated uncompressed disc headers or explicit filename IDs. Compressed images may require a confirmed ID in game details. Default and 3D styles keep the exact region; there is no fuzzy title matching or silent region substitution. Local covers still take priority.
+
 ## Matrix Play branding
 
 Matrix Play adopts the supplied **Matrix Play** name and artwork. The full original PNG is used in the sidebar; a crop of its central symbol is used for the compact sidebar, window and application launcher icons.
@@ -98,7 +107,7 @@ Native favorites are saved with Matrix Play settings in `$XDG_CONFIG_HOME/matrix
 
 ## Automatic PS1 / PS2 cover art
 
-Automatic missing-art scans now run after native library scans and Refresh. **Emulators & folders → Cover artwork** controls automatic downloads and default/3D style. The requested xlenore templates are used directly, with serial-based identity; titles are never fuzzily matched. Details show the result and identity source, and allow an explicit serial confirmation. Choose cover imports an image for any library.
+Automatic missing-art scans now run after native library scans and Refresh. **Emulators & folders → Cover artwork** controls automatic downloads and default/3D style. xlenore templates use PS1/PS2 serials; GameTDB templates use GameCube/Wii disc IDs. Titles are never fuzzily matched. Details show the result and identity source, and allow an explicit serial confirmation. Choose cover imports an image for any library.
 
 Serial detection supports filenames and bounded ISO9660 SYSTEM.CNF parsing, including simple one-file, zero-origin raw BIN/CUE data tracks. Compressed images need a filename serial or user confirmation. Unsupported/ambiguous layouts stay unresolved. Local/manual covers take priority. Downloaded art, provenance, positive and negative caches persist in the XDG data directory. Provider requests are serialized, spaced, bounded, and back off on errors. The browser preview never downloads covers.
 
@@ -208,10 +217,10 @@ UI-only preview: open `web/index.html` in Chromium, Firefox or another browser. 
 ## Limitations / next implementation work
 
 1. Real emulator/game testing on Zorin, installed-package use on user machines, and Wayland/native-display behavior. Compilation, DEB generation and the actual Tauri window have been tested in a virtual X11 display.
-2. Real emulator-specific adapters for unusual command-line syntax, PS3 installed games, Switch installed content, Wii U extracted directories, multidisc grouping and emulator-specific Flatpak options. Emulator support differs between versions; the generic launch template is not guaranteed to work for every executable.
-3. Additional authorized artwork/metadata providers, nonstandard Sony serial formats and compressed-disc serial extraction. These are not implemented. PS1/PS2 serial-based xlenore downloads and manual cover imports are implemented; TheCoverProject automation is not.
+2. Additional emulator-specific adapters for unusual command-line syntax, Switch installed content, installed Vita titles, Wii U metadata, Dreamcast multidisc grouping and emulator-specific Flatpak options. PS3 installed EBOOT folders and PS1 .m3u playlists are supported as described above. Emulator support differs between versions; the generic launch template is not guaranteed to work for every executable.
+3. Additional authorized artwork/metadata providers beyond PS1/PS2 and GameCube/Wii, nonstandard Sony serial formats and compressed-disc identity extraction remain future work. Manual cover imports work for every library; TheCoverProject automation is not enabled.
 4. Windows games are organized through existing `.desktop` shortcuts only. These must already work outside Matrix Play; any software they invoke is managed externally. Matrix Play does not install, configure or invoke a Windows compatibility runtime directly. Steam games continue to launch through the owning Steam installation, whose own compatibility choices are outside Matrix Play.
-5. Full gamepad navigation, controller setup, fullscreen experience, launch/exit monitoring and UI refinement.
+5. Physical-controller testing, nonstandard controller mappings and controller-only text entry/system dialogs remain future work. Standard-mapped navigation and launch/exit diagnostics are implemented; emulator input configuration remains external.
 6. Broader emulator-specific and distribution testing. The existing native harness uses non-proprietary fixtures and harmless test launchers; it does not validate actual gameplay.
 
 Matrix Play is not an emulator. Do not distribute copyrighted ROMs, BIOS, encryption keys or proprietary system firmware with it.

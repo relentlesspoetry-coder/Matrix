@@ -64,13 +64,28 @@ fn stamp(path: &Path) -> Result<String, String> {
     Ok(value)
 }
 
+pub fn supports(kind: &str) -> bool {
+    matches!(kind, "ps1" | "ps2" | "gamecube" | "wii")
+}
+
 pub fn url(kind: &str, serial: &str, style: &str) -> Result<String, String> {
+    let serial = identity::normalize_for(kind, serial)?;
+    if matches!(kind, "gamecube" | "wii") {
+        let folder = match style {
+            "default" => "cover",
+            "3d" => "cover3D",
+            _ => return Err("Unsupported cover style".into()),
+        };
+        let region = identity::nintendo_region(&serial)?;
+        return Ok(format!(
+            "https://art.gametdb.com/wii/{folder}/{region}/{serial}.png"
+        ));
+    }
     let repo = match kind {
         "ps1" => "psx-covers",
         "ps2" => "ps2-covers",
         _ => return Err("Unsupported cover console".into()),
     };
-    let serial = identity::normalize(serial)?;
     let ext = match style {
         "default" => "jpg",
         "3d" => "png",
@@ -259,7 +274,9 @@ pub fn fetch(
     transport: &mut impl Transport,
 ) -> Result<Outcome, String> {
     // Reject unsupported console/style before creating files or doing any I/O with the provider.
-    url(kind, "SLUS-00000", style)?;
+    if !supports(kind) || !matches!(style, "default" | "3d") {
+        return Err("Unsupported cover console or style".into());
+    }
     fs::create_dir_all(root).map_err(|e| e.to_string())?;
     let lock = OpenOptions::new()
         .create(true)
@@ -272,7 +289,10 @@ pub fn fetch(
     let mut index = load(root)?;
     let stamp = stamp(path)?;
     let (serial, source) = if let Some(input) = confirmed {
-        (identity::normalize(input)?, "user-confirmed".to_string())
+        (
+            identity::normalize_for(kind, input)?,
+            "user-confirmed".to_string(),
+        )
     } else if let Some(i) =
         valid_identity(&index, kind, path).filter(|i| i.source == "user-confirmed")
     {
@@ -444,6 +464,81 @@ mod tests {
         assert!(url("steam", "SLUS-00664", "default").is_err());
         assert!(url("ps2", "../../SLUS-00664", "3d").is_err());
         assert!(url("ps1", "SLUS-00664", "../default").is_err());
+    }
+    #[test]
+    fn gametdb_templates_preserve_console_region_and_style() {
+        assert_eq!(
+            url("gamecube", "GMSE01", "default").unwrap(),
+            "https://art.gametdb.com/wii/cover/US/GMSE01.png"
+        );
+        assert_eq!(
+            url("wii", "RMGJ01", "3d").unwrap(),
+            "https://art.gametdb.com/wii/cover3D/JA/RMGJ01.png"
+        );
+        assert_eq!(
+            url("wii", "RMGP01", "default").unwrap(),
+            "https://art.gametdb.com/wii/cover/EN/RMGP01.png"
+        );
+        assert!(url("gamecube", "RMGE01", "default").is_err());
+        assert!(url("wii", "GMSE01", "default").is_err());
+        assert!(url("wii", "RMGE01", "../../").is_err());
+        assert!(url("wii", "RMGZ01", "default").is_err());
+    }
+    #[test]
+    fn nintendo_download_confirmation_cache_and_invalidation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("covers");
+        let path = game(tmp.path(), "Unknown.rvz");
+        let mut absent = Fake {
+            reply: None,
+            urls: vec![],
+        };
+        assert_eq!(
+            fetch(&root, "wii", &path, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "needs-serial"
+        );
+        assert!(fetch(&root, "wii", &path, "default", Some("GMSE01"), &mut absent).is_err());
+        let mut http = fake(200);
+        assert_eq!(
+            fetch(&root, "wii", &path, "default", Some("RMGE01"), &mut http)
+                .unwrap()
+                .status,
+            "downloaded"
+        );
+        assert!(cached_cover(&root, "wii", &path, "default").is_some());
+        assert!(cached_cover(&root, "gamecube", &path, "default").is_none());
+        assert!(cached_cover(&root, "wii", &path, "3d").is_none());
+        assert_eq!(
+            fetch(&root, "wii", &path, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "cached"
+        );
+        fs::write(&path, b"changed fixture").unwrap();
+        assert!(cached_cover(&root, "wii", &path, "default").is_none());
+        assert_eq!(
+            fetch(&root, "wii", &path, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "needs-serial"
+        );
+        assert!(absent.urls.is_empty());
+    }
+    #[test]
+    #[ignore = "Explicit live GameTDB smoke test; downloads four temporary covers"]
+    fn live_gametdb_templates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("covers");
+        for (kind, serial) in [("gamecube", "GMSE01"), ("wii", "RMGE01")] {
+            let path = game(tmp.path(), &format!("{serial}.rvz"));
+            for style in ["default", "3d"] {
+                let out = fetch(&root, kind, &path, style, None, &mut Http).unwrap();
+                assert_eq!(out.status, "downloaded", "{kind} {style}: {}", out.message);
+                assert!(cached_cover(&root, kind, &path, style).is_some());
+            }
+        }
     }
     #[test]
     fn download_persists_and_restart_needs_no_network() {

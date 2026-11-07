@@ -81,9 +81,9 @@ rewrite or delete any ROMs or existing saves. Filesystem mount flags are covered
 by synthetic tests; actual SameBoy/mGBA/melonDS saving still needs an installed-emulator
 check.
 
-Steam discovery retains the native or Flatpak origin of primary libraries and
+Steam discovery retains the native, Flatpak or Snap origin of primary libraries and
 libraries referenced by `libraryfolders.vdf`, including native aliases pointing
-into Flatpak data. Launch uses that origin instead of whichever `steam` binary is
+into Flatpak or Snap data. Launch uses that origin instead of whichever `steam` binary is
 on PATH. A missing client is reported, never silently replaced with the other
 installation. Duplicate app IDs remain one library entry and existing IDs,
 favorites and artwork keys are unchanged.
@@ -109,3 +109,26 @@ Game Boy also offers mGBA when installed. Multiple ready choices remain unlinked
 until the user chooses; existing working or manually configured profiles are
 preserved. Unit fixtures cover enumeration, alias deduplication and ambiguous
 selection. They do not certify emulator installation or gameplay.
+
+## Custom Steam libraries and Snap
+
+Snap Steam is discovered under `~/snap/steam/common/.local/share/Steam/steamapps`
+and `~/snap/steam/common/.steam/steam/steamapps`. Its external VDF library roots
+retain Snap provenance and launch through `snap run steam -applaunch APP_ID`.
+Native Steam skips Snap aliases on PATH rather than switching client installations.
+
+Up to 32 custom Steam roots can be registered as a `steamapps` folder or its
+parent, with an explicit native, Flatpak or Snap client. The saved path is
+canonical; registering it again updates its selected client. Explicit roots take
+precedence over automatic duplicates. A disconnected root remains registered and
+is reported unavailable until mounted again. Removing a registration only edits
+Matrix settings: it never deletes games, Steam files, artwork or favorites.
+Duplicate app IDs keep their existing identity, using the first registered or
+discovered library. The primary and VDF scan is capped at 128 roots and each
+root at 10,000 directory entries, with a 1 MiB limit per metadata file.
+
+Custom-root and Snap changes are covered by synthetic filesystem/argv tests,
+including origin retention, offline registrations, alias deduplication, bounded
+reads and settings preservation. These are not real Snap/Flatpak Steam gameplay
+checks. Matrix does not change client sandbox permissions; external-drive access
+must already work in the selected Steam client.

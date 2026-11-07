@@ -41,6 +41,103 @@ pub fn normalize(text: &str) -> Result<String, String> {
     Ok(serial)
 }
 
+/// Strict platform-scoped identifiers prevent URL injection and cross-console requests.
+pub fn normalize_for(kind: &str, text: &str) -> Result<String, String> {
+    match kind {
+        "ps1" | "ps2" => normalize(text),
+        "gamecube" | "wii" => {
+            let id = text.trim().to_ascii_uppercase();
+            if id.len() != 6 || !id.bytes().all(|b| b.is_ascii_alphanumeric()) {
+                return Err(
+                    "Enter an exact six-character disc ID, for example GMSE01 or RMGE01".into(),
+                );
+            }
+            let prefix = id.as_bytes()[0];
+            if (kind == "gamecube" && !matches!(prefix, b'G' | b'D'))
+                || (kind == "wii" && !matches!(prefix, b'R' | b'S'))
+            {
+                return Err("Disc ID does not match this console's supported retail format".into());
+            }
+            nintendo_region(&id)?;
+            Ok(id)
+        }
+        _ => Err("Automatic covers are not supported for this console".into()),
+    }
+}
+
+pub fn nintendo_region(id: &str) -> Result<&'static str, String> {
+    match id.as_bytes().get(3) {
+        Some(b'E') => Ok("US"),
+        Some(b'J') => Ok("JA"),
+        Some(b'P') => Ok("EN"),
+        Some(b'D') => Ok("DE"),
+        Some(b'F') => Ok("FR"),
+        Some(b'I') => Ok("IT"),
+        Some(b'S') => Ok("ES"),
+        Some(b'K') => Ok("KO"),
+        _ => Err("Unsupported disc artwork region; choose a local cover".into()),
+    }
+}
+
+fn nintendo_detect(path: &Path, kind: &str) -> Result<(String, String), String> {
+    let filename = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
+    // Explicit bracketed IDs (or an ID-only filename), never arbitrary six-letter titles.
+    let re = Regex::new(r"\[([A-Za-z0-9]{6})\]|\(([A-Za-z0-9]{6})\)").unwrap();
+    let mut names = BTreeSet::new();
+    if let Ok(id) = normalize_for(kind, filename) {
+        names.insert(id);
+    }
+    for cap in re.captures_iter(filename) {
+        let value = cap.get(1).or_else(|| cap.get(2)).unwrap().as_str();
+        // A platform-like ID belonging to the wrong console is a conflict, not a guess.
+        if matches!(
+            value.as_bytes()[0].to_ascii_uppercase(),
+            b'G' | b'D' | b'R' | b'S'
+        ) {
+            names.insert(normalize_for(kind, value)?);
+        }
+    }
+    let mut header_id = None;
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("iso") || e.eq_ignore_ascii_case("gcm"))
+    {
+        if let Ok(mut file) = File::open(path) {
+            let mut header = [0u8; 32];
+            if file.read_exact(&mut header).is_ok() {
+                let gc = header[28..32] == [0xc2, 0x33, 0x9f, 0x3d];
+                let wii = header[24..28] == [0x5d, 0x1c, 0x9e, 0xa3];
+                if gc || wii {
+                    if gc == wii || (kind == "gamecube") != gc {
+                        return Err("Disc header does not match this console".into());
+                    }
+                    let value = std::str::from_utf8(&header[..6]).map_err(|_| "Invalid disc ID")?;
+                    header_id = Some(normalize_for(kind, value)?);
+                }
+            }
+        }
+    }
+    if let Some(id) = &header_id {
+        names.insert(id.clone());
+    }
+    if names.len() > 1 {
+        return Err("Conflicting disc IDs; confirm the correct ID in game details".into());
+    }
+    let id = names
+        .into_iter()
+        .next()
+        .ok_or("No exact disc ID found; confirm one in game details or choose a local cover")?;
+    Ok((
+        id,
+        if header_id.is_some() {
+            "disc-header"
+        } else {
+            "filename"
+        }
+        .into(),
+    ))
+}
+
 fn sector(file: &mut File, lba: u32, stride: u64, offset: u64) -> Option<[u8; 2048]> {
     file.seek(SeekFrom::Start(
         u64::from(lba).checked_mul(stride)?.checked_add(offset)?,
@@ -146,8 +243,11 @@ fn disc_serial(path: &Path, kind: &str) -> BTreeSet<String> {
 }
 
 pub fn detect(path: &Path, kind: &str) -> Result<(String, String), String> {
+    if matches!(kind, "gamecube" | "wii") {
+        return nintendo_detect(path, kind);
+    }
     if !["ps1", "ps2"].contains(&kind) {
-        return Err("Automatic covers support PS1 and PS2 only".into());
+        return Err("Automatic covers are not supported for this console".into());
     }
     let filename = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
     let names = serials(filename);
@@ -239,6 +339,73 @@ mod tests {
                 .0,
             "SLUS-20312"
         );
+    }
+    fn nintendo_fixture(path: &Path, id: &[u8; 6], kind: &str) {
+        let mut header = [0u8; 32];
+        header[..6].copy_from_slice(id);
+        if kind == "gamecube" {
+            header[28..32].copy_from_slice(&[0xc2, 0x33, 0x9f, 0x3d]);
+        } else {
+            header[24..28].copy_from_slice(&[0x5d, 0x1c, 0x9e, 0xa3]);
+        }
+        fs::write(path, header).unwrap();
+    }
+    #[test]
+    fn nintendo_ids_are_platform_scoped_and_strict() {
+        assert_eq!(normalize_for("gamecube", "gmse01").unwrap(), "GMSE01");
+        assert_eq!(normalize_for("wii", "RMGP01").unwrap(), "RMGP01");
+        for (kind, id) in [
+            ("gamecube", "RMGE01"),
+            ("wii", "GMSE01"),
+            ("wii", "../../RMGE01"),
+            ("wii", "RMGE01 extra"),
+            ("wii", "RMGZ01"),
+            ("ps2", "RMGE01"),
+        ] {
+            assert!(normalize_for(kind, id).is_err(), "{kind}: {id}");
+        }
+        assert!(detect(Path::new("Super Mario Galaxy.rvz"), "wii").is_err());
+        assert!(detect(Path::new("GAMERS.rvz"), "wii").is_err());
+        assert!(detect(Path::new("Title RMGE01.rvz"), "wii").is_err());
+        assert_eq!(
+            detect(Path::new("Title [RMGE01].rvz"), "wii").unwrap(),
+            ("RMGE01".into(), "filename".into())
+        );
+        assert!(detect(Path::new("Title [RMGE01] [RMGP01].rvz"), "wii").is_err());
+        assert!(detect(Path::new("Title [GMSE01].rvz"), "wii").is_err());
+    }
+    #[test]
+    fn nintendo_headers_require_magic_and_reject_conflicts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("Game.iso");
+        nintendo_fixture(&path, b"RMGE01", "wii");
+        assert_eq!(
+            detect(&path, "wii").unwrap(),
+            ("RMGE01".into(), "disc-header".into())
+        );
+        assert!(detect(&path, "gamecube").is_err());
+        let conflict = tmp.path().join("Game [RMGP01].iso");
+        fs::copy(&path, &conflict).unwrap();
+        assert!(detect(&conflict, "wii").is_err());
+        let gc = tmp.path().join("Game.gcm");
+        nintendo_fixture(&gc, b"GMSE01", "gamecube");
+        assert_eq!(detect(&gc, "gamecube").unwrap().0, "GMSE01");
+        assert!(detect(&gc, "wii").is_err());
+        nintendo_fixture(&path, b"GMSE01", "wii");
+        assert!(detect(&path, "wii").is_err());
+        for bytes in [
+            b"RMGE01".to_vec(),
+            vec![0; 32],
+            b"payload RMGE01 is not a header".to_vec(),
+        ] {
+            fs::write(&path, bytes).unwrap();
+            assert!(detect(&path, "wii").is_err());
+        }
+        nintendo_fixture(&path, b"RMGE01", "wii");
+        let mut bytes = fs::read(&path).unwrap();
+        bytes[28..32].copy_from_slice(&[0xc2, 0x33, 0x9f, 0x3d]);
+        fs::write(&path, bytes).unwrap();
+        assert!(detect(&path, "wii").is_err());
     }
     pub fn fixture(path: &Path, boot: &str, stride: usize, offset: usize) {
         let mut disc = vec![0u8; 24 * stride];

@@ -10,7 +10,9 @@ mod favorites;
 mod immersive;
 mod launch_log;
 mod launches;
+mod libraries;
 mod settings;
+mod steam_libraries;
 mod updates;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -194,9 +196,13 @@ impl Default for ArtworkSettings {
 #[derive(Clone, Serialize, Deserialize, Default)]
 struct Settings {
     #[serde(default)]
+    steam_libraries: Vec<steam_libraries::RegisteredLibrary>,
+    #[serde(default)]
     favorites: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     favorites_migrated: bool,
+    #[serde(default)]
+    library_folders: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     artwork: ArtworkSettings,
     #[serde(default)]
@@ -214,6 +220,7 @@ struct Bootstrap {
     artwork: ArtworkSettings,
     root: String,
     folders: BTreeMap<String, String>,
+    library_folders: BTreeMap<String, Vec<libraries::Folder>>,
     profiles: BTreeMap<String, EmulatorProfile>,
     windows: Vec<WindowsGame>,
 }
@@ -431,7 +438,12 @@ fn bootstrap() -> Result<Bootstrap, String> {
             root.join(s.dir).join(s.games).to_string_lossy().into(),
         );
     }
+    let mut library_folders = BTreeMap::new();
+    for s in SPECS {
+        library_folders.insert(s.id.into(), libraries::folders(s.id)?);
+    }
     Ok(Bootstrap {
+        library_folders,
         emulator_discovery,
         favorites: settings.favorites,
         favorites_migrated: settings.favorites_migrated,
@@ -508,88 +520,130 @@ fn supported_console_file(s: &ConsoleSpec, path: &Path) -> bool {
     (s.extensions.contains(&extension.as_str()) && !(s.id == "ps3" && extension == "pkg"))
         || is_ps3_eboot(s.id, path)
         || is_ps4_eboot(s.id, path)
+        || libraries::is_playlist(s.id, path)
 }
 
 fn scan_console_impl(id: &str) -> Result<Vec<Game>, String> {
+    let settings = load_settings()?;
+    let favorites = settings
+        .favorites
+        .get(id)
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect();
+    scan_console_with_customizations(
+        id,
+        &libraries::roots(id)?,
+        &favorites,
+        Some(&artwork_root()?),
+    )
+}
+
+fn scan_console_in(id: &str, roots: &[PathBuf]) -> Result<Vec<Game>, String> {
+    scan_console_with_customizations(id, roots, &HashSet::new(), None)
+}
+
+fn scan_console_with_customizations(
+    id: &str,
+    roots: &[PathBuf],
+    favorites: &HashSet<String>,
+    covers: Option<&Path>,
+) -> Result<Vec<Game>, String> {
     let s = spec(id)?;
-    let folder = games_dir(id)?;
-    if !folder.exists() {
-        return Ok(vec![]);
-    }
     let mut games = vec![];
     let mut seen = HashSet::new();
-    let canonical_folder = folder.canonicalize().map_err(|e| e.to_string())?;
-    // Avoid symlink loops, hidden dirs, very deep trees, and accidental unlimited scanning.
-    for entry in WalkDir::new(&folder)
-        .follow_links(false)
-        .max_depth(9)
-        .into_iter()
-        .filter_entry(|e| e.depth() == 0 || !e.file_name().to_string_lossy().starts_with('.'))
-    {
-        let entry = match entry {
-            Ok(entry) => entry,
+    let mut grouped_members = HashSet::new();
+    for folder in roots {
+        let canonical_folder = match folder.canonicalize() {
+            Ok(path) => path,
             Err(_) => continue,
         };
-        if games.len() >= 8000 {
-            break;
-        }
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let path = entry.path();
-        let ext = path
-            .extension()
-            .and_then(|v| v.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-        let ps3_eboot = is_ps3_eboot(id, path);
-        let ps4_eboot = is_ps4_eboot(id, path);
-        if !supported_console_file(s, path) {
-            continue;
-        }
-        // Avoid a standalone ISO entry when the same PS1 track is described by a .cue.
-        if id == "ps1" && ext == "iso" && path.with_extension("cue").exists() {
-            continue;
-        }
-        // PS3 .pkg is an install package, not a directly launchable game.
-        if id == "ps3" && ext == "pkg" {
-            continue;
-        }
-        let launch_path = path.to_path_buf();
-        let canonical = match launch_path.canonicalize() {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        // Canonicalized results must remain inside the managed games directory.
-        if !canonical.starts_with(&canonical_folder) {
-            continue;
-        }
-        let uid = canonical.to_string_lossy().to_string();
-        if seen.insert(uid.clone()) {
-            games.push(Game {
-                uid: uid.clone(),
-                title: if ps3_eboot {
-                    ps3_title(path)
-                } else if ps4_eboot {
-                    prettify(
-                        path.parent()
-                            .and_then(Path::file_name)
-                            .and_then(|v| v.to_str())
-                            .unwrap_or("PS4 Game"),
-                    )
-                } else {
-                    prettify(
-                        path.file_stem()
-                            .and_then(|v| v.to_str())
-                            .unwrap_or("Untitled"),
-                    )
-                },
-                path: uid,
-                kind: id.into(),
-                app_id: None,
-            });
+        // Avoid symlink loops, hidden dirs, very deep trees, and accidental unlimited scanning.
+        for entry in WalkDir::new(&folder)
+            .follow_links(false)
+            .max_depth(9)
+            .into_iter()
+            .filter_entry(|e| e.depth() == 0 || !e.file_name().to_string_lossy().starts_with('.'))
+        {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+            if games.len() >= 8000 {
+                break;
+            }
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let path = entry.path();
+            let ext = path
+                .extension()
+                .and_then(|v| v.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            let ps3_eboot = is_ps3_eboot(id, path);
+            let ps4_eboot = is_ps4_eboot(id, path);
+            if !supported_console_file(s, path) {
+                continue;
+            }
+            // Avoid a standalone ISO entry when the same PS1 track is described by a .cue.
+            if id == "ps1" && ext == "iso" && path.with_extension("cue").exists() {
+                continue;
+            }
+            // PS3 .pkg is an install package, not a directly launchable game.
+            if id == "ps3" && ext == "pkg" {
+                continue;
+            }
+            let launch_path = path.to_path_buf();
+            let canonical = match launch_path.canonicalize() {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            // Canonicalized results must remain inside the managed games directory.
+            if !canonical.starts_with(&canonical_folder) {
+                continue;
+            }
+            if libraries::is_playlist(id, &canonical) {
+                match libraries::playlist_members(id, &canonical, roots) {
+                    Ok(members) => grouped_members.extend(members),
+                    Err(_) => continue,
+                }
+            }
+            let uid = canonical.to_string_lossy().to_string();
+            if seen.insert(uid.clone()) {
+                games.push(Game {
+                    uid: uid.clone(),
+                    title: if ps3_eboot {
+                        ps3_title(path)
+                    } else if ps4_eboot {
+                        prettify(
+                            path.parent()
+                                .and_then(Path::file_name)
+                                .and_then(|v| v.to_str())
+                                .unwrap_or("PS4 Game"),
+                        )
+                    } else {
+                        prettify(
+                            path.file_stem()
+                                .and_then(|v| v.to_str())
+                                .unwrap_or("Untitled"),
+                        )
+                    },
+                    path: uid,
+                    kind: id.into(),
+                    app_id: None,
+                });
+            }
         }
     }
+    // Keep a customized disc directly reachable after grouping. Do not migrate
+    // favorite IDs or overwrite covers with a playlist identity.
+    games.retain(|game| {
+        !grouped_members.contains(Path::new(&game.path))
+            || favorites.contains(&game.uid)
+            || covers.is_some_and(|root| libraries::has_manual_cover(root, id, &game.uid))
+    });
     games.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
     Ok(games)
 }
@@ -629,10 +683,12 @@ fn quoted_tokens(line: &str) -> Vec<String> {
     result
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum SteamLauncher {
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum SteamLauncher {
     Native,
     Flatpak,
+    Snap,
 }
 #[derive(Debug)]
 struct SteamLibrary {
@@ -643,9 +699,14 @@ struct SteamGame {
     game: Game,
     launcher: SteamLauncher,
 }
-fn steam_locations_in(home: &Path) -> Vec<SteamLibrary> {
+fn steam_locations_in(
+    home: &Path,
+    registered: &[steam_libraries::RegisteredLibrary],
+) -> Vec<SteamLibrary> {
     let flatpak_root = home.join(".var/app/com.valvesoftware.Steam");
     let flatpak_root = flatpak_root.canonicalize().unwrap_or(flatpak_root);
+    let snap_root = home.join("snap/steam");
+    let snap_root = snap_root.canonicalize().unwrap_or(snap_root);
     let candidates = [
         (home.join(".steam/steam/steamapps"), SteamLauncher::Native),
         (home.join(".steam/root/steamapps"), SteamLauncher::Native),
@@ -657,9 +718,30 @@ fn steam_locations_in(home: &Path) -> Vec<SteamLibrary> {
             home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps"),
             SteamLauncher::Flatpak,
         ),
+        (
+            home.join("snap/steam/common/.local/share/Steam/steamapps"),
+            SteamLauncher::Snap,
+        ),
+        (
+            home.join("snap/steam/common/.steam/steam/steamapps"),
+            SteamLauncher::Snap,
+        ),
     ];
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
+    // Explicit choices win over automatic roots, including different clients
+    // sharing a library. Keep saved registrations even while a drive is offline.
+    for entry in registered.iter().take(32) {
+        let original = PathBuf::from(&entry.path);
+        if let Ok(canonical) = original.canonicalize() {
+            if canonical.is_dir() && seen.insert(canonical.clone()) {
+                paths.push(SteamLibrary {
+                    path: canonical,
+                    launcher: entry.launcher,
+                });
+            }
+        }
+    }
     for (original, mut launcher) in candidates {
         if !original.is_dir() {
             continue;
@@ -668,8 +750,10 @@ fn steam_locations_in(home: &Path) -> Vec<SteamLibrary> {
         // A legacy ~/.steam alias can point into Flatpak's data directory.
         if canonical.starts_with(&flatpak_root) {
             launcher = SteamLauncher::Flatpak;
+        } else if canonical.starts_with(&snap_root) {
+            launcher = SteamLauncher::Snap;
         }
-        if seen.insert((canonical.clone(), launcher)) {
+        if seen.insert(canonical.clone()) {
             paths.push(SteamLibrary {
                 path: canonical,
                 launcher,
@@ -678,16 +762,24 @@ fn steam_locations_in(home: &Path) -> Vec<SteamLibrary> {
     }
     let mut additional = Vec::new();
     for base in &paths {
-        if let Ok(contents) = fs::read_to_string(base.path.join("libraryfolders.vdf")) {
+        if let Some(contents) = steam_libraries::bounded_text(&base.path.join("libraryfolders.vdf"))
+        {
             for line in contents.lines() {
                 let fields = quoted_tokens(line);
                 if fields.len() != 2 || fields[0] != "path" {
                     continue;
                 }
-                let next = Path::new(&fields[1]).join("steamapps");
+                if paths.len() + additional.len() >= steam_libraries::MAX_LIBRARIES {
+                    break;
+                }
+                let library_path = Path::new(&fields[1]);
+                if !library_path.is_absolute() {
+                    continue;
+                }
+                let next = library_path.join("steamapps");
                 if next.is_dir() {
                     let real = next.canonicalize().unwrap_or(next);
-                    if seen.insert((real.clone(), base.launcher)) {
+                    if seen.insert(real.clone()) {
                         additional.push(SteamLibrary {
                             path: real,
                             launcher: base.launcher,
@@ -700,23 +792,22 @@ fn steam_locations_in(home: &Path) -> Vec<SteamLibrary> {
     paths.extend(additional);
     paths
 }
-fn scan_steam_in(home: &Path) -> Vec<SteamGame> {
+fn scan_steam_in(home: &Path, registered: &[steam_libraries::RegisteredLibrary]) -> Vec<SteamGame> {
     let mut results = Vec::new();
     let mut seen = HashSet::new();
-    for library in steam_locations_in(home) {
+    for library in steam_locations_in(home, registered) {
         let entries = match fs::read_dir(&library.path) {
             Ok(items) => items,
             Err(_) => continue,
         };
-        for entry in entries.flatten() {
+        for entry in entries.flatten().take(10_000) {
             let path = entry.path();
             let filename = path.file_name().and_then(|v| v.to_str()).unwrap_or("");
             if !filename.starts_with("appmanifest_") || !filename.ends_with(".acf") {
                 continue;
             }
-            let contents = match fs::read_to_string(&path) {
-                Ok(v) => v,
-                Err(_) => continue,
+            let Some(contents) = steam_libraries::bounded_text(&path) else {
+                continue;
             };
             let mut app_id = None;
             let mut title = None;
@@ -759,7 +850,7 @@ fn scan_steam_in(home: &Path) -> Vec<SteamGame> {
 }
 #[cfg_attr(feature = "desktop", tauri::command)]
 fn scan_steam() -> Result<Vec<Game>, String> {
-    Ok(scan_steam_in(&home()?)
+    Ok(scan_steam_in(&home()?, &load_settings()?.steam_libraries)
         .into_iter()
         .map(|g| g.game)
         .collect())
@@ -770,6 +861,11 @@ fn steam_command(uid: &str, launcher: SteamLauncher) -> Command {
         SteamLauncher::Flatpak => {
             let mut c = launch_command("flatpak");
             c.args(["run", "com.valvesoftware.Steam"]);
+            c
+        }
+        SteamLauncher::Snap => {
+            let mut c = launch_command("snap");
+            c.args(["run", "steam"]);
             c
         }
     };
@@ -933,12 +1029,15 @@ fn launch_steam_impl(uid: String) -> Result<launches::Info, String> {
     if !uid.bytes().all(|b| b.is_ascii_digit()) || uid.is_empty() {
         return Err("Invalid Steam app ID".into());
     }
-    let game = scan_steam_in(&home()?)
+    let game = scan_steam_in(&home()?, &load_settings()?.steam_libraries)
         .into_iter()
         .find(|g| g.game.uid == uid)
         .ok_or("Steam app not found in installed libraries")?;
     // Never silently switch installations: their libraries and settings differ.
-    launches::start(steam_command(&uid, game.launcher), "steam")
+    launches::start(
+        steam_libraries::command_for_launch(&uid, game.launcher)?,
+        "steam",
+    )
 }
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -1031,17 +1130,18 @@ fn validate_game(kind: &str, uid: &str) -> Result<Game, String> {
     // Validate console paths directly instead of rescanning thousands of ROM files
     // for each cover requested as the user scrolls the library.
     let s = spec(kind)?;
-    let root = games_dir(kind)?
-        .canonicalize()
-        .map_err(|_| "Games directory missing")?;
+    let roots = libraries::roots(kind)?;
     let game_path = Path::new(uid)
         .canonicalize()
         .map_err(|_| "Game file missing")?;
-    if !game_path.starts_with(&root) || !game_path.is_file() {
+    if libraries::containing_root(&game_path, &roots).is_none() || !game_path.is_file() {
         return Err("Game is outside this console's library".into());
     }
     if !supported_console_file(s, &game_path) {
         return Err("Unsupported game format".into());
+    }
+    if libraries::is_playlist(kind, &game_path) {
+        libraries::playlist_members(kind, &game_path, &roots)?;
     }
     let ps3_eboot = is_ps3_eboot(kind, &game_path);
     let ps4_eboot = is_ps4_eboot(kind, &game_path);
@@ -1084,11 +1184,20 @@ fn candidate_cover_paths(game: &Game) -> Vec<PathBuf> {
         let Ok(home) = home() else {
             return Vec::new();
         };
-        let roots = [
+        let mut roots = vec![
             home.join(".steam/steam/appcache/librarycache"),
             home.join(".local/share/Steam/appcache/librarycache"),
             home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam/appcache/librarycache"),
+            home.join("snap/steam/common/.local/share/Steam/appcache/librarycache"),
+            home.join("snap/steam/common/.steam/steam/appcache/librarycache"),
         ];
+        if let Ok(settings) = load_settings() {
+            for library in steam_locations_in(&home, &settings.steam_libraries) {
+                if let Some(parent) = library.path.parent() {
+                    roots.push(parent.join("appcache/librarycache"));
+                }
+            }
+        }
         let mut candidates = Vec::new();
         for root in roots {
             candidates.push(root.join(format!("{id}_library_600x900.jpg")));
@@ -1110,12 +1219,12 @@ fn candidate_cover_paths(game: &Game) -> Vec<PathBuf> {
     // A game in its own folder can have cover.png / cover.jpg / cover.webp.
     let unique_game_folder =
         spec(&game.kind).ok().is_some_and(|s| {
-            let root = games_dir(&game.kind)
-                .ok()
-                .and_then(|p| p.canonicalize().ok());
+            let roots = libraries::roots(&game.kind).unwrap_or_default();
             let parent_path = parent.canonicalize().ok();
-            root.is_some()
-                && root != parent_path
+            !roots.is_empty()
+                && parent_path
+                    .as_ref()
+                    .is_some_and(|parent| !roots.contains(parent))
                 && fs::read_dir(parent).ok().is_some_and(|entries| {
                     entries
                         .flatten()
@@ -1200,8 +1309,8 @@ fn download_cover_impl(
     uid: String,
     serial: Option<String>,
 ) -> Result<matrix_cover_core::Outcome, String> {
-    if !["ps1", "ps2"].contains(&kind.as_str()) {
-        return Err("Automatic artwork supports PS1 and PS2".into());
+    if !matrix_cover_core::supports(&kind) {
+        return Err("Automatic artwork supports PS1, PS2, GameCube and Wii".into());
     }
     let game = validate_game(&kind, &uid)?;
     let settings = load_settings()?;
@@ -1418,7 +1527,14 @@ fn main() {
             graphics_diagnostics,
             report_startup,
             scan_console,
+            libraries::list_library_folders,
+            libraries::add_library_folder,
+            libraries::remove_library_folder,
+            libraries::browse_library_folder,
             scan_steam,
+            steam_libraries::list_steam_libraries,
+            steam_libraries::add_steam_library,
+            steam_libraries::remove_steam_library,
             save_emulator,
             emulators::list_flatpaks,
             emulators::browse_emulator,
@@ -1478,7 +1594,7 @@ mod tests {
             format!("\"path\" \"{}\"\n", external.parent().unwrap().display()),
         )
         .unwrap();
-        let games = scan_steam_in(root.path());
+        let games = scan_steam_in(root.path(), &[]);
         assert_eq!(games.len(), 3);
         for game in games {
             let flat = game.game.uid != "11";
@@ -1511,7 +1627,7 @@ mod tests {
         fs::create_dir_all(root.path().join(".steam")).unwrap();
         std::os::unix::fs::symlink(flatpak.parent().unwrap(), root.path().join(".steam/root"))
             .unwrap();
-        let games = scan_steam_in(root.path());
+        let games = scan_steam_in(root.path(), &[]);
         assert_eq!(games.len(), 3);
         assert_eq!(
             games.iter().find(|g| g.game.uid == "22").unwrap().launcher,

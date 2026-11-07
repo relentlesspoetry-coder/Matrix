@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+- Add external console library folder management with a native folder picker, retained managed folders, offline registrations and safe removal without moving or deleting games, saves, favorites or artwork. Existing RPCS3 installed EBOOT folders can be registered.
+- Group valid PS1 .m3u disc playlists for DuckStation while preserving customized disc entries. Reject unsafe, missing, nested and oversized playlists; keep unsupported Dreamcast/.m3u8 discs independent.
+- Add standard-mapped gamepad navigation: D-pad/stick movement, selection, Back, sequential controls and select options, with modal boundaries and held/reconnected input safeguards. Text input and system pickers still need keyboard/mouse; real hardware mappings remain unverified.
+- Detect Snap Steam and register custom Steam library roots with their explicit native/Flatpak/Snap owner. Preserve disconnected roots and route launches without selecting a different Steam installation.
+- Add exact-ID GameCube/Wii Default and 3D artwork from GameTDB, validated disc-header/filename identity and manual confirmation. Keep local covers first and never guess a similar title or another region.
+- Expand backend, UI-lifetime and native-window fixture tests. Fix stale folder-list results, draft input races and modal focus. Preserve 18 console libraries and separate Steam/Windows desktop-shortcut tabs. PS4/Vita remain experimental; PS5/Switch 2 remain library-only.
+
 ## 0.5.10
 
 - Fix melonDS Flatpak game launches so the current ROM directory permits sidecar saves, without granting write access to unrelated folders or setup-only launches.
@@ -7,6 +16,7 @@
 - Keep pending emulator saves and Windows shortcut additions/removals from closing or changing a newer dialog. Repeated submissions are blocked.
 - Preserve an unsaved artwork serial and keyboard focus when favoriting a game. Add accessible names to collapsed navigation and header controls.
 - Add backend, JavaScript and native desktop regression coverage. Real emulator gameplay/save creation and other Linux distributions remain unverified.
+
 
 ## 0.5.9
 

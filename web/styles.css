@@ -262,3 +262,18 @@ button:disabled { opacity: .55; cursor: wait }
 @media(max-width:670px) { .discovery-box { flex-direction: column; align-items: flex-start }.hero-open { margin-left: 0 } }
 
 .platform-notice { color:var(--muted); padding:14px 18px; margin:16px 0 24px; border:1px solid var(--border); border-radius:12px; line-height:1.6; max-width:1100px; }
+
+/* Controller navigation must remain visible even when focus-visible heuristics
+   classify programmatic controller focus as pointer input. */
+.gamepad-navigation :focus { outline: 3px solid #77d7ff; outline-offset: 4px; }
+
+.controller-help { color: var(--muted, #a6b2c7); font-size: .8rem; margin: 16px 0; }
+
+.library-folder-dialog { max-width: 760px; }
+.library-folder-list { list-style: none; padding: 0; max-height: 250px; overflow: auto; }
+.library-folder-list li { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line, #283244); }
+.library-folder-list li > div { min-width: 0; }
+.library-folder-list strong { display: block; overflow-wrap: anywhere; font-size: 13px; }
+.library-folder-list small { display: block; margin-top: 5px; color: var(--muted, #98a4b8); }
+.library-folder-list button { flex: 0 0 auto; }
+@media (max-width: 700px) { .settings-row__right { flex-wrap: wrap; justify-content: flex-end; } }

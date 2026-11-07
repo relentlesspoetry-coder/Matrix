@@ -45,3 +45,55 @@ Before adding automation later, obtain current first-party authorization/API ins
 - Download cache keys include console, serial and style. Successful images persist under `$XDG_DATA_HOME/matrix/covers/online/` with a JSON provenance/index file. Files remain usable while offline or with automatic downloading disabled.
 - Requests are serialized across threads/processes with a file lock, with at least two seconds between request starts. A 404 is cached seven days; transient failures and invalid content are cached fifteen minutes; transport failure also opens a one-minute provider cooldown. 403 opens a 24-hour cooldown; 429/503 default to one hour. Retry-After seconds and HTTP dates are honored with a minimum one-minute cooldown. A later Refresh retries expired failures; an in-progress request may finish after automatic downloads are disabled.
 - TLS validation stays enabled, redirects are rejected, only fixed GitHub URL templates are used, network reads are capped at 4 MB, timeouts are bounded, and images must successfully decode within 4096×4096 dimensions. Invalid or corrupt cache images are not displayed; a later scan replaces corrupt files.
+
+## GameTDB: GameCube and Wii exact-ID covers
+
+Added as a bounded extension of automatic artwork, not an emulator compatibility
+claim. [GameTDB's Wii & GameCube Downloads page](https://www.gametdb.com/Wii/Downloads)
+documents downloadable artwork and programs that use it. The first-party page's
+indexed text was reviewed; direct HTML access through the research browser
+returned 403, and robots.txt could not be retrieved. No HTML scraping or attempt
+to work around those responses is implemented. Dolphin's
+[official cover downloader](https://github.com/dolphin-emu/dolphin/blob/master/Source/Core/UICommon/GameFile.cpp)
+also uses the fixed GameTDB artwork host. These access examples do not grant a
+copyright or redistribution license for commercial artwork.
+
+Matrix Play uses `https://art.gametdb.com/wii/cover/{region}/{id}.png` for Default
+and `https://art.gametdb.com/wii/cover3D/{region}/{id}.png` for 3D. Both GameCube
+and Wii artwork reside under the provider's `wii` directory; Matrix keeps their
+cache entries separate. Six-character IDs are platform-scoped: GameCube retail
+G/D prefixes and Wii R/S prefixes. Other formats remain manual-only.
+The fourth ID character maps E→US, J→JA, P→EN, D→DE, F→FR, I→IT, S→ES and K→KO.
+Unknown regions are rejected rather than trying unrelated regional artwork.
+PAL P selects the provider's English artwork without changing the disc ID.
+
+- Uncompressed ISO/GCM files use only the first 32 bytes, validate the expected
+  GameCube/Wii magic and read the six-byte disc ID. Conflicting platform markers,
+  malformed IDs, unsupported regions and filename/header conflicts require review.
+- Filename identities require a bracketed ID (`Title [RMGE01].rvz`, or parentheses)
+  or a filename consisting only of the ID. Ordinary title text is never searched
+  for a guessed six-character match. These are labeled filename identities, not
+  verified disc headers.
+- RVZ, WBFS, WIA, GCZ and other compressed formats are not parsed for identity.
+  Use an explicit filename ID, confirm the exact ID in details, or choose a local
+  image. This addition does not expand which game formats the launcher accepts.
+- User-confirmed IDs and metadata invalidation reuse the existing cache format.
+  Local covers retain priority. Shared serialized requests, TLS validation,
+  rejected redirects, bounded reads/decoding, negative caching and Retry-After
+  handling apply to GameTDB as well. Only the game ID, selected region/style and
+  ordinary request metadata are sent; no local path or game bytes are uploaded.
+- Artwork support for the other libraries remains unchanged. Missing provider
+  images still require a local cover; supported identity formats do not promise
+  complete catalogue coverage.
+
+Tests use synthetic 32-byte headers and fixture images, never game content.
+
+Validation on November 7, 2026: all 16 ordinary cover-core tests passed (two
+opt-in live tests excluded). Direct HTTPS samples for GameCube GMSE01 Default
+and Wii RMGE01 3D returned HTTP 200 and decoded as PNGs. The production Rust
+transport's opt-in GameTDB smoke test could not complete in this executor:
+`InvalidCertificate(UnknownIssuer)`. The same diagnostic occurred for the
+existing xlenore PS1 endpoint. TLS verification was not weakened. Run
+`cargo test --locked --manifest-path cover-core/Cargo.toml live_gametdb_templates -- --ignored`
+in a normal trusted environment before claiming end-to-end production-network
+verification. Two successful sample URLs do not establish universal coverage.

@@ -181,7 +181,11 @@ pub(crate) fn command(
                     c.arg(format!("--installation={other}"));
                 }
             }
-            c.args(flatpak_game_access(profile, id, &games_dir(id)?, game)?);
+            let folder = match game {
+                Some(path) => libraries::game_root(id, path)?,
+                None => games_dir(id)?,
+            };
+            c.args(flatpak_game_access(profile, id, &folder, game)?);
             if profile
                 .flatpak_runtime_fonts
                 .unwrap_or(profile.flatpak_id == "net.pcsx2.PCSX2")

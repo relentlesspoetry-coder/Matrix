@@ -191,6 +191,69 @@ def main():
             assert len(invoke('scan_console', {'id':'ps1'})) == 1
             assert len(invoke('scan_console', {'id':'ps2'})) == 1
             assert len(invoke('scan_console', {'id':'ps3'})) == 0
+            # External PS1 folders: actual dialog/IPC, grouping, artwork and safe removal.
+            # Launcher scripts below verify argv only, not real emulator gameplay.
+            external_ps1 = home/'External PS1 Collection'
+            external_ps1.mkdir()
+            for name in ['Disc One.chd', 'Disc Two.chd', 'Disc Three.chd', 'Loose.chd']:
+                (external_ps1/name).write_text('Synthetic external-disc fixture')
+            playlist = external_ps1/'Adventure.m3u'
+            (external_ps1/'Broken.m3u').write_text('Loose.chd\nMissing.chd\n')
+            (external_ps1/'Ignored.m3u8').write_text('Loose.chd\n')
+            click('[data-action="console"][data-id="ps1"]')
+            click('[data-action="library-folders"][data-id="ps1"]')
+            wait_for(lambda: js('return document.querySelector(".library-folder-list small")?.textContent === "Managed folder"'))
+            js('document.querySelector("#external-library-path").value=arguments[0]', str(external_ps1))
+            click('[data-action="add-library-folder"]')
+            wait_for(lambda: js('return !libraryFolderBusy && document.querySelectorAll("[data-action=remove-library-folder]").length === 1'))
+            folders = invoke('list_library_folders', {'id':'ps1'})
+            assert folders == [{'path':str(ps1),'managed':True,'available':True}, {'path':str(external_ps1),'managed':False,'available':True}], folders
+            screenshot('matrix-library-folders.png')
+            # Existing individual-disc favorites and imported covers remain reachable.
+            fixture_cover = Path(__file__).parent/'fixtures/demo-cover.png'
+            invoke('set_favorite', {'id':'ps1','uid':str(external_ps1/'Disc One.chd'),'favorite':True})
+            invoke('save_cover', {'kind':'ps1','uid':str(external_ps1/'Disc Two.chd'),'bytes':list(fixture_cover.read_bytes())})
+            playlist.write_text('Disc One.chd\nDisc Two.chd\nDisc Three.chd\n')
+            games = invoke('scan_console', {'id':'ps1'})
+            assert {g['uid'] for g in games} == {str(ps1game),str(playlist),str(external_ps1/'Loose.chd'),str(external_ps1/'Disc One.chd'),str(external_ps1/'Disc Two.chd')}, games
+            invoke('set_favorite', {'id':'ps1','uid':str(playlist),'favorite':True})
+            fixture_cover = Path(__file__).parent/'fixtures/demo-cover.png'
+            invoke('save_cover', {'kind':'ps1','uid':str(playlist),'bytes':list(fixture_cover.read_bytes())})
+            assert invoke('get_cover', {'kind':'ps1','uid':str(playlist)}).startswith('data:image/png;base64,')
+            duckstation_fixture = home/'bin/duckstation-qt'
+            duckstation_fixture.write_text(launcher); duckstation_fixture.chmod(0o755)
+            invoke('save_emulator', {'id':'ps1','emulatorName':'DuckStation fixture','emulatorPath':str(duckstation_fixture),'launchArgs':['-batch','{game}'],'launcher':'executable'})
+            invoke('launch_console_game', {'id':'ps1','uid':str(playlist)})
+            wait_for(lambda: log.read_text().splitlines() == ['-nogui','-fullscreen','-batch','--',str(playlist)])
+            invoke('save_emulator', {'id':'ps1','emulatorName':'Flatpak fixture','emulatorPath':'','launchArgs':['{game}'],'launcher':'flatpak','flatpakId':'org.matrix.TestEmulator','flatpakInstallation':'user'})
+            invoke('launch_console_game', {'id':'ps1','uid':str(playlist)})
+            wait_for(lambda: log.read_text().splitlines() == ['run','--user',f'--filesystem={external_ps1}:ro','org.matrix.TestEmulator',str(playlist)])
+            unplugged_ps1 = external_ps1.with_name('Temporarily disconnected PS1')
+            external_ps1.rename(unplugged_ps1)
+            assert not invoke('list_library_folders', {'id':'ps1'})[1]['available']
+            click('[data-action="remove-library-folder"]')
+            wait_for(lambda: js('return !libraryFolderBusy && document.querySelectorAll("[data-action=remove-library-folder]").length === 0'))
+            assert len(invoke('scan_console', {'id':'ps1'})) == 1
+            unplugged_ps1.rename(external_ps1)
+            for command, params in [('get_cover',{'kind':'ps1','uid':str(playlist)}), ('launch_console_game',{'id':'ps1','uid':str(playlist)})]:
+                try:
+                    invoke(command, params)
+                    raise AssertionError('Removed library remained authorized')
+                except RuntimeError:
+                    pass
+            assert playlist.read_text() == 'Disc One.chd\nDisc Two.chd\nDisc Three.chd\n'
+            assert (external_ps1/'Disc One.chd').read_text() == 'Synthetic external-disc fixture'
+            assert str(playlist) in invoke('bootstrap')['favorites']['ps1']
+            invoke('add_library_folder', {'id':'ps1','path':str(external_ps1)})
+            assert invoke('get_cover', {'kind':'ps1','uid':str(playlist)}).startswith('data:image/png;base64,')
+            assert invoke('get_cover', {'kind':'ps1','uid':str(external_ps1/'Disc Two.chd')}).startswith('data:image/png;base64,')
+            assert str(external_ps1/'Disc One.chd') in invoke('bootstrap')['favorites']['ps1']
+            assert len(invoke('scan_console', {'id':'ps1'})) == 5
+            invoke('remove_library_folder', {'id':'ps1','path':str(external_ps1)})
+            click('[data-action="close"]')
+            click('[data-action="home"]')
+            log.unlink()
+            print('PASS: external-folder dialog, PS1 M3U grouping, malformed-list preservation, scoped Flatpak argv, offline removal and retained favorites/artwork')
             wait_for(lambda: js('return [...document.querySelectorAll(".console-image")].length === 18 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)'))
             update=invoke('update_status')
             assert update['phase'] == 'idle' and update['currentVersion'] == diagnostics['version']
@@ -213,6 +276,8 @@ def main():
                 screenshot('matrix-linux-update-check.png')
                 click('[data-action="close"]')
             screenshot('matrix-linux-home.png')
+            ps1_favorite_baseline = set(invoke('bootstrap')['favorites'].get('ps1', []))
+            assert ps1_favorite_baseline == {str(playlist), str(external_ps1/'Disc One.chd')}
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelectorAll(".game-item").length === 1'))
             if cfg.online:
@@ -223,7 +288,7 @@ def main():
             wait_for(lambda: invoke('bootstrap')['favorites'].get('ps2') == [str(ps2game)])
             click('[data-action="console-favorites"]')
             assert js('return document.querySelectorAll(".game-item").length') == 1
-            assert invoke('bootstrap')['favorites'].get('ps1',[]) == []
+            assert set(invoke('bootstrap')['favorites'].get('ps1', [])) == ps1_favorite_baseline
             try:
                 invoke('set_favorite', {'id':'ps1','uid':str(ps2game),'favorite':True})
                 raise AssertionError('Cross-console favorite accepted')
@@ -297,6 +362,34 @@ def main():
             (external_steam/'appmanifest_23456.acf').write_text('"appid" "23456"\n"name" "Flatpak Steam Fixture"\n')
             invoke('launch_steam_game', {'uid':'23456'})
             wait_for(lambda: log.read_text().splitlines() == ['run','com.valvesoftware.Steam','-applaunch','23456'])
+            # Synthetic Snap client and custom Steam root IPC; no real gameplay.
+            snap = home/'bin/snap'
+            snap.write_text((home/'bin/steam').read_text())
+            snap.chmod(0o755)
+            snap_steam = home/'snap/steam/common/.local/share/Steam/steamapps'
+            snap_steam.mkdir(parents=True)
+            (snap_steam/'appmanifest_34567.acf').write_text('"appid" "34567"\n"name" "Snap Steam Fixture"\n')
+            invoke('launch_steam_game', {'uid':'34567'})
+            wait_for(lambda: log.read_text().splitlines() == ['run','steam','-applaunch','34567'])
+            custom_steam = home/'Custom Steam Library/steamapps'
+            custom_steam.mkdir(parents=True)
+            custom_manifest = custom_steam/'appmanifest_45678.acf'
+            custom_manifest.write_text('"appid" "45678"\n"name" "Custom Steam Fixture"\n')
+            roots = invoke('add_steam_library', {'path':str(custom_steam.parent),'launcher':'native'})
+            assert roots == [{'path':str(custom_steam),'launcher':'native','available':True}], roots
+            invoke('launch_steam_game', {'uid':'45678'})
+            wait_for(lambda: log.read_text().splitlines() == ['-applaunch','45678'])
+            roots = invoke('add_steam_library', {'path':str(custom_steam),'launcher':'snap'})
+            assert len(roots)==1 and roots[0]['launcher']=='snap', roots
+            invoke('launch_steam_game', {'uid':'45678'})
+            wait_for(lambda: log.read_text().splitlines() == ['run','steam','-applaunch','45678'])
+            offline = custom_steam.with_name('unmounted')
+            custom_steam.rename(offline)
+            roots = invoke('list_steam_libraries')
+            assert len(roots)==1 and not roots[0]['available'] and roots[0]['launcher']=='snap', roots
+            assert invoke('remove_steam_library', {'path':str(custom_steam)}) == []
+            offline.rename(custom_steam)
+            assert custom_manifest.is_file(), 'Removing a registration must preserve Steam files'
             # Delayed runner failures must remain visible after successful spawn.
             wait_for(lambda: js('return !state.launchBusy.windows'))
             gio = home/'bin/gio'
@@ -369,6 +462,56 @@ def main():
             key('\ue004')
             assert focused('.emulator-dialog .close')
             print('PASS: native keyboard forward/reverse Tab, expanded/collapsed advanced settings and dialog wrapping')
+            # Exercise real WebKit focus/layout and the production polling loop,
+            # with a synthetic standard Gamepad API device. This is NOT physical
+            # controller, driver mapping, or platform Gamepad API verification.
+            assert js('return ["nav-consoles","nav-steam","nav-windows","nav-settings"].every(id=>document.getElementById(id).getAttribute("aria-label"))')
+            assert js('return document.hasFocus()'), 'Native window must own focus for controller checks'
+            js('''window.__originalGamepads=Object.getOwnPropertyDescriptor(navigator,'getGamepads');
+                window.__testPad={index:0,id:'Matrix synthetic controller',mapping:'standard',connected:true,
+                  axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false,value:0,touched:false}))};
+                Object.defineProperty(navigator,'getGamepads',{configurable:true,value:()=>[window.__testPad]});
+                window.dispatchEvent(new Event('gamepadconnected'));''')
+
+            def gamepad_buttons(*buttons):
+                request('POST', f'/session/{session}/execute/async', {'script': '''
+                    const pressed=arguments[0],done=arguments[arguments.length-1];
+                    window.__testPad.buttons.forEach((button,index)=>{button.pressed=pressed.includes(index);button.value=button.pressed?1:0;});
+                    requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>done(true))));
+                ''', 'args':[list(buttons)]})
+
+            def gamepad_press(button):
+                gamepad_buttons()
+                gamepad_buttons(button)
+
+            gamepad_buttons()
+            js('document.querySelector(".emulator-dialog .close").focus()')
+            gamepad_press(4)  # LB wraps only inside this modal.
+            assert focused('[data-open-after-save]')
+            gamepad_press(5)
+            assert focused('.emulator-dialog .close')
+            assert js('return document.documentElement.classList.contains("gamepad-navigation")')
+            js('document.querySelector("#flatpak-app").selectedIndex=1;document.querySelector("#flatpak-app").focus()')
+            gamepad_press(13)  # D-pad changes a native select without clicking behind it.
+            assert js('return document.querySelector("#flatpak-app").selectedIndex===2')
+            gamepad_press(5)
+            assert focused('[data-action="reload-flatpaks"]')
+            js('document.querySelector(".advanced-setup").open=false;document.querySelector(".advanced-setup summary").focus()')
+            gamepad_press(0)
+            assert js('return document.querySelector(".advanced-setup").open')
+            time.sleep(.5)  # Holding A must not toggle the summary repeatedly.
+            assert js('return document.querySelector(".advanced-setup").open')
+            gamepad_press(1)
+            assert js('return !document.querySelector("[role=dialog]")')
+            gamepad_buttons()
+            js('''window.__testPad.connected=false;
+                if (window.__originalGamepads) Object.defineProperty(navigator,'getGamepads',window.__originalGamepads);
+                else delete navigator.getGamepads;
+                delete window.__testPad; delete window.__originalGamepads;''')
+            print('PASS: simulated gamepad in native WebKit: modal traversal, select, activation, hold guard, back; physical hardware unverified')
+            click('[data-action="configure"][data-id="ps2"]')
+            js('document.querySelector("#emulator-launcher").value="flatpak";document.querySelector("#emulator-launcher").dispatchEvent(new Event("change",{bubbles:true}))')
+            wait_for(lambda: js('return document.querySelector("#flatpak-app").options.length === 4'))
             js('document.querySelector("#flatpak-app").value="org.matrix.TestEmulator|user";document.querySelector("#flatpak-app").dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#config-form").requestSubmit()')
             wait_for(lambda: invoke('bootstrap')['profiles']['ps2'].get('launcher')=='flatpak')
             wait_for(lambda: js('return !document.querySelector("#config-form")'))
@@ -444,6 +587,7 @@ def main():
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
             assert invoke('bootstrap')['profiles']['ps2']['launcher']=='flatpak'
+            assert set(invoke('bootstrap')['favorites'].get('ps1', [])) == ps1_favorite_baseline
             assert legacy in invoke('list_windows_games')
             assert exe.read_text() == 'Synthetic registration fixture.'
             print('PASS: desktop-only registration, direct executable rejection and legacy entry preservation')

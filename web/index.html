@@ -10,6 +10,7 @@
   <script src="./startup.js" defer></script>
   <script src="./data.js" defer></script>
   <script src="./app.js" defer></script>
+  <script src="./gamepad.js" defer></script>
 </head>
 <body>
   <div id="startup-status" class="startup-status" role="status"><strong>Starting Matrix Play…</strong><p>Loading your game libraries.</p><button type="button" hidden>Try again</button></div>
@@ -49,6 +50,7 @@
         </div>
       </header>
       <section class="screen" id="screen" aria-live="polite"></section>
+      <p id="controller-help" class="controller-help" hidden>Controller: D-pad / left stick moves · A selects · B goes back · LB / RB moves between controls. Text entry and system file pickers use keyboard or mouse.</p>
       <footer class="page-footer"><span>Matrix Play · Linux gaming frontend</span><span>Separate libraries · Your games stay in place</span></footer>
     </main>
   </div>
