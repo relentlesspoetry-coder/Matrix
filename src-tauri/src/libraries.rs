@@ -184,7 +184,7 @@ pub(crate) fn playlist_members(
     // DuckStation strips one UTF-8 BOM and ASCII whitespace, not arbitrary
     // Unicode spaces that can legitimately be part of a Linux filename.
     for line in text.strip_prefix('\u{feff}').unwrap_or(text).lines() {
-        let line = line.trim_matches(|c: char| c.is_ascii_whitespace());
+        let line = line.trim_matches(|c: char| c == ' ' || ('\u{9}'..='\u{d}').contains(&c));
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
@@ -442,6 +442,17 @@ mod tests {
         assert_eq!(fs::read(cover).unwrap(), b"existing manual cover fixture");
         assert_eq!(favorites, HashSet::from([favorite]));
     }
+    #[test]
+    fn playlist_whitespace_matches_duckstation_ascii_range() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let disc = root.join("disc.chd");
+        fs::write(&disc, b"fixture").unwrap();
+        let playlist = root.join("Game.m3u");
+        fs::write(&playlist, "\u{b}disc.chd\u{b}\n").unwrap();
+        assert_eq!(playlist_members("ps1", &playlist, &[root]).unwrap(), [disc]);
+    }
+
     #[test]
     fn playlist_preserves_non_ascii_whitespace_in_filenames() {
         let tmp = tempfile::tempdir().unwrap();

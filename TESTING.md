@@ -2,7 +2,7 @@
 
 ## Version 0.6.0 library and navigation slice
 
-Local Rust 1.99.1 checks pass: 66 headless backend tests, 16 cover-core tests
+Local Rust 1.99.1 checks pass: 67 headless backend tests, 16 cover-core tests
 (two explicit live-provider tests omitted) and 13 updater-core tests. JavaScript
 regressions cover gamepad commands, dialog boundaries, external-folder ownership,
 draft preservation, exact cover queues and Steam registration parameters. Folder,
