@@ -168,3 +168,21 @@ resolves `--installed-path`/`-r` against the title IDs in its own configured
 `ux0/app` directory. A scanned eboot or arbitrary external directory is not enough
 information to choose the correct emulator store safely. Existing VPK/ZIP handling
 is unchanged. No new firmware, license, key or game download path is added.
+
+
+## Explicit Dolphin user-folder paths
+
+Dolphin's `-u`/`--user` selects a filesystem user folder, not an account ID.
+[Its command-line parser](https://github.com/dolphin-emu/dolphin/blob/master/Source/Core/UICommon/CommandLineParse.cpp)
+and [SetUserDirectory](https://github.com/dolphin-emu/dolphin/blob/master/Source/Core/UICommon/UICommon.cpp)
+use that path directly. A relative folder previously resolved beneath Home during
+Open emulator but beneath the game directory during a launch, potentially choosing
+different settings or saves.
+
+Matrix now rejects relative or missing user-folder values for recognized Dolphin
+profiles at save and setup/launch time. Open **Edit emulator** and replace the value
+with the full absolute path of the existing Dolphin user folder you intend to use.
+Both separated and attached option forms are checked. Saved profiles and all files
+remain untouched until you explicitly save the corrected profile. Default profiles,
+absolute paths and custom unrecognized launchers are unchanged. Matrix does not
+automatically grant a Flatpak access to a separately selected user folder.

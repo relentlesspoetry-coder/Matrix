@@ -1,6 +1,5 @@
 //! Explicit Steam roots retain their launcher even when a drive is disconnected.
 use super::*;
-use std::io::Read;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,13 +87,7 @@ pub(crate) fn remove_steam_library(path: String) -> Result<Vec<LibraryStatus>, S
     })
 }
 pub(crate) fn bounded_text(path: &Path) -> Option<String> {
-    let mut text = String::new();
-    fs::File::open(path)
-        .ok()?
-        .take(1_048_577)
-        .read_to_string(&mut text)
-        .ok()?;
-    (text.len() <= 1_048_576).then_some(text)
+    bounded_io::read_text(path, 1_048_576)
 }
 
 // Snap aliases named `steam` are often symlinks to the snap multiplexer.

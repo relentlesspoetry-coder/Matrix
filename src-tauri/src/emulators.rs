@@ -165,6 +165,7 @@ pub(crate) fn command(
     id: &str,
     game: Option<&Path>,
 ) -> Result<Command, String> {
+    immersive::validate_profile_paths(profile, id)?;
     match profile.launcher {
         Launcher::Flatpak => {
             installed(profile)?;

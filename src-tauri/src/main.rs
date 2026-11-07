@@ -4,6 +4,7 @@
 )]
 
 mod artwork;
+mod bounded_io;
 #[cfg(test)]
 mod console_library_tests;
 mod discovery;
@@ -590,7 +591,9 @@ fn scan_console_with_customizations(
                 Ok(entry) => entry,
                 Err(_) => continue,
             };
-            if games.len() >= 8000 {
+            // PS1 ISO/CUE companions consume two temporary rows but only one
+            // logical game. Keep the previous 8,000-game capacity after grouping.
+            if games.len() >= if id == "ps1" { 16000 } else { 8000 } {
                 break;
             }
             if !entry.file_type().is_file() {
@@ -603,10 +606,6 @@ fn scan_console_with_customizations(
                 .unwrap_or("")
                 .to_lowercase();
             if !supported_console_file(s, path) {
-                continue;
-            }
-            // Avoid a standalone ISO entry when the same PS1 track is described by a .cue.
-            if id == "ps1" && ext == "iso" && path.with_extension("cue").exists() {
                 continue;
             }
             // PS3 .pkg is an install package, not a directly launchable game.
@@ -640,13 +639,36 @@ fn scan_console_with_customizations(
             }
         }
     }
-    // Keep a customized disc directly reachable after grouping. Do not migrate
-    // favorite IDs or overwrite covers with a playlist identity.
+    // Only scanned, regular, in-scope CUE files can suppress their ISO companion.
+    // Extension spelling is case-insensitive, but Linux filename stems are not.
+    let cue_stems: HashSet<PathBuf> = if id == "ps1" {
+        games
+            .iter()
+            .map(|game| Path::new(&game.path))
+            .filter(|path| {
+                path.extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("cue"))
+            })
+            .map(|path| path.with_extension(""))
+            .collect()
+    } else {
+        HashSet::new()
+    };
+    // Keep customized ISO/disc IDs directly reachable after CUE/playlist grouping.
+    // Do not migrate favorites or overwrite covers with a different identity.
     games.retain(|game| {
-        !grouped_members.contains(Path::new(&game.path))
+        let path = Path::new(&game.path);
+        let cue_companion = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("iso"))
+            && cue_stems.contains(&path.with_extension(""));
+        (!grouped_members.contains(path) && !cue_companion)
             || favorites.contains(&game.uid)
             || covers.is_some_and(|root| libraries::has_manual_cover(root, id, &game.uid))
     });
+    games.truncate(8000);
     games.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
     Ok(games)
 }
@@ -914,6 +936,7 @@ fn save_emulator(
         },
         allow_execute.unwrap_or(false),
     )?;
+    immersive::validate_profile_paths(&profile, &id)?;
     update_settings(|settings| {
         settings.profiles.insert(id, profile);
         Ok(())

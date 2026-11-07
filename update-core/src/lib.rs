@@ -12,6 +12,8 @@ use std::{
     time::Duration,
 };
 
+mod appimage;
+pub use appimage::install_appimage;
 pub mod deb;
 
 pub const REPOSITORY: &str = "relentlesspoetry-coder/Matrix";
@@ -410,58 +412,6 @@ pub fn download(
         release: release.clone(),
         path: target,
     })
-}
-pub fn install_appimage(download: &Downloaded, target: &Path) -> Result<PathBuf, String> {
-    if download.release.kind != "appimage" {
-        return Err("An AppImage update is required".into());
-    }
-    validate_file(&download.path, &download.release.asset, "appimage")?;
-    let target = target.canonicalize().map_err(|e| e.to_string())?;
-    let parent = target.parent().ok_or("AppImage location is invalid")?;
-    let mut old = File::open(&target).map_err(|e| e.to_string())?;
-    let mut header = [0; 11];
-    old.read_exact(&mut header).map_err(|e| e.to_string())?;
-    if !header.starts_with(b"\x7fELF") || &header[8..11] != b"AI\x02" {
-        return Err("The running AppImage could not be identified".into());
-    }
-    let mut staged=tempfile::NamedTempFile::new_in(parent).map_err(|_|"Cannot write the AppImage folder. The update is downloaded; move it to a writable location.")?;
-    std::io::copy(
-        &mut File::open(&download.path).map_err(|e| e.to_string())?,
-        &mut staged,
-    )
-    .map_err(|e| e.to_string())?;
-    staged.flush().map_err(|e| e.to_string())?;
-    validate_file(staged.path(), &download.release.asset, "appimage")?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        staged
-            .as_file()
-            .set_permissions(fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
-    }
-    let backup = parent.join(format!(
-        "{}.previous",
-        target
-            .file_name()
-            .ok_or("Invalid AppImage name")?
-            .to_string_lossy()
-    ));
-    let backup_tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
-    fs::copy(&target, backup_tmp.path()).map_err(|e| e.to_string())?;
-    backup_tmp
-        .as_file()
-        .set_permissions(
-            fs::metadata(&target)
-                .map_err(|e| e.to_string())?
-                .permissions(),
-        )
-        .map_err(|e| e.to_string())?;
-    backup_tmp.as_file().sync_all().map_err(|e| e.to_string())?;
-    staged.as_file().sync_all().map_err(|e| e.to_string())?;
-    backup_tmp.persist(&backup).map_err(|e| e.to_string())?;
-    staged.persist(&target).map_err(|e| e.to_string())?;
-    Ok(target)
 }
 
 #[cfg(test)]

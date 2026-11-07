@@ -68,7 +68,7 @@ function fixture() {
   vm.runInContext(source.replace(startup, '') + `
     toast = onToast;
     globalThis.api = { state, loadCover, goConsole, goSettings, dismissOverlay, saveArtworkOptions,
-      loadFlatpakChoices, refreshNative, fetchArtwork, renderUpdater, runUpdate, openUpdater, handleAction, toggleFavorite };
+      loadFlatpakChoices, refreshNative, fetchArtwork, renderUpdater, runUpdate, openUpdater, handleAction, toggleFavorite, visibleGames, renderConsole, setArtDb: db => { artDb=db; } };
     setupEvents();
   `, context);
   const api = context.api;
@@ -310,4 +310,140 @@ test('duplicate emulator and Windows submits issue only one pending write per fo
     assert.equal(f.calls.filter(c=>c.name===command).length,1);
     saving.resolve();await tick();assert.equal(form.dataset.saving,undefined);
   }
+});
+
+test('an old emulator picker failure does not contaminate a replacement setup dialog', async () => {
+ const f=fixture(), browse=deferred();
+ f.node('#emulator-path');f.node('#emulator-launcher').value='executable';f.node('#config-error');
+ f.responders.browse_emulator=()=>browse.promise;
+ const pending=f.handleAction({dataset:{action:'browse-emulator'}});
+ for(const selector of ['#emulator-path','#emulator-launcher','#config-error'])f.nodes.delete(selector);
+ const error=f.node('#config-error');error.textContent='New dialog validation';
+ browse.reject('Old picker failed');await pending;
+ assert.equal(error.textContent,'New dialog validation');
+});
+test('an emulator picker result preserves edits typed while its response is pending',async()=>{
+ const f=fixture(),browse=deferred();
+ const input=f.node('#emulator-path');input.value='/initial';f.node('#emulator-launcher').value='executable';
+ f.responders.browse_emulator=()=>browse.promise;
+ const pending=f.handleAction({dataset:{action:'browse-emulator'}});
+ input.value='/new-draft';browse.resolve('/old-picker-choice');await pending;
+ assert.equal(input.value,'/new-draft');
+});
+test('late prior refresh cannot restore entries removed by the newer refresh',async()=>{
+ const f=fixture(),old=deferred(),recent=deferred();
+ let scans=0;f.responders.list_windows_games=()=>++scans===1?old.promise:recent.promise;
+ const first=f.refreshNative();const second=f.refreshNative();
+ recent.resolve([]);await second;
+ old.resolve([{uid:'/old.desktop',title:'Removed title',target:'/old.desktop',runner:'desktop'}]);await first;
+ assert.equal(f.state.windows.length,0);
+});
+test('a slow earlier cover-file read cannot overwrite a later selection',async()=>{
+ const f=fixture(),old=deferred();f.state.selectedGame={id:'ps2',uid:'test.iso'};
+ const first=f.loadCover({type:'image/png',size:1,arrayBuffer:()=>old.promise});
+ await f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([2]).buffer});
+ old.resolve(new Uint8Array([1]).buffer);await first;
+ assert.deepEqual(f.calls.filter(c=>c.name==='save_cover').map(c=>c.args.bytes[0]),[2]);
+});
+
+test('newest release-year sort is unavailable without metadata and resets stale selection',()=>{
+  const f=fixture();f.state.page='console';f.state.consoleId='ps2';f.state.sort='recent';f.renderConsole();
+  assert.equal(f.state.sort,'default');const html=f.node('#screen').innerHTML;
+  assert.match(html,/<option value="recent"[^>]*disabled>Release year: newest first/);
+  assert.match(html,/unavailable: these titles have no release-year metadata/);
+});
+test('release-year sort uses only positive integer years and keeps unknown titles last',()=>{
+  const f=fixture();f.state.imported.ps2=[{uid:'a',title:'Unknown',year:0},{uid:'b',title:'Older',year:1999},{uid:'c',title:'Newest',year:2005},{uid:'d',title:'Invalid',year:Infinity}];
+  f.state.sort='recent';assert.deepEqual(Array.from(f.visibleGames('ps2'),game=>game.title),['Newest','Older','Unknown','Invalid']);
+  f.state.page='console';f.state.consoleId='ps2';f.renderConsole();assert.doesNotMatch(f.node('#screen').innerHTML,/<option value="recent"[^>]*disabled/);
+});
+test('refresh removing release-year metadata resets sort and selected control',async()=>{
+  const f=fixture();f.state.page='console';f.state.consoleId='ps2';f.state.sort='recent';f.state.imported.ps2=[{uid:'a',title:'Known',year:2001}];
+  f.node('#sort-games').value='recent';f.responders.scan_console=()=>Promise.resolve([{uid:'b',title:'No metadata'}]);
+  await f.refreshNative();assert.equal(f.state.sort,'default');assert.equal(f.node('#sort-games').value,'default');
+});
+test('native cover writes serialize while newest selection owns the final cache',async()=>{
+  const f=fixture(),writing=deferred();f.state.selectedGame={id:'ps2',uid:'test.iso'};
+  f.responders.save_cover=args=>args.bytes[0]===1?writing.promise:Promise.resolve();
+  const first=f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([1]).buffer});await tick();
+  const second=f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([2]).buffer});await tick();
+  assert.deepEqual(f.calls.filter(c=>c.name==='save_cover').map(c=>c.args.bytes[0]),[1]);
+  writing.resolve();await Promise.all([first,second]);
+  assert.deepEqual(f.calls.filter(c=>c.name==='save_cover').map(c=>c.args.bytes[0]),[1,2]);assert.equal(f.blobs.size,1);assert.equal(f.messages.filter(m=>m.includes('Cover saved')).length,1);
+});
+test('failed earlier cover write does not prevent newer selection saving',async()=>{
+  const f=fixture(),writing=deferred();f.state.selectedGame={id:'ps2',uid:'test.iso'};
+  f.responders.save_cover=args=>args.bytes[0]===1?writing.promise:Promise.resolve();
+  const first=f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([1]).buffer});await tick();
+  const second=f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([2]).buffer});await tick();
+  writing.reject(Error('Old failed'));await Promise.all([first,second]);assert.equal(f.messages.some(m=>m.includes('Old failed')),false);assert.equal(f.blobs.size,1);
+});
+test('stale refresh errors do not obscure a newer successful refresh',async()=>{
+  const f=fixture(),old=deferred();let reads=0;f.responders.list_windows_games=()=>++reads===1?old.promise:Promise.resolve([]);
+  const first=f.refreshNative();await f.refreshNative();old.reject(Error('Stale scan'));await first;assert.equal(f.messages.some(m=>m.includes('Stale scan')),false);
+});
+
+test('preview cover transactions are issued synchronously in selection order',async()=>{
+  const f=fixture(),transactions=[],puts=[];f.state.native=false;f.state.selectedGame={id:'ps2',uid:'test.iso'};
+  f.setArtDb({transaction(store,mode){
+    assert.equal(store,'covers');assert.equal(mode,'readwrite');
+    const tx={objectStore(name){assert.equal(name,'covers');return {put(item){puts.push(item);}};}};
+    transactions.push(tx);return tx;
+  }});
+  const old={type:'image/png',size:1,label:'old'},latest={type:'image/png',size:1,label:'latest'};
+  const first=f.loadCover(old),second=f.loadCover(latest);
+  // Both puts already happened before either completion/await. IndexedDB
+  // readwrite transactions with overlapping scopes run in this creation order.
+  assert.deepEqual(puts.map(item=>item.blob.label),['old','latest']);
+  assert.equal(f.state.art.get('ps2|test.iso'),'blob:2');
+  transactions[0].oncomplete();await first;assert.equal(f.messages.length,0);
+  transactions[1].oncomplete();await second;
+  assert.equal(f.state.art.get('ps2|test.iso'),'blob:2');assert.equal(f.blobs.size,1);
+  assert.equal(f.messages.filter(message=>message.includes('saved to this browser')).length,1);
+});
+test('preview selection before database readiness is not queued for a later stale write',async()=>{
+  const f=fixture(),transactions=[],puts=[];f.state.native=false;f.state.selectedGame={id:'ps2',uid:'test.iso'};
+  await f.loadCover({type:'image/png',size:1,label:'before-open'});
+  assert.match(f.messages.at(-1),/session; browser storage was unavailable/);
+  f.setArtDb({transaction(){const tx={objectStore(){return {put(item){puts.push(item);}};}};transactions.push(tx);return tx;}});
+  const latest=f.loadCover({type:'image/png',size:1,label:'after-open'});
+  assert.deepEqual(puts.map(item=>item.blob.label),['after-open']);
+  transactions[0].oncomplete();await latest;assert.equal(f.state.art.get('ps2|test.iso'),'blob:2');
+});
+
+test('a failed latest cover selection retains consistency with the preceding successful disk write',async()=>{
+ const f=fixture(),saving=deferred();f.state.selectedGame={id:'ps2',uid:'test.iso'};
+ f.state.art.set('ps2|test.iso','data:original-cover');
+ let count=0,persisted=0;
+ f.responders.get_cover=()=>Promise.resolve(persisted ? 'data:saved-cover' : 'data:original-cover');
+ f.responders.save_cover=async args=>{
+  if(++count===1){await saving.promise;persisted=args.bytes[0];return;}
+  throw Error('New cover save failed');
+ };
+ const old=f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([1]).buffer});
+ await tick();
+ const latest=f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([2]).buffer});
+ await tick();saving.resolve();await old;await latest;
+ assert.equal(persisted,1);
+ assert.ok(f.calls.some(call=>call.name==='get_cover'),'Read actual retained disk artwork after failure');
+ assert.equal(f.state.art.get('ps2|test.iso'),'data:saved-cover','Reconcile the actual persisted image after the newest save fails');
+});
+
+test('failed latest cover read reconciles only after an earlier active write settles',async()=>{
+  const f=fixture(),writing=deferred();f.state.selectedGame={id:'ps2',uid:'test.iso'};let persisted='data:original';
+  f.responders.save_cover=async()=>{await writing.promise;persisted='data:saved';};f.responders.get_cover=()=>Promise.resolve(persisted);
+  const first=f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([1]).buffer});await tick();
+  const latest=f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>{throw Error('Read failed');}});await tick();
+  assert.equal(f.calls.filter(call=>call.name==='get_cover').length,0);
+  writing.resolve();await Promise.all([first,latest]);assert.equal(f.state.art.get('ps2|test.iso'),'data:saved');
+  assert.match(f.messages.at(-1),/Read failed/);
+});
+test('failed cover reconciliation cannot overwrite a subsequent selection',async()=>{
+  const f=fixture(),reading=deferred();f.state.selectedGame={id:'ps2',uid:'test.iso'};
+  f.responders.save_cover=args=>args.bytes[0]===1?Promise.reject(Error('Failed')):Promise.resolve();
+  f.responders.get_cover=()=>reading.promise;
+  const failed=f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([1]).buffer});await tick();
+  await f.loadCover({type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([2]).buffer});
+  const newest=f.state.art.get('ps2|test.iso');reading.resolve('data:older-disk');await failed;
+  assert.equal(f.state.art.get('ps2|test.iso'),newest);
 });

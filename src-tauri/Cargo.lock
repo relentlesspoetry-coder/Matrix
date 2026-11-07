@@ -1969,10 +1969,11 @@ dependencies = [
 
 [[package]]
 name = "matrix-frontend"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "base64 0.22.1",
  "dirs 6.0.0",
+ "libc",
  "matrix-cover-core",
  "matrix-update-core",
  "serde",

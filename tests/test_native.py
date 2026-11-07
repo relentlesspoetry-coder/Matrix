@@ -255,6 +255,29 @@ def main():
             click('[data-action="home"]')
             log.unlink()
             print('PASS: external-folder dialog, PS1 M3U grouping, malformed-list preservation, scoped Flatpak argv, offline removal and retained favorites/artwork')
+            cue_folder = home/'CUE grouping fixtures'
+            cue_folder.mkdir()
+            cue_iso, cue_file = cue_folder/'Game.ISO', cue_folder/'Game.CUE'
+            cue_iso.write_text('Original ISO fixture')
+            cue_file.mkdir()
+            invoke('add_library_folder', {'id':'ps1','path':str(cue_folder)})
+            assert str(cue_iso) in {g['uid'] for g in invoke('scan_console', {'id':'ps1'})}
+            cue_file.rmdir()
+            cue_file.symlink_to(cue_iso)
+            assert str(cue_iso) in {g['uid'] for g in invoke('scan_console', {'id':'ps1'})}
+            cue_file.unlink()
+            cue_file.write_text('FILE "Game.ISO" BINARY\n')
+            rows = {g['uid'] for g in invoke('scan_console', {'id':'ps1'})}
+            assert str(cue_file) in rows and str(cue_iso) not in rows, rows
+            invoke('set_favorite', {'id':'ps1','uid':str(cue_iso),'favorite':True})
+            assert str(cue_iso) in {g['uid'] for g in invoke('scan_console', {'id':'ps1'})}
+            invoke('set_favorite', {'id':'ps1','uid':str(cue_iso),'favorite':False})
+            invoke('save_cover', {'kind':'ps1','uid':str(cue_iso),'bytes':list(fixture_cover.read_bytes())})
+            assert str(cue_iso) in {g['uid'] for g in invoke('scan_console', {'id':'ps1'})}
+            assert invoke('get_cover', {'kind':'ps1','uid':str(cue_iso)}).startswith('data:image/png;base64,')
+            invoke('remove_library_folder', {'id':'ps1','path':str(cue_folder)})
+            assert cue_iso.read_text() == 'Original ISO fixture'
+            print('PASS: CUE grouping ignores directories/symlinks, matches uppercase extensions and preserves customized ISO identities')
             # Supported compressed extensions use the same real IPC/argv path.
             # These files and launchers are synthetic, not actual emulator gameplay.
             for console_id, engine, extension in [('psp','ppsspp','CHD'), ('gamecube','dolphin-emu','WIA'),
@@ -332,6 +355,10 @@ def main():
             assert ps1_favorite_baseline == {str(playlist), str(external_ps1/'Disc One.chd')}
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelectorAll(".game-item").length === 1'))
+            assert js('return document.querySelector("#sort-games option[value=recent]").disabled')
+            assert 'no release-year metadata' in js('return document.querySelector("#sort-year-hint").textContent')
+            js('state.sort="recent";renderGameResults()')
+            assert js('return state.sort==="default" && document.querySelector("#sort-games").value==="default"')
             if cfg.online:
                 wait_for(lambda: invoke('get_cover', {'kind':'ps2','uid':str(ps2game)}), 60)
                 wait_for(lambda: invoke('get_cover', {'kind':'ps1','uid':str(ps1game)}), 60)

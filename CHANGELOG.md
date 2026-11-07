@@ -1,7 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.5.11
 
+- Preserve the original AppImage rollback copy across repeated or concurrent updates, with cross-process locking, unchanged-target checks and recovery on failed replacement.
+- Reject non-regular Steam manifest, desktop-entry and PCSX2 configuration files without blocking scans or launch preflight. Keep bounded regular-file reads and existing regular symlink targets.
+- Require an explicit absolute Dolphin user-folder path for ambiguous -u/--user profiles. Reject unsafe launch/save attempts with repair guidance while retaining existing profiles and game/save files unchanged.
+- Keep controller focus outlines after Back, and reconcile the actual retained cover after a later cover selection fails.
+- Prevent delayed refreshes from restoring older library rows, emulator-picker results/errors from overwriting newer dialogs or drafts, and older cover selections from replacing newer choices. Serialize per-game native cover writes.
+- Group PS1 ISO/CUE companions only when the CUE is a scanned regular file. Handle mixed-case extensions, ignore directory/symlink companions and retain favorite or manually illustrated ISO entries. Preserve the 8,000 logical-game limit for large ISO/CUE collections.
+- Label release-year sorting accurately and disable it with an explanation when year metadata is unavailable. Update preview test selectors and include controller code in the browser harness.
 - Recognize PSP CHD, GameCube WIA/CISO and Wii GCZ/CISO images using the existing PPSSPP and Dolphin launch adapters, with matching preview filters. No conversion or game-file changes are performed.
 - Read bounded local PARAM.SFO display titles for registered PS3 installed/disc EBOOT folders and extracted PS4 eboots. Keep canonical game paths, favorites, artwork and launch arguments unchanged; malformed or unavailable metadata falls back to folder names.
 - Add malformed-metadata, scope, format, customization-preservation and literal-argv fixtures, plus native IPC/UI coverage. These synthetic checks do not certify real emulator gameplay.

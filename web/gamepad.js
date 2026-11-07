@@ -50,7 +50,7 @@
     return best;
   }
   function install(window) {
-    const document=window.document;
+    const document=window.document, controllerKeyEvents=new WeakSet();
     function controls() {
       const scope=document.querySelector('#overlay-root [role="dialog"]') || document;
       return [...scope.querySelectorAll(selector)].filter(node=>node.tabIndex>=0 && !node.matches(':disabled') && !node.closest('[hidden],[inert]')
@@ -63,7 +63,12 @@
       node.focus();node.scrollIntoView({block:'nearest',inline:'nearest'});
     }
     function dispatch(action) {
-      if (action==='back') {document.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return;}
+      document.documentElement.classList.add('gamepad-navigation');
+      if (action==='back') {
+        const event=new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true});
+        controllerKeyEvents.add(event);
+        document.dispatchEvent(event);return;
+      }
       const options=controls();if (!options.length) return;
       const active=document.activeElement;
       if (!options.includes(active)) {focus(options[0]);return;}
@@ -97,7 +102,7 @@
     window.addEventListener('gamepadconnected',start);
     document.addEventListener('visibilitychange',start);
     document.addEventListener('pointerdown',()=>document.documentElement.classList.remove('gamepad-navigation'));
-    document.addEventListener('keydown',()=>document.documentElement.classList.remove('gamepad-navigation'));
+    document.addEventListener('keydown',event=>{if (!controllerKeyEvents.has(event)) document.documentElement.classList.remove('gamepad-navigation');});
     start();
   }
   if (typeof module!=='undefined' && module.exports) module.exports={commands,createInput,nearest,install};

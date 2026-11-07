@@ -1,7 +1,7 @@
 [package]
 name = "matrix-frontend"
 default-run = "matrix-frontend"
-version = "0.5.10"
+version = "0.5.11"
 edition = "2021"
 rust-version = "1.90"
 authors = ["relentlesspoetry-coder"]
@@ -26,6 +26,7 @@ dirs = "6"
 walkdir = "2"
 sha2 = "0.10"
 base64 = "0.22"
+libc = "0.2"
 matrix-cover-core = { path = "../cover-core" }
 matrix-update-core = { path = "../update-core" }
 

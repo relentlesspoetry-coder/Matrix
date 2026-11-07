@@ -1,9 +1,9 @@
 # Test Matrix Play on Linux
 
-## Unreleased installed-title and compressed-format checks
+## Version 0.5.11 async ownership and console-library checks
 
-Local Rust 1.99.1 passes 72 headless backend tests, 16 cover-core tests (two
-opt-in live-provider checks omitted), 13 updater-core tests and 93 JavaScript
+Local Rust 1.99.1 passes 83 headless backend tests, 16 cover-core tests (two
+opt-in live-provider checks omitted), the updater-core suite and 109 JavaScript
 fixtures. Folder, release/signing, DEB-helper and log-lifetime checks also pass,
 along with formatting, syntax and patch-whitespace checks. Release fixtures use
 disposable local repositories and keys, not a real project publication.
@@ -21,10 +21,32 @@ boundaries and malformed-metadata fallback. Title changes preserve canonical
 UIDs, favorites, artwork and original game bytes. Native IPC/UI cases also cover
 new-format launch arguments and escaping of metadata-derived titles.
 
-Native desktop execution and installer builds remain unrun locally: GTK/WebKit
-development libraries and desktop drivers are absent. The new native fixtures
-need the existing Linux CI environment before release. No release version is
-bumped and no gameplay compatibility claim is made.
+The installed-title/format slice at `5be72628dcf7b531372b605812eebd3b15cc07e6` passed
+[Linux CI run 42401537952](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42401537952),
+including the actual native window, both installers and live cover-provider tests.
+Later async and CUE repairs repeat all native/installer gates on the exact versioned
+release before publication. GTK/WebKit development libraries and desktop drivers
+are absent in this local executor. No gameplay compatibility claim is made.
+
+Additional regressions cover out-of-order library refreshes, emulator browsing
+after dialog/draft changes, consecutive cover reads/writes, preview IndexedDB
+transaction order and unavailable release-year sorting. CUE grouping tests cover
+uppercase extensions, directories, symlinks, distinct Linux filename stems,
+console separation and favorite/manual-cover preservation. Native fixtures also
+exercise CUE scanning and release-year availability through the running app.
+Independent backend checks passed all three reproduced CUE cases and synthetic
+launch/data-preservation cases across 16 adapters, including external-drive
+disconnection/reconnection. These remain harmless fixture launches, not gameplay.
+
+Deeper independent checks reproduce and cover FIFO metadata hangs, 4,100-game
+ISO/CUE capacity, and relative Dolphin user-folder ambiguity. Profile validation
+requires the user to choose an absolute existing save/config location; it does not
+silently rebase relative paths. The local reader checks regular files before and
+after a nonblocking open, preserving ordinary symlinked configuration files.
+Controller Back and failed-latest-cover recovery regressions also pass.
+
+PS3/Wii U automatic artwork is not included: a separately staged provider change
+needs correction and production-transport verification.
 
 ## Version 0.5.10 library, navigation and repair validation
 
@@ -200,16 +222,16 @@ checks output after the launching process exits and log-write failure using
 synthetic subprocesses. Run the normal Rust suites and desktop tests as well;
 these checks do not replace a real emulator test or privileged DEB upgrade test.
 
-This is the native testing release, version 0.5.10. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
+This is the native testing release, version 0.5.11. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04
 
-1. Open the [v0.5.10 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.10) — the repository and installers are public.
-2. Download `Matrix-Play_0.5.10_amd64.deb`.
+1. Open the [v0.5.11 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.11) — the repository and installers are public.
+2. Download `Matrix-Play_0.5.11_amd64.deb`.
 3. Open a terminal in the download folder and run:
 
    ```bash
-   sudo apt install ./Matrix-Play_0.5.10_amd64.deb
+   sudo apt install ./Matrix-Play_0.5.11_amd64.deb
    ```
 
 4. Open **Matrix Play** from the application menu. You can also run `matrix-frontend` in a terminal to capture diagnostics.
@@ -218,24 +240,24 @@ APT installs the GTK/WebKit runtime dependencies if needed. Rust, Node, the sour
 
 ## Portable AppImage alternative
 
-Download `Matrix-Play_0.5.10_amd64.AppImage` from the same release. In its download folder run:
+Download `Matrix-Play_0.5.11_amd64.AppImage` from the same release. In its download folder run:
 
 ```bash
-chmod +x Matrix-Play_0.5.10_amd64.AppImage
-./Matrix-Play_0.5.10_amd64.AppImage
+chmod +x Matrix-Play_0.5.11_amd64.AppImage
+./Matrix-Play_0.5.11_amd64.AppImage
 ```
 
 If FUSE is unavailable, run it in extraction mode:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.10_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.11_amd64.AppImage
 ```
 
 The AppImage's actual native window, IPC, scanning, local covers, settings and launcher dispatch passed the same isolated desktop test in extraction mode. Other Linux distributions and native FUSE mounting have not been validated. The DEB is recommended on Zorin/Ubuntu.
 
 ## Upgrade from the blank-window build
 
-Close Matrix Play, then install the v0.5.10 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
+Close Matrix Play, then install the v0.5.11 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
 
 If a new startup problem occurs, attach `~/.local/share/matrix/startup.log` to the issue. This contains bounded startup stages and renderer/load errors, not game data. In this incident, graphics workarounds did not resolve the problem; a fresh cache directory did, which the affected user confirmed. The specific problematic shared cache file was not identified or deleted.
 

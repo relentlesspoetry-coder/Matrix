@@ -446,10 +446,8 @@ pub(crate) fn discover() -> Result<Report, String> {
         .take(500)
     {
         let path = entry.path();
-        if path.extension().is_some_and(|e| e == "desktop")
-            && fs::metadata(&path).is_ok_and(|m| m.len() < 65536)
-        {
-            if let Ok(text) = fs::read_to_string(path) {
+        if path.extension().is_some_and(|e| e == "desktop") {
+            if let Some(text) = bounded_io::read_text(&path, 65535) {
                 for path in desktop_paths(&text) {
                     add_image(&mut map, &path);
                 }

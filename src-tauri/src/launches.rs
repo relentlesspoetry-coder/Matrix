@@ -308,11 +308,9 @@ pub(crate) fn preflight(profile: &EmulatorProfile) -> Result<(), String> {
     if !config.exists() {
         return Err("PCSX2 needs its first-run setup. Choose Open emulator to complete the wizard and select your PS2 BIOS.".into());
     }
-    if fs::metadata(&config).is_ok_and(|m| m.len() <= 1024 * 1024) {
-        if let Ok(text) = fs::read_to_string(config) {
-            if let Some(message) = setup_issue(&text) {
-                return Err(message);
-            }
+    if let Some(text) = bounded_io::read_text(&config, 1024 * 1024) {
+        if let Some(message) = setup_issue(&text) {
+            return Err(message);
         }
     }
     Ok(())

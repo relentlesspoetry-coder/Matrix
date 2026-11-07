@@ -7,14 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / 'web'
 HTML = (WEB / 'index.html').read_text().replace('<link rel="stylesheet" href="./styles.css">', '<style>' + (WEB / 'styles.css').read_text() + '</style>')
 HTML = HTML.replace('<script src="./data.js" defer></script>', '').replace('<script src="./app.js" defer></script>', '')
-HTML = HTML.replace('<script src="./startup.js" defer></script>', '')
+HTML = HTML.replace('<script src="./startup.js" defer></script>', '').replace('<script src="./gamepad.js" defer></script>', '')
 for name in ['matrix-play-logo.png','matrix-play-icon.png']:
     uri='data:image/png;base64,'+base64.b64encode((WEB/'assets'/name).read_bytes()).decode()
     HTML=HTML.replace('./assets/'+name,uri)
 APP = (WEB / 'app.js').read_text()
 for asset in (WEB/'assets/consoles').glob('*.webp'):
     APP = APP.replace('./assets/consoles/'+asset.name, 'data:image/webp;base64,'+base64.b64encode(asset.read_bytes()).decode())
-HTML = HTML.replace('</body>', '<script>' + (WEB / 'startup.js').read_text() + '</script>' + '<script>' + (WEB / 'data.js').read_text() + '</script><script>' + APP + '</script></body>')
+HTML = HTML.replace('</body>', '<script>' + (WEB / 'startup.js').read_text() + '</script>' + '<script>' + (WEB / 'data.js').read_text() + '</script><script>' + APP + '</script><script>' + (WEB / 'gamepad.js').read_text() + '</script></body>')
 SCREENS = ROOT / 'screenshots'
 SCREENS.mkdir(exist_ok=True)
 MOCK = '''
@@ -165,7 +165,7 @@ with sync_playwright() as p:
     native.wait_for_function('window.__calls.some(x=>x[0]==="download_cover" && x[1].kind==="ps2")')
     assert 'No serial found' in native.locator('.cover-result').inner_text()
     native.locator('#cover-serial').fill('SLUS-20312')
-    native.get_by_role('button',name='Find cover by serial').click()
+    native.get_by_role('button',name='Find exact cover').click()
     native.wait_for_function('document.querySelector(".cover-result").textContent.includes("user-confirmed")')
     screenshot(native,'matrix-cover-details.png')
     native.get_by_role('button',name='Open TheCoverProject').click()
@@ -210,7 +210,7 @@ with sync_playwright() as p:
     native.locator('#auto-covers').uncheck()
     native.wait_for_function('window.__artOptions.enabled === false')
     before=native.evaluate('window.__calls.filter(x=>x[0]==="download_cover").length')
-    native.get_by_role('button',name='Refresh',exact=True).click()
+    native.get_by_role('button',name='Refresh library',exact=True).click()
     native.wait_for_timeout(150)
     assert native.evaluate('window.__calls.filter(x=>x[0]==="download_cover").length')==before
     native.get_by_role('button', name='Edit').click()

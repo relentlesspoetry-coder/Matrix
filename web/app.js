@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.10 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.11 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const AUTO_COVER_KINDS = ['ps1','ps2','gamecube','wii'];
@@ -322,16 +322,21 @@ function gameCard(consoleInfo, game, index) {
     <button class="favorite ${liked ? 'active' : ''}" type="button" data-action="favorite" data-id="${consoleInfo.id}" data-uid="${escapeHtml(game.uid)}" aria-label="${liked ? 'Remove' : 'Add'} ${escapeHtml(game.title)} ${liked ? 'from' : 'to'} favorites" aria-pressed="${liked}">${glyph('heart')}</button>
   </div>`;
 }
+function releaseYear(game) { return Number.isInteger(game.year) && game.year>0 ? game.year : 0; }
+function hasReleaseYears(id) { return gamesFor(id).some(game=>releaseYear(game)>0); }
+function normalizeGameSort(id) { if (state.sort==='recent' && !hasReleaseYears(id)) state.sort='default'; }
 function visibleGames(id) {
+  normalizeGameSort(id);
   let result = gamesFor(id).filter(game => game.title.toLocaleLowerCase().includes(state.query.toLocaleLowerCase()));
   if (state.gameFilter === 'Favorites') result = result.filter(game => state.favorites.has(favoriteKey(id, game.uid)));
   if (state.sort === 'az') result.sort((a,b) => a.title.localeCompare(b.title));
-  if (state.sort === 'recent') result.sort((a,b) => (b.year || 0) - (a.year || 0));
+  if (state.sort === 'recent') result.sort((a,b) => releaseYear(b) - releaseYear(a));
   return result;
 }
 function renderGameResults() {
   const consoleInfo = byId[state.consoleId];
   const games = visibleGames(consoleInfo.id);
+  const sortControl=$('#sort-games');if (sortControl) sortControl.value=state.sort;
   $('#game-results').innerHTML = games.length
     ? `<div class="${state.view === 'grid' ? 'game-grid' : 'game-list'}">${games.map((game,index) => gameCard(consoleInfo,game,index)).join('')}</div>`
     : state.gameFilter === 'Favorites' ? `<div class="empty empty-library"><strong>${favoriteCount(consoleInfo.id) ? 'No favorites match this search' : `No ${escapeHtml(consoleInfo.name)} favorites yet`}</strong><p>${favoriteCount(consoleInfo.id) ? 'Try another search, or switch to All games.' : 'Select the heart on a game in All games to add it to this console’s favorites list.'}</p><button type="button" class="button button-ghost" data-action="filter-games" data-value="All">Browse all games</button></div>` : `<div class="empty empty-library"><strong>${state.native && !importedFor(consoleInfo.id).length ? 'No games detected yet' : 'No matching games'}</strong><p>${state.native && !importedFor(consoleInfo.id).length ? 'Place your game files in this console’s Games folder and click Refresh.' : 'Try another search or switch to All games.'}</p></div>`;
@@ -339,6 +344,8 @@ function renderGameResults() {
 }
 function renderConsole() {
   const consoleInfo = byId[state.consoleId];
+  normalizeGameSort(consoleInfo.id);
+  const yearSorting=hasReleaseYears(consoleInfo.id);
   const imported = importedFor(consoleInfo.id);
   const hasImported = imported.length > 0;
   const subtitle = consoleInfo.libraryOnly ? `${imported.length} collection files · Library only` : state.native ? `${imported.length} games · ${isConfigured(consoleInfo.id) ? 'Emulator linked' : 'Emulator not linked'}` : hasImported ? `${imported.length} folder preview titles · ${isConfigured(consoleInfo.id) ? 'Profile saved' : 'Emulator not linked'}` : `${consoleInfo.games.length} sample titles · ${isConfigured(consoleInfo.id) ? 'Profile saved' : 'Emulator not linked'}`;
@@ -347,9 +354,9 @@ function renderConsole() {
     <div id="launch-status"></div>${consoleInfo.supportNote ? `<p class="platform-notice" role="note">${escapeHtml(consoleInfo.supportNote)}</p>` : ''}<div class="library-heading"><div><h2>Game library</h2><p>${state.native ? `Managed folder: ${escapeHtml(state.folders[consoleInfo.id] || '')}` : hasImported ? 'Showing filenames from your selected folder. Not playable from this browser.' : 'Sample games and placeholder covers for UI review.'}</p></div><div class="library-heading-actions">${state.native ? `<button type="button" class="button button-ghost" data-action="library-folders" data-id="${consoleInfo.id}">Manage folders</button>` : ''}<button type="button" class="button button-subtle" data-action="${state.native ? 'open-folder' : 'preview-folder'}">${glyph('folder')} ${state.native ? 'Open games folder' : 'Preview game folder'}</button>${!state.native && hasImported ? `<button type="button" class="button button-ghost" data-action="clear-preview">${glyph('trash')} Clear preview</button>` : ''}</div></div>
     <div class="library-tools"><label class="search">${glyph('search')}<input type="search" id="game-search" autocomplete="off" placeholder="Search ${escapeHtml(consoleInfo.name)} games" aria-label="Search ${escapeHtml(consoleInfo.name)} games" value="${escapeHtml(state.query)}"></label>
       <div class="segmented" role="group" aria-label="Game filter">${['All','Favorites'].map(value => `<button type="button" data-action="filter-games" data-value="${value}" class="${state.gameFilter === value ? 'active' : ''}" aria-pressed="${state.gameFilter === value}">${value === 'All' ? 'All games' : `Favorites (${favoriteCount(consoleInfo.id)})`}</button>`).join('')}</div>
-      <select id="sort-games" class="sort-select" aria-label="Sort games"><option value="default" ${state.sort === 'default' ? 'selected' : ''}>Default order</option><option value="az" ${state.sort === 'az' ? 'selected' : ''}>Title: A to Z</option><option value="recent" ${state.sort === 'recent' ? 'selected' : ''}>Newest first</option></select>
+      <select id="sort-games" class="sort-select" aria-label="Sort games" aria-describedby="sort-year-hint"><option value="default" ${state.sort === 'default' ? 'selected' : ''}>Default order</option><option value="az" ${state.sort === 'az' ? 'selected' : ''}>Title: A to Z</option><option value="recent" ${state.sort === 'recent' ? 'selected' : ''} ${yearSorting ? '' : 'disabled'}>Release year: newest first</option></select>
       <div class="segmented" role="group" aria-label="Library layout"><button type="button" data-action="view" data-value="grid" aria-label="Grid view" aria-pressed="${state.view === 'grid'}" class="${state.view === 'grid' ? 'active' : ''}">${glyph('grid')}</button><button type="button" data-action="view" data-value="list" aria-label="List view" aria-pressed="${state.view === 'list'}" class="${state.view === 'list' ? 'active' : ''}">${glyph('list')}</button></div>
-    </div><div id="game-results"></div>
+    </div><p id="sort-year-hint" class="muted">${yearSorting ? 'Release-year sorting places titles with unknown years last.' : 'Release-year sorting is unavailable: these titles have no release-year metadata.'}</p><div id="game-results"></div>
     <div class="notice">${glyph('info')}<span>${state.native ? 'Your ROM files are not moved or modified. Launch requires a configured emulator path; launch arguments vary by emulator.' : hasImported ? 'Only filenames and relative paths were read. Nothing was uploaded. Folder preview entries cannot launch games until the native app is implemented.' : 'This is a browser preview. The native app will create and scan console folders on first run.'}</span></div>`;
   renderGameResults();renderLaunchStatus();
 }
@@ -696,6 +703,24 @@ function refreshCoverUI(selected) {
   if (uri) updateVisibleCover(key, uri);
 }
 
+const coverSelections=new Map(), coverWrites=new Map();
+async function reconcileSavedCover(selected,key,selection) {
+  // A newer file read may fail while an earlier write is still in progress.
+  // Wait for that write before reading the actual retained cover from disk.
+  await (coverWrites.get(key)||Promise.resolve()).catch(()=>{});
+  if (coverSelections.get(key)!==selection) return;
+  const revision=++state.artRevision;
+  evictCover(key);state.missingArt.delete(key);
+  document.querySelectorAll('.game-cover[data-art-key]').forEach(node=>{
+    if (node.dataset.artKey===key) node.querySelector('img')?.remove();
+  });
+  try {
+    const uri=await nativeInvoke('get_cover',{kind:selected.id,uid:selected.uid});
+    if (coverSelections.get(key)!==selection || revision!==state.artRevision) return;
+    if (uri) {cacheCover(key,uri);refreshCoverUI(selected);}
+    else state.missingArt.add(key);
+  } catch (_) { /* Leave uncached so the next visible-card read can retry. */ }
+}
 async function loadCover(file) {
   const selected = state.selectedGame;
   if (!selected || !file) return;
@@ -703,21 +728,39 @@ async function loadCover(file) {
   if (!['image/png','image/jpeg','image/webp'].includes(file.type) || file.size > sizeLimit) {
     toast(`Choose a PNG, JPG, or WebP cover under ${sizeLimit / (1024 * 1024)} MB.`); return;
   }
-  const key = artKey(selected.id, selected.uid);
+  const key = artKey(selected.id, selected.uid), selection={};
+  coverSelections.set(key,selection);
   if (state.native) {
     try {
       const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      await nativeInvoke('save_cover', { kind: selected.id, uid: selected.uid, bytes });
-      state.artRevision++; // In-flight native reads must not replace this local cover.
-      cacheCover(key, URL.createObjectURL(file));
-      state.missingArt.delete(key);
-      refreshCoverUI(selected);
-      toast('Cover saved to Matrix Play’s Linux artwork folder.');
-    } catch (error) { toast(`Could not save cover: ${error}`); }
+      if (coverSelections.get(key)!==selection) return;
+      // Reads can finish out of order. Once a write has started it cannot be
+      // cancelled, so serialize writes per game and skip superseded selections.
+      const writing=(coverWrites.get(key)||Promise.resolve()).catch(()=>{}).then(async()=>{
+        if (coverSelections.get(key)!==selection) return;
+        await nativeInvoke('save_cover', { kind: selected.id, uid: selected.uid, bytes });
+        if (coverSelections.get(key)!==selection) return;
+        state.artRevision++; // In-flight native reads must not replace this local cover.
+        cacheCover(key, URL.createObjectURL(file));
+        state.missingArt.delete(key);
+        refreshCoverUI(selected);
+        toast('Cover saved to Matrix Play’s Linux artwork folder.');
+      });
+      coverWrites.set(key,writing);
+      try {await writing;} finally {if (coverWrites.get(key)===writing) coverWrites.delete(key);}
+    } catch (error) {
+      if (coverSelections.get(key)===selection) {
+        toast(`Could not save cover: ${error}`);
+        await reconcileSavedCover(selected,key,selection);
+      }
+    }
+    finally {if (coverSelections.get(key)===selection) coverSelections.delete(key);}
     return;
   }
   cacheCover(key, URL.createObjectURL(file));
   const saved = await storeArt(key,file);
+  if (coverSelections.get(key)!==selection) return;
+  coverSelections.delete(key);
   refreshCoverUI(selected);
   toast(saved ? 'Custom cover saved to this browser.' : 'Custom cover updated for this session; browser storage was unavailable.');
 }
@@ -789,13 +832,16 @@ async function saveArtworkOptions() {
     }
   }
 }
+let nativeRefreshGeneration=0;
 async function refreshNative() {
   if (!state.native) { toast('Preview mode — launch the native Matrix Play app to scan your filesystem.'); return; }
+  const generation=++nativeRefreshGeneration;
   try {
     const results = await Promise.all([
       ...consoles.map(c => nativeInvoke('scan_console', {id:c.id})),
       nativeInvoke('scan_steam'), nativeInvoke('list_windows_games'),
     ]);
+    if (generation!==nativeRefreshGeneration) return;
     consoles.forEach((c,index) => { state.imported[c.id] = results[index].map(g => ({...g, demo:false})); });
     state.steam = results[consoles.length];
     state.windows = results[consoles.length+1];
@@ -803,7 +849,7 @@ async function refreshNative() {
     state.artRevision++;clearCoverCache();
     render();
     void scanArtwork();
-  } catch (error) { toast(`Library scan failed: ${error}`); }
+  } catch (error) { if (generation===nativeRefreshGeneration) toast(`Library scan failed: ${error}`); }
 }
 async function initializeNative() {
   if (!state.native) return;
@@ -958,9 +1004,12 @@ async function handleAction(button) {
   else if (action === 'reload-flatpaks') void loadFlatpakChoices();
   else if (action === 'browse-emulator') {
     if (!state.native) { toast('File browsing is available in the Linux app.');return; }
+    if (button.disabled) return;
+    const input=$('#emulator-path'), errorNode=$('#config-error'), draft=input?.value;
+    if (!input) return;
     button.disabled=true;
-    try { const input=$('#emulator-path');const path=await nativeInvoke('browse_emulator',{appimage:$('#emulator-launcher').value==='appimage'});if (path && input===$('#emulator-path')) input.value=path; }
-    catch(error) { if ($('#config-error')) $('#config-error').textContent=String(error); }
+    try { const path=await nativeInvoke('browse_emulator',{appimage:$('#emulator-launcher').value==='appimage'});if (path && input===$('#emulator-path') && input.value===draft) input.value=path; }
+    catch(error) { if (input===$('#emulator-path') && errorNode===$('#config-error') && errorNode) errorNode.textContent=String(error); }
     finally {button.disabled=false;}
   }
   else if (action === 'filter-games') { state.gameFilter = value; renderConsole(); }

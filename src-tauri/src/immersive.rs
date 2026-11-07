@@ -1,6 +1,54 @@
 //! Launch-time options only: never rewrite the emulator's persistent settings.
 use super::*;
 
+/// Never guess which existing Dolphin save/config directory a relative profile
+/// meant: setup and game launch have different working directories.
+pub(crate) fn validate_profile_paths(
+    profile: &EmulatorProfile,
+    console: &str,
+) -> Result<(), String> {
+    if discovery::identity(profile, console) != Some("Dolphin") {
+        return Ok(());
+    }
+    let mut args = profile.launch_args.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--" {
+            break;
+        }
+        if matches!(
+            arg.as_str(),
+            "-C" | "--config"
+                | "-e"
+                | "--exec"
+                | "-n"
+                | "--nand_title"
+                | "-m"
+                | "--movie"
+                | "-s"
+                | "--save_state"
+                | "-v"
+                | "--video_backend"
+                | "-a"
+                | "--audio_emulation"
+        ) {
+            args.next();
+            continue;
+        }
+        let value = if arg == "-u" || arg == "--user" {
+            Some(args.next().map(String::as_str).unwrap_or(""))
+        } else if let Some(value) = arg.strip_prefix("--user=") {
+            Some(value)
+        } else {
+            arg.strip_prefix("-u")
+                .map(|value| value.strip_prefix('=').unwrap_or(value))
+        };
+        if value.is_some_and(|value| !Path::new(value).is_absolute()) {
+            return Err("Dolphin's user-folder option (-u/--user) needs an absolute path. Choose Edit emulator and enter the full path of your existing Dolphin user folder. Relative paths can select different settings/saves in setup and game launch; Matrix has not moved files or changed the saved profile.".into());
+        }
+    }
+    Ok(())
+}
+
 /// Open the same emulator configuration as game launches, without booting a game
 /// or applying gameplay-only fullscreen/headless options. Do not call game_args:
 /// its injected options deliberately hide the configuration interface.
@@ -499,6 +547,57 @@ mod tests {
         assert_eq!(
             game_args(&profile("/apps/shadPS4", &["{game}"]), "ps4"),
             ["--fullscreen", "true", "{game}"]
+        );
+    }
+    #[test]
+    fn dolphin_user_folder_validation_does_not_guess_existing_save_paths() {
+        for args in [
+            vec!["-u", "relative"],
+            vec!["--user", "relative"],
+            vec!["--user=relative"],
+            vec!["-urelative"],
+            vec!["-u=relative"],
+            vec!["-u"],
+            vec!["--user="],
+        ] {
+            let p = profile("/apps/dolphin-emu", &args);
+            assert!(
+                validate_profile_paths(&p, "gamecube")
+                    .unwrap_err()
+                    .contains("absolute path"),
+                "{args:?}"
+            );
+        }
+        for args in [
+            vec!["-u", "/existing/user"],
+            vec!["--user=/existing/user"],
+            vec!["-u/existing/user"],
+            vec!["-u=/existing/user"],
+            vec!["{game}"],
+            vec!["--", "-urelative"],
+            vec!["-C", "--user=literal-value"],
+            vec!["-m", "-user-recording.dtm"],
+            vec!["--save_state", "-user-state.sav"],
+            vec!["-v", "-unknown-backend"],
+            vec!["--audio_emulation", "-user-value"],
+        ] {
+            assert!(
+                validate_profile_paths(&profile("/apps/dolphin-emu", &args), "gamecube").is_ok(),
+                "{args:?}"
+            );
+        }
+        let mut flatpak = profile("", &["--user=relative"]);
+        flatpak.launcher = emulators::Launcher::Flatpak;
+        flatpak.flatpak_id = "org.DolphinEmu.dolphin-emu".into();
+        assert!(validate_profile_paths(&flatpak, "wii").is_err());
+        assert!(validate_profile_paths(
+            &profile("/apps/custom-script", &["--user", "account-id"]),
+            "gamecube"
+        )
+        .is_ok());
+        assert!(
+            validate_profile_paths(&profile("/apps/pcsx2", &["--user", "account-id"]), "ps2")
+                .is_ok()
         );
     }
 }
