@@ -14,7 +14,90 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def prepare_writer(home):
+    """Independent of emulator-specific setup and the full native test's history."""
+    writer = home/'bin/pcsx2'
+    writer.parent.mkdir(parents=True, exist_ok=True)
+    writer.write_text('''#!/usr/bin/env python3
+import os, pathlib, time
+root=pathlib.Path.home()
+(root/'writer.ready').write_text(str(os.getpid()))
+end=time.monotonic()+30
+while not (root/'writer.release').exists():
+    if time.monotonic()>end: raise RuntimeError('fixture deadline')
+    time.sleep(.01)
+for fd in [1,2]:
+    data=b'x'*400000
+    while data: data=data[os.write(fd,data):]
+os.write(2,b'late native writer diagnostic\\n')
+(root/'writer.done').write_text('survived')
+''')
+    writer.chmod(0o755)
+    game = home/'Games/Matrix/PS2/PS2 Games/Test Game [SLUS-20312].chd'
+    game.parent.mkdir(parents=True, exist_ok=True)
+    if not game.exists():
+        game.write_text('Synthetic fixture; not a playable ROM.')
+    return writer, game
+
+
+def launch_diagnostic(home, info):
+    (home/'lifecycle-launch-status.json').write_text(json.dumps(info, indent=2))
+    diagnostic = json.dumps(info, ensure_ascii=False)
+    if isinstance(info, dict) and info.get('logPath'):
+        path = Path(info['logPath'])
+        if path.is_file() and path.resolve().is_relative_to(home.resolve()):
+            with path.open('rb') as logfile:
+                logfile.seek(max(0, path.stat().st_size-65536))
+                diagnostic += '\nLaunch log: '+logfile.read(65536).decode(errors='replace')
+    return diagnostic
+
+
+def wait_for_writer(home, invoke, initial, timeout=10):
+    """Fail at the launch error, not thirty seconds later at an absent marker."""
+    info = initial
+    deadline = time.monotonic()+timeout
+    while True:
+        diagnostic = launch_diagnostic(home, info)
+        if not isinstance(info, dict) or info.get('phase') not in ('starting', 'started'):
+            raise AssertionError('Lifecycle writer did not stay running: '+diagnostic)
+        if (home/'writer.ready').exists():
+            return info
+        if time.monotonic() >= deadline:
+            raise AssertionError('Lifecycle writer readiness timed out: '+diagnostic)
+        time.sleep(.05)
+        info = invoke('get_launch_status', {'id':'ps2'})
+
+
+def preserve_diagnostics(home, destination):
+    """Copy only bounded logs from this disposable fixture, never arbitrary HOME."""
+    if destination is None:
+        return
+    destination.mkdir(parents=True, exist_ok=True)
+    sources = [(path, Path(path.name)) for path in home.glob('*.log')]
+    sources += [(path, Path(path.name)) for path in home.glob('coordinator-*.json')]
+    sources += [(home/'lifecycle-launch-status.json', Path('lifecycle-launch-status.json')),
+                (home/'.local/share/matrix/startup.log', Path('startup.log'))]
+    sources += [(path, Path('launches')/path.name) for path in (home/'.local/share/matrix/launches').glob('*.log')]
+    for source, relative in sources:
+        if source.is_symlink() or not source.is_file() or not source.resolve().is_relative_to(home.resolve()):
+            continue
+        target = destination/relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with source.open('rb') as logfile:
+            logfile.seek(max(0, source.stat().st_size-65536))
+            target.write_bytes(logfile.read(65536))
+
+
 def exercise(binary, env, home, invoke, js, wait_for, coordinator_tests=None):
+    try:
+        _exercise(binary, env, home, invoke, js, wait_for, coordinator_tests)
+    finally:
+        # A failure before the second-window stage must still release our writer.
+        # Never send a signal to a PID obtained from a marker.
+        (home/'writer.release').touch()
+
+
+def _exercise(binary, env, home, invoke, js, wait_for, coordinator_tests):
     registry = Path(f'/tmp/matrix-play-lifecycle-{os.geteuid()}')
     appimage = binary.name.endswith('.AppImage')
 
@@ -77,27 +160,11 @@ def exercise(binary, env, home, invoke, js, wait_for, coordinator_tests=None):
 
     pids = live_pids()
     assert len(pids) == 1, pids
-    writer = home/'bin/pcsx2'
-    writer.write_text('''#!/usr/bin/env python3
-import os, pathlib, time
-root=pathlib.Path.home()
-(root/'writer.ready').write_text(str(os.getpid()))
-end=time.monotonic()+30
-while not (root/'writer.release').exists():
-    if time.monotonic()>end: raise RuntimeError('fixture deadline')
-    time.sleep(.01)
-for fd in [1,2]:
-    data=b'x'*400000
-    while data: data=data[os.write(fd,data):]
-os.write(2,b'late native writer diagnostic\\n')
-(root/'writer.done').write_text('survived')
-''')
-    writer.chmod(0o755)
+    writer, game = prepare_writer(home)
     invoke('save_emulator', {'id':'ps2','emulatorName':'PCSX2 fixture','emulatorPath':str(writer),
                              'launcher':'executable','launchArgs':['{game}']})
-    game = home/'Games/Matrix/PS2/PS2 Games/Test Game [SLUS-20312].chd'
     info = invoke('launch_console_game', {'id':'ps2','uid':str(game)})
-    wait_for(lambda: (home/'writer.ready').exists())
+    info = wait_for_writer(home, invoke, info)
     writer_pid = int((home/'writer.ready').read_text())
     app = coordinator('busy', pids, True)
     finish(app[0], app[2])

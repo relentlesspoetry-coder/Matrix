@@ -58,6 +58,7 @@ jobs:
           scripts/run-ci-as-test-user.sh /home/matrix-test/bin/desktop-tests --test-threads=1
           python3 tests/test_structure.py
           python3 tests/test_ci_process_account.py
+          python3 tests/test_native_lifecycle_fixture.py
           python3 tests/test_release.py
           python3 tests/test_deb_package.py
           python3 tests/test_launch_log_lifetime.py

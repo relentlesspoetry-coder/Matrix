@@ -711,12 +711,28 @@ def main():
             from native_update_lifecycle import exercise
             exercise(binary, env, home, invoke, js, wait_for, cfg.coordinator_tests)
         except Exception:
+            # Keep actual launch feedback even when the UI never polled an IPC
+            # invocation made by this test. The temporary HOME is deleted below.
+            try:
+                from native_update_lifecycle import launch_diagnostic
+                print('Native launch failure state:', launch_diagnostic(home, invoke('get_launch_status', {'id':'ps2'})))
+            except Exception as error:
+                print('Could not retrieve native launch status:', error)
             try:
                 print('Native UI failure state:', json.dumps(js('return {page:state.page, overlay:state.overlay, busy:state.launchBusy, launches:state.launches, active:document.activeElement.outerHTML, keyEvents:window.__keyEvents, tabStops:[...document.querySelectorAll("#overlay-root button,#overlay-root input,#overlay-root select,#overlay-root textarea,#overlay-root summary")].map(node=>({html:node.outerHTML,tabIndex:node.tabIndex,disabled:node.matches(":disabled"),hidden:!!node.closest("[hidden],[inert]"),rects:node.getClientRects().length,visibility:getComputedStyle(node).visibility})), launchStatus:document.querySelector("#launch-status")?.textContent}')))
             except Exception:
                 pass
             driver_log.flush()
             print((home/'driver.log').read_text())
+            try:
+                screenshot('matrix-native-failure.png')
+            except Exception:
+                pass
+            try:
+                from native_update_lifecycle import preserve_diagnostics
+                preserve_diagnostics(home, cfg.screenshots/'failure-logs' if cfg.screenshots else None)
+            except Exception as error:
+                print('Could not preserve native fixture diagnostics:', error)
             raise
         finally:
             if session:
