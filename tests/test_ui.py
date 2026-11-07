@@ -33,6 +33,7 @@ window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   if(name==='check_updates') return (window.__update={...window.__update,latestVersion:'0.6.0',phase:'available',message:'A newer Matrix Play release is available.',notes:'Console artwork and updates.'});
   if(name==='download_update') return (window.__update={...window.__update,phase:'downloaded',message:'Verified update downloaded.'});
   if(name==='install_update') return (window.__update={...window.__update,phase:'installing',message:'Closing Matrix Play to install the update…'});
+  if(name==='discover_emulators') return window.__discovery;
   if(name==='bootstrap') return {emulatorDiscovery:window.__discovery,favorites:window.__favorites,favoritesMigrated:window.__migrated,artwork:window.__artOptions,root:'/home/example/Games/Matrix',folders:Object.fromEntries(ids.map(id=>[id,`/home/example/Games/Matrix/${id}/${id} Games`])),profiles:{ps2:{emulatorName:'PCSX2',emulatorPath:'/usr/bin/pcsx2',launchArgs:['{game}']}},windows:window.__windows};
   if(name==='scan_console' && args.id==='ps5') return [{uid:'/collection/PS5/Collection.pkg',title:'PS5 Collection',path:'/collection/PS5/Collection.pkg',kind:'ps5'}];
   if(name==='scan_console') return args.id==='ps2' ? [{uid:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',title:'Test Game',path:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',kind:'ps2'}] : [];

@@ -193,6 +193,41 @@ def main():
             discovered=invoke('bootstrap')
             assert discovered['profiles']['n64']['flatpakId']=='com.github.Rosalie241.RMG'
             assert discovered['profiles']['n64']['autoDetected'] is True
+            # Reproduce a shadPS4 AppImage moved after discovery, without executing it.
+            old_ps4=home/'Downloads/shadPS4QtLauncher-linux-qt-build/shadPS4QtLauncher-qt.AppImage'
+            old_ps4.parent.mkdir(parents=True)
+            ps4_bytes=b'\x7fELF0000AI\x02synthetic AppImage, never executed'
+            old_ps4.write_bytes(ps4_bytes);old_ps4.chmod(0o744)
+            settings_file=home/'config/matrix/frontend.json'
+            settings_before=settings_file.read_bytes()
+            report=invoke('discover_emulators')
+            assert any(c['profile']['emulatorPath']==str(old_ps4) for c in report['candidates'])
+            assert settings_file.read_bytes()==settings_before, 'Read-only discovery must not auto-link'
+            js("openConfigure('ps4')")
+            wait_for(lambda: js('return document.querySelector("#detected-emulator") && !document.querySelector("#detected-emulator").disabled'))
+            js('const s=document.querySelector("#detected-emulator");s.value=arguments[0];s.dispatchEvent(new Event("change",{bubbles:true}));', 'file|'+str(old_ps4))
+            assert js('return document.querySelector("#emulator-path").value')==str(old_ps4)
+            moved_ps4=library/'PS4/shadPS4QtLauncher-qt.AppImage'
+            old_ps4.rename(moved_ps4)
+            click('#config-form button[type="submit"]:not([data-open-after-save])')
+            wait_for(lambda: js('return document.querySelector("#config-error").textContent.includes("no longer available")'))
+            assert str(old_ps4) in js('return document.querySelector("#config-error").textContent')
+            assert settings_file.read_bytes()==settings_before
+            screenshot('matrix-linux-moved-emulator-warning.png')
+            js('document.querySelector("#launch-args").value="--draft\\n{game}"')
+            click('#refresh-detected')
+            wait_for(lambda: js('return !document.querySelector("#refresh-detected").disabled'))
+            assert js('return document.querySelector("#emulator-path").value')==str(old_ps4)
+            assert js('return document.querySelector("#launch-args").value')=='--draft\n{game}'
+            options=js('return Array.from(document.querySelector("#detected-emulator").options,o=>o.value)')
+            assert 'file|'+str(old_ps4) not in options and 'file|'+str(moved_ps4) in options
+            assert settings_file.read_bytes()==settings_before
+            js('const s=document.querySelector("#detected-emulator");s.value=arguments[0];s.dispatchEvent(new Event("change",{bubbles:true}));', 'file|'+str(moved_ps4))
+            click('#config-form button[type="submit"]:not([data-open-after-save])')
+            wait_for(lambda: js('return !document.querySelector("#config-form")'))
+            assert json.loads(settings_file.read_text())['profiles']['ps4']['emulatorPath']==str(moved_ps4)
+            assert moved_ps4.read_bytes()==ps4_bytes and moved_ps4.stat().st_mode & 0o777==0o744
+            print('PASS: moved shadPS4 AppImage recovery through real discovery/setup IPC; no emulator executed')
             n64game=library/'N64/N64 Games/Fullscreen Test.z64'
             n64game.write_text('Synthetic, non-playable ROM fixture')
             invoke('launch_console_game',{'id':'n64','uid':str(n64game)})

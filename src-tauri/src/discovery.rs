@@ -516,6 +516,49 @@ mod tests {
     }
 
     #[test]
+    fn moved_shadps4_appimage_is_rediscovered_without_changing_its_bytes_or_profile() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let downloads = root
+            .path()
+            .join("Downloads/shadPS4QtLauncher-linux-qt-build");
+        let installed = root.path().join("Games/Matrix/PS4");
+        fs::create_dir_all(&downloads).unwrap();
+        fs::create_dir_all(&installed).unwrap();
+        let old = downloads.join("shadPS4QtLauncher-qt.AppImage");
+        let new = installed.join("shadPS4QtLauncher-qt.AppImage");
+        let bytes = b"\x7fELF0000AI\x02synthetic, never executed";
+        fs::write(&old, bytes).unwrap();
+        fs::set_permissions(&old, fs::Permissions::from_mode(0o744)).unwrap();
+        let mut before = BTreeMap::new();
+        add_image(&mut before, &old);
+        let profile = before.values().next().unwrap().profile.clone();
+        assert_eq!(identity(&profile, "ps4"), Some("shadPS4 QtLauncher"));
+        fs::rename(&old, &new).unwrap();
+        let error = match emulators::prepare(profile.clone(), false) {
+            Err(error) => error,
+            Ok(_) => panic!("A moved emulator must not save its stale path"),
+        };
+        assert!(error.contains("no longer available"));
+        assert!(error.contains(old.to_str().unwrap()));
+        assert!(error.contains("Refresh detected"));
+        let mut after = BTreeMap::new();
+        add_image(&mut after, &old);
+        add_image(&mut after, &new);
+        assert_eq!(after.len(), 1);
+        let selected = after.values().next().unwrap();
+        assert!(selected.ready);
+        let prepared = emulators::prepare(selected.profile.clone(), false).unwrap();
+        assert_eq!(prepared.emulator_path, new.to_str().unwrap());
+        assert_eq!(profile.emulator_path, old.to_str().unwrap());
+        assert_eq!(fs::read(&new).unwrap(), bytes);
+        assert_eq!(
+            fs::metadata(&new).unwrap().permissions().mode() & 0o777,
+            0o744
+        );
+    }
+
+    #[test]
     fn native_discovery_lists_all_choices_and_does_not_auto_choose() {
         let root = tempfile::tempdir().unwrap();
         let first = root.path().join("first");

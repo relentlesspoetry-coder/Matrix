@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.13 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.14 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const AUTO_COVER_KINDS = ['ps1','ps2','gamecube','wii'];
@@ -518,6 +518,29 @@ function discoverySummary() {
   const auto=Object.values(state.configs).filter(p=>p.autoDetected).length;
   return `<section class="discovery-box"><div><h2>Automatic emulator linking</h2><p>${total} detected installation${total===1?'':'s'} · ${auto} console${auto===1?'':'s'} automatically linked. Saved choices are kept.</p>${report.ambiguous.length ? `<p>Choose between multiple matches for: ${report.ambiguous.map(id=>escapeHtml(byId[id]?.name || id)).join(', ')}.</p>`:''}${report.candidates.some(c=>!c.ready) ? '<p>Some downloaded AppImages need execute permission. Choose one in Set up, then Save emulator.</p>':''}<small>Scans installed Flatpaks, common AppImage folders and application shortcuts. Unknown emulator names remain manual.</small></div><button type="button" class="button button-primary" data-action="find-emulators">Find emulators</button></section>`;
 }
+function detectedEmulatorOptions(id) {
+  return '<option value="">Choose a detected installation…</option>'+state.discovery.candidates.filter(c=>c.consoleIds.includes(id)).map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.profile.emulatorName)} — ${escapeHtml(c.profile.emulatorPath || c.source)}${c.ready?'':' (allow execution when saving)'}</option>`).join('');
+}
+async function loadDetectedEmulators() {
+  const owner=$('#config-form'), select=$('#detected-emulator'), button=$('#refresh-detected'), help=$('#detected-help');
+  if (!state.native || !owner || !select || !button || !help) return;
+  const request=owner.discoveryRequest=(owner.discoveryRequest || 0)+1;
+  const current=()=>owner===$('#config-form') && request===owner.discoveryRequest;
+  select.disabled=true;button.disabled=true;help.textContent='Checking emulator files…';
+  try {
+    const report=await nativeInvoke('discover_emulators');
+    if (!current()) return;
+    const selected=select.value;
+    state.discovery={...state.discovery,candidates:report.candidates,notices:report.notices};
+    select.innerHTML=detectedEmulatorOptions(owner.dataset.id);
+    select.value=report.candidates.some(c=>c.id===selected && c.consoleIds.includes(owner.dataset.id)) ? selected : '';
+    const count=report.candidates.filter(c=>c.consoleIds.includes(owner.dataset.id)).length;
+    help.textContent=count ? 'Current installations checked. Choosing an entry fills the setup fields. Save to use it for this console.' : 'No recognized installations found. Use Browse to choose your emulator file.';
+    // Never overwrite the path, arguments or other unsaved fields on refresh.
+  } catch(error) {
+    if (current()) help.textContent='Could not refresh detected installations. Use Browse or try Refresh detected again. '+String(error);
+  } finally { if (current()) {select.disabled=false;button.disabled=false;} }
+}
 function chooseDetectedEmulator() {
   const candidate=state.discovery.candidates.find(c=>c.id===$('#detected-emulator')?.value);if (!candidate) return;
   const p=candidate.profile;
@@ -574,13 +597,13 @@ function openConfigure(id) {
   const current=state.configs[id] || {};
   const launcher=current.launcher==='flatpak' ? 'flatpak' : current.launcher==='appimage' || /\.appimage$/i.test(current.emulatorPath || '') || !current.emulatorPath ? 'appimage' : 'executable';
   $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog emulator-dialog" role="dialog" aria-modal="true" aria-labelledby="config-title"><button type="button" class="close" data-action="close" aria-label="Close dialog">${glyph('close')}</button><div class="eyebrow">EMULATOR SETUP</div><h2 id="config-title">${escapeHtml(consoleInfo.name)}</h2><p class="muted">${consoleInfo.customEmulator ? 'Link your own Linux emulator. This is experimental custom launch support, not a game-compatibility guarantee. Open emulator starts the selected program without arguments; a command-line core may not show a setup window.' : 'Link an emulator you already installed or downloaded. Game cards start recognized emulators fullscreen; Open emulator shows setup menus.'}</p>
-    <form id="config-form" data-id="${id}">${state.discovery.candidates.some(c=>c.consoleIds.includes(id)) ? `<div class="field"><label for="detected-emulator">Detected emulators for ${escapeHtml(consoleInfo.name)}</label><select id="detected-emulator"><option value="">Choose a detected installation…</option>${state.discovery.candidates.filter(c=>c.consoleIds.includes(id)).map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.profile.emulatorName)} — ${escapeHtml(c.profile.emulatorPath || c.source)}${c.ready?'':' (allow execution when saving)'}</option>`).join('')}</select><small>Choosing an entry fills the setup fields. Save to use it for this console.</small></div>`:''}<div class="field"><label for="emulator-launcher">How is your emulator installed?</label><select id="emulator-launcher" name="launcher">${[['appimage','AppImage file'],['flatpak','Flatpak app'],['executable','Other executable']].map(([value,label])=>`<option value="${value}" ${launcher===value?'selected':''}>${label}</option>`).join('')}</select></div>
+    <form id="config-form" data-id="${id}">${state.native ? `<div class="field"><label for="detected-emulator">Detected emulators for ${escapeHtml(consoleInfo.name)}</label><select id="detected-emulator">${detectedEmulatorOptions(id)}</select><small id="detected-help" role="status">Choosing an entry fills the setup fields. Save to use it for this console.</small><button type="button" id="refresh-detected" class="button button-ghost" data-action="refresh-detected">Refresh detected</button></div>`:''}<div class="field"><label for="emulator-launcher">How is your emulator installed?</label><select id="emulator-launcher" name="launcher">${[['appimage','AppImage file'],['flatpak','Flatpak app'],['executable','Other executable']].map(([value,label])=>`<option value="${value}" ${launcher===value?'selected':''}>${label}</option>`).join('')}</select></div>
     <div id="file-fields"><div class="field"><label id="emulator-file-label" for="emulator-path">AppImage file</label><div class="file-choice"><input id="emulator-path" name="emulatorPath" placeholder="Choose a file or paste its full path" value="${escapeHtml(current.emulatorPath || '')}"><button type="button" class="button button-ghost" data-action="browse-emulator">Browse…</button></div><small id="emulator-file-hint"></small></div><div id="appimage-options" class="field"><label class="check-row"><input type="checkbox" id="allow-execute" name="allowExecute" checked> Allow this AppImage to run</label><small>Adds execute permission to the chosen AppImage if needed. Saving does not run it.</small><label class="check-row"><input type="checkbox" name="extractAppimage" ${current.extractAppimage?'checked':''}> Run without FUSE (extraction mode)</label><small>Use this if your AppImage reports that FUSE is unavailable.</small></div></div>
     <div id="flatpak-fields" hidden><div class="field"><label for="flatpak-app">Installed Flatpak emulator</label><select id="flatpak-app" name="flatpakApp" data-saved="${escapeHtml(current.flatpakId ? current.flatpakId+'|'+current.flatpakInstallation : '')}"><option value="">Choose an installed app…</option></select><small id="flatpak-help"></small></div><button type="button" class="button button-ghost" data-action="reload-flatpaks">Reload apps</button><label class="check-row runtime-font-choice"><input type="checkbox" id="runtime-fonts" name="flatpakRuntimeFonts" ${(current.flatpakRuntimeFonts ?? current.flatpakId==='net.pcsx2.PCSX2')?'checked':''}> Use compatible runtime fonts</label><small>Recommended for PCSX2. Avoids crashes from host font configuration; applies only to emulator launches.</small><p class="muted">Flatpak apps are installed through Software. Downloaded .flatpakref files are not executable files to browse for.</p></div>
     <div class="field"><label for="emulator-name">Emulator name</label><input id="emulator-name" name="emulatorName" maxlength="120" value="${escapeHtml(current.emulatorName || consoleInfo.emulator)}" required></div>
     <details class="advanced-setup" ${consoleInfo.customEmulator ? 'open' : ''}><summary>Advanced launch options</summary><div class="field"><label for="launch-args">Launch arguments (one per line)</label><textarea id="launch-args" name="launchArgs" rows="3">${escapeHtml((current.launchArgs?.length ? current.launchArgs : defaultLaunchArgs(id)).join('\n'))}</textarea><small>{game} is the game file. ${consoleInfo.customEmulator ? '{gameDir} is its containing folder. Put each placeholder on its own line. These arguments are used only for game launches; no fullscreen options are added.' : 'Defaults vary by console; some emulators require different options.'} Each line is passed as one argument, without a shell.</small>${consoleInfo.customEmulator ? `<p class="muted custom-launch-help">${id==='ps5' ? 'KytyPS5 core example: choose kyty_emulator, then enter --game and {gameDir} on separate lines for an extracted eboot.bin title. For ELF or ZAR, use --game and {game}. PKG/ISO collection files are not KytyPS5 boot targets.' : 'Eglantine example: enter -f, -g and {game} on three separate lines. Check the documentation for your installed build; original Switch emulator settings are not reused.'}</p>` : ''}</div></details>
     <div class="field"><label for="library-path">Game library folder</label><input id="library-path" name="folderPath" value="${escapeHtml(state.native ? state.folders[id] || '' : current.folderPath || '')}" ${state.native?'readonly':'required'}><small>Place this console’s games here. Your emulator can stay wherever it is installed.</small></div><p id="config-error" class="config-error" role="alert"></p><div class="dialog-actions"><button class="button button-ghost" type="button" data-action="close">Cancel</button><button class="button button-primary" type="submit">Save emulator</button><button class="button button-ghost" type="submit" data-open-after-save="true">Save and open emulator</button></div></form></section></div>`;
-  updateLauncherFields();$('#emulator-launcher').focus();
+  updateLauncherFields();$('#emulator-launcher').focus();void loadDetectedEmulators();
 }
 let libraryFolderBusy = false;
 function showLibraryFolderRows(owner, folders) {
@@ -989,6 +1012,7 @@ async function handleAction(button) {
   else if (action === 'open-emulator') void launchConsole(id);
   else if (action === 'launch-details') void showLaunchDetails(id);
   else if (action === 'find-emulators') void findEmulators(button);
+  else if (action === 'refresh-detected') void loadDetectedEmulators();
   else if (action === 'external-game') openExternalGame(button.dataset.kind,uid);
   else if (action === 'quick-external') {
     const kind = button.dataset.kind;

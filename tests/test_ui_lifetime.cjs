@@ -68,7 +68,7 @@ function fixture() {
   vm.runInContext(source.replace(startup, '') + `
     toast = onToast;
     globalThis.api = { state, loadCover, goConsole, goSettings, dismissOverlay, saveArtworkOptions,
-      loadFlatpakChoices, refreshNative, fetchArtwork, renderUpdater, runUpdate, openUpdater, handleAction, toggleFavorite, visibleGames, renderConsole, setArtDb: db => { artDb=db; } };
+      loadDetectedEmulators, loadFlatpakChoices, refreshNative, fetchArtwork, renderUpdater, runUpdate, openUpdater, handleAction, toggleFavorite, visibleGames, renderConsole, setArtDb: db => { artDb=db; } };
     setupEvents();
   `, context);
   const api = context.api;
@@ -505,4 +505,79 @@ test('agree and update clearly closes Matrix instead of promising a restart', ()
   f.renderUpdater();
   assert.equal(f.node('#update-action').textContent, 'Agree and update');
   assert.match(f.node('#update-hint').textContent, /stays closed when it succeeds/);
+});
+
+
+function setupDiscovery(f) {
+  const form=f.node('#config-form');form.dataset.id='ps2';
+  for(const selector of ['#detected-emulator','#refresh-detected','#detected-help','#emulator-path','#launch-args'])f.node(selector);
+  return form;
+}
+const detected=(path)=>({id:'file|'+path,consoleIds:['ps2'],profile:{emulatorName:'PCSX2',emulatorPath:path},ready:true});
+
+test('setup discovery refresh removes a moved choice without rewriting any draft or saved profile',async()=>{
+  const f=fixture(),loading=deferred();setupDiscovery(f);
+  const old=detected('/Downloads/pcsx2.AppImage'),recent=detected('/Games/pcsx2.AppImage');
+  f.state.discovery.candidates=[old];f.state.configs.ps2={emulatorPath:'/saved/custom'};
+  f.node('#detected-emulator').value=old.id;
+  f.node('#emulator-path').value=old.profile.emulatorPath;f.node('#launch-args').value='--my-draft';
+  f.responders.discover_emulators=()=>loading.promise;
+  const pending=f.loadDetectedEmulators();
+  assert.equal(f.node('#detected-emulator').disabled,true);
+  f.node('#emulator-path').value='/typed/while-scanning';
+  loading.resolve({candidates:[recent],notices:[]});await pending;
+  assert.equal(f.node('#emulator-path').value,'/typed/while-scanning');
+  assert.equal(f.node('#launch-args').value,'--my-draft');
+  assert.equal(f.state.configs.ps2.emulatorPath,'/saved/custom');
+  assert.equal(f.node('#detected-emulator').value,'');
+  assert.match(f.node('#detected-emulator').innerHTML,/Games/);
+  assert.doesNotMatch(f.node('#detected-emulator').innerHTML,/Downloads/);
+  assert.deepEqual(f.calls.map(c=>c.name),['discover_emulators']);
+  assert.equal(f.node('#refresh-detected').disabled,false);
+});
+
+test('a new discovery refresh wins over a delayed older result',async()=>{
+  const f=fixture(),old=deferred(),recent=deferred();setupDiscovery(f);
+  let count=0;f.responders.discover_emulators=()=>++count===1?old.promise:recent.promise;
+  const first=f.loadDetectedEmulators(),second=f.loadDetectedEmulators();
+  recent.resolve({candidates:[detected('/new/pcsx2.AppImage')],notices:[]});await second;
+  old.resolve({candidates:[detected('/old/pcsx2.AppImage')],notices:[]});await first;
+  assert.equal(f.state.discovery.candidates[0].profile.emulatorPath,'/new/pcsx2.AppImage');
+  assert.equal(f.node('#refresh-detected').disabled,false);
+});
+
+for(const outcome of ['resolve','reject'])test(`closed discovery ignores delayed ${outcome}`,async()=>{
+  const f=fixture(),loading=deferred();setupDiscovery(f);
+  f.responders.discover_emulators=()=>loading.promise;
+  const pending=f.loadDetectedEmulators();
+  for(const selector of ['#config-form','#detected-emulator','#refresh-detected','#detected-help'])f.nodes.delete(selector);
+  setupDiscovery(f);f.node('#detected-help').textContent='New dialog';
+  loading[outcome](outcome==='resolve'?{candidates:[detected('/old/pcsx2')],notices:[]}:'old error');
+  await pending;assert.equal(f.node('#detected-help').textContent,'New dialog');
+  assert.equal(f.state.discovery.candidates.length,0);
+});
+
+test('discovery failure keeps drafts and offers Browse or retry without replacing the form',async()=>{
+  const f=fixture();const owner=setupDiscovery(f);
+  f.node('#emulator-path').value='/draft';
+  f.responders.discover_emulators=()=>Promise.reject('scan failed');
+  await f.loadDetectedEmulators();
+  assert.equal(f.node('#config-form'),owner);
+  assert.equal(f.node('#emulator-path').value,'/draft');
+  assert.match(f.node('#detected-help').textContent,/Use Browse/);
+  assert.equal(f.node('#refresh-detected').disabled,false);
+});
+
+test('discovery retains a still-current explicit choice and escapes filenames',async()=>{
+  const f=fixture();setupDiscovery(f);
+  const entry=detected('/apps/pcsx2-<tag>".AppImage');
+  f.node('#detected-emulator').value=entry.id;
+  f.responders.discover_emulators=()=>Promise.resolve({candidates:[entry],notices:[]});
+  await f.loadDetectedEmulators();
+  assert.equal(f.node('#detected-emulator').value,entry.id);
+  assert.match(f.node('#detected-emulator').innerHTML,/&lt;tag&gt;&quot;/);
+  f.responders.discover_emulators=()=>Promise.resolve({candidates:[],notices:[]});
+  await f.loadDetectedEmulators();
+  assert.match(f.node('#detected-help').textContent,/No recognized installations/);
+  assert.equal(f.node('#detected-emulator').value,'');
 });

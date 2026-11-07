@@ -903,6 +903,18 @@ fn steam_command(uid: &str, launcher: SteamLauncher) -> Command {
     command
 }
 
+// Setup refresh is read-only: unlike bootstrap, it must never auto-link or
+// rewrite a profile while the user is editing another choice.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn discover_emulators() -> Result<discovery::Report, String> {
+    // Filesystem/Flatpak scans must not block the window's event loop. Browse,
+    // editing and Cancel remain usable while a slow installation is checked.
+    tauri::async_runtime::spawn_blocking(discovery::discover)
+        .await
+        .map_err(|error| error.to_string())?
+}
+
 #[cfg_attr(feature = "desktop", tauri::command)]
 fn save_emulator(
     id: String,
@@ -1603,6 +1615,7 @@ fn main() {
             steam_libraries::add_steam_library,
             steam_libraries::remove_steam_library,
             save_emulator,
+            discover_emulators,
             emulators::list_flatpaks,
             emulators::browse_emulator,
             favorites::set_favorite,

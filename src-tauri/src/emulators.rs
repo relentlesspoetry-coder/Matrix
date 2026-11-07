@@ -66,10 +66,18 @@ fn installed(profile: &EmulatorProfile) -> Result<(), String> {
         Err("This Flatpak is no longer installed in the selected installation. Choose it again in emulator setup.".into())
     }
 }
+fn file_path_error(path: &str, error: std::io::Error) -> String {
+    let detail = match error.kind() {
+        std::io::ErrorKind::NotFound => "The selected emulator file is no longer available. It may have moved or its drive may be disconnected.",
+        std::io::ErrorKind::PermissionDenied => "Matrix Play cannot access the selected emulator file. Check access to the file and its containing folders.",
+        _ => "Matrix Play could not resolve the selected emulator file.",
+    };
+    format!("{detail} Selected path: {path}. Use Browse to choose the current file, or Refresh detected to scan again. ({error})")
+}
 fn validate_file(path: &str, appimage: bool, allow_execute: bool) -> Result<String, String> {
     let path = Path::new(path)
         .canonicalize()
-        .map_err(|_| "Choose an emulator file that exists on this computer.")?;
+        .map_err(|error| file_path_error(path, error))?;
     if !path.is_file() {
         return Err("Choose an emulator file, not a folder.".into());
     }
@@ -363,6 +371,20 @@ mod tests {
         fs::write(&image, b"#!/bin/sh\nnot an AppImage").unwrap();
         assert!(validate_file(image.to_str().unwrap(), true, true).is_err());
     }
+    #[test]
+    fn inaccessible_emulator_path_is_not_reported_as_a_missing_installation() {
+        let denied = file_path_error(
+            "/private/shadPS4.AppImage",
+            std::io::ErrorKind::PermissionDenied.into(),
+        );
+        assert!(denied.contains("cannot access"));
+        assert!(denied.contains("/private/shadPS4.AppImage"));
+        assert!(!denied.contains("no longer available"));
+        let other = file_path_error("/apps/emulator", std::io::ErrorKind::InvalidInput.into());
+        assert!(other.contains("could not resolve"));
+        assert!(other.contains("Browse"));
+    }
+
     #[test]
     fn legacy_profile_stays_executable() {
         let profile:EmulatorProfile=serde_json::from_str(r#"{"emulatorName":"Old emulator","emulatorPath":"/usr/bin/emu","launchArgs":["{game}"]}"#).unwrap();

@@ -250,7 +250,7 @@ button:disabled { opacity: .55; cursor: wait }
 .check-row { display: flex !important; align-items: center; gap: 9px; line-height: 1.5; margin-top: 14px }
 .check-row input { width: 17px; height: 17px; flex: 0 0 17px }
 .advanced-setup { margin-top: 24px; color: #a9bce0; font-size: 12px }.advanced-setup summary { cursor: pointer }
-.config-error { color: #ffc1bd; margin-top: 17px; line-height: 1.6; font-size: 12px }
+.config-error { overflow-wrap: anywhere; color: #ffc1bd; margin-top: 17px; line-height: 1.6; font-size: 12px }
 .hero-favorites { margin: 10px 0 0 8px }
 [hidden] { display: none !important }
 @media(max-width:670px) { .hero-favorites { margin-left: 0 }.file-choice { flex-wrap: wrap }.file-choice input { flex-basis: 100% }.console-hero-copy { max-width: 68% } }

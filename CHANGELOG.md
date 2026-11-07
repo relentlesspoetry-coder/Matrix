@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.14
+
+- Refresh detected emulator installations whenever setup opens and provide Refresh detected inside the dialog, so moved AppImages no longer leave only stale choices. Discovery runs off the UI thread and never silently changes saved profiles or unsaved launch settings.
+- Explain missing and inaccessible emulator paths with the exact selected location and Browse/refresh recovery steps. Keep executable/header validation and permission consent unchanged.
+- Add moved-shadPS4-AppImage, draft/race-preservation and native setup/IPC recovery regressions. These fixtures do not execute a real emulator or certify game compatibility.
+
 ## 0.5.13
 
 - Fix updates blocked by unrelated protected Linux processes. Scope shutdown to registered Matrix windows and positively identified helpers; background apps and process churn no longer prevent an agreed update. Never force-stop games or unrelated processes.
