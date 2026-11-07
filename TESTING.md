@@ -2,7 +2,7 @@
 
 ## Version 0.5.11 async ownership and console-library checks
 
-Local Rust 1.99.1 passes 114 headless backend tests, 16 cover-core tests (two
+Local Rust 1.99.1 passes 130 headless backend tests, 16 cover-core tests (two
 opt-in live-provider checks omitted), 31 updater-core tests and 114 JavaScript
 fixtures. Folder, release/signing, DEB-helper and log-lifetime checks also pass,
 along with formatting, syntax and patch-whitespace checks. Release fixtures use
@@ -81,8 +81,22 @@ Shutdown retains each observed PID and birth identity while waiting within its
 existing timeout. Brief processes may exit normally; a still-running process
 cannot become safe merely by clearing its token or restoring environment access.
 Replacement also requires a clean scan after all tracked processes have exited.
+Independent synchronized fixtures cover a child handing off to a grandchild
+after enumeration, disappearance between UID and identity reads, and a baseline
+process becoming a zombie before identity collection. Each keeps replacement
+blocked while the descendant lives. Newly observed dead identities invalidate a
+scan once and are retained, avoiding endless retries for stable zombies.
 The raw native and extracted-AppImage checks each run twice, with both passes
 required and bounded test-only process diagnostics retained for each run.
+
+Installer transport fixtures reproduce the old raw broken-pipe error using a
+harmless closed reader, then check retained cancellation/rejection details,
+incomplete transfers, successful full transfers, verbose concurrent output and
+a descendant holding stderr open. Raw and normalized diagnostic tails are capped
+at 4 KiB, including invalid UTF-8 and JSON-escaping cases that must survive the
+16 KiB persisted-outcome limit. No real pkexec or package installer is executed.
+These checks improve failure diagnosis; they do not establish the underlying
+cause of a particular user's authorization or package-manager failure.
 
 Versions through 0.5.10 do not implement these lifecycle gates. Save and close
 running work and Matrix Play, then install the first upgraded version manually.

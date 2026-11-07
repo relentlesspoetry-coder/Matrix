@@ -1,6 +1,8 @@
 //! Standalone unprivileged coordinator; no GTK/WebKit or old AppImage mount.
 use super::update_lifecycle as lifecycle;
 use matrix_update_core as core;
+#[path = "update_installer.rs"]
+mod system_installer;
 use serde::{Deserialize, Serialize};
 use std::{
     io::{Read, Write},
@@ -53,24 +55,11 @@ fn install(request: &Request, download: &core::Downloaded) -> Result<(), String>
         core::install_appimage(download, &request.target)?;
         return Ok(());
     }
-    let mut child = super::appimage_environment::command("/usr/bin/pkexec")
+    let mut command = super::appimage_environment::command("/usr/bin/pkexec");
+    command
         .arg("/usr/lib/matrix-play/matrix-install-update")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .current_dir("/")
-        .spawn()
-        .map_err(|e| format!("Could not open the secure system installer: {e}"))?;
-    let sent = core::deb::write_request(
-        download,
-        &mut child.stdin.take().ok_or("Installer input unavailable")?,
-    );
-    // Never terminate a privileged installer or release the gate while it runs.
-    let status = child.wait().map_err(|e| e.to_string())?;
-    sent?;
-    if !status.success() {
-        return Err("Installation was cancelled or the system installer failed. Reopen Matrix Play and retry; see your system package manager if it reports a partial installation.".into());
-    }
-    Ok(())
+        .current_dir("/");
+    system_installer::run(command, download)
 }
 pub fn run() -> Result<(), String> {
     // Unlink the private copy once loaded. The process image remains valid,

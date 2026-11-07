@@ -5,6 +5,8 @@
 - Prompt users to save progress, close launched games/apps and wait for installers to finish. Block detected activity, close only cooperating Matrix windows, and verify their exit before installation through a separate coordinator. Never terminate games/installers or signal unrelated processes.
 - Gate new Matrix starts during installation, preserve independent privileged-installer protection, and stop on ambiguous legacy/protected process identity. Earlier versions need one manual upgrade after closing Matrix; the new protections cannot apply retroactively.
 - Wait for briefly unclassified shutdown processes to exit within the existing timeout. Retain their identities and require a clean final scan; persistent uncertainty still blocks replacement.
+- Invalidate process scans when a parent disappears or exits during enumeration, so a surviving descendant cannot be mistaken for a completed shutdown.
+- Preserve bounded system-installer error details and exit status when the helper closes its input early. Never report success after an incomplete request; retain cancellation and manual-recovery guidance.
 - Keep private AppImage runtime paths out of external programs. Fix Python-based launcher startup while preserving non-bundled user paths/settings and the internal log sink runtime.
 - Preserve the original AppImage rollback copy across repeated or concurrent updates, with cross-process locking, unchanged-target checks and recovery on failed replacement.
 - Reject non-regular Steam manifest, desktop-entry and PCSX2 configuration files without blocking scans or launch preflight. Keep bounded regular-file reads and existing regular symlink targets.

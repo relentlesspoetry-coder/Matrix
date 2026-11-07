@@ -114,11 +114,13 @@ impl Identity {
         Ok((identity, running))
     }
     pub fn read(pid: u32) -> Result<Self, String> {
+        Self::observe(pid).map(|(id, _)| id)
+    }
+    fn observe(pid: u32) -> Result<(Self, bool), String> {
         Self::parse(
             pid,
             &fs::read_to_string(format!("/proc/{pid}/stat")).map_err(err)?,
         )
-        .map(|(id, _)| id)
     }
     fn alive_from(&self, stat: std::io::Result<String>) -> bool {
         match stat {
@@ -364,11 +366,22 @@ impl Transaction {
             .collect();
         // Do not request shutdown if hidden orphan/sandbox processes prevent us
         // from establishing ownership. No signal/name fallback is permitted.
-        let scanned = tagged_processes(&tokens, &processes, &baseline)?;
-        if let Some(unverified) = scanned.unverified.first() {
-            return Err(unverified.message.clone());
+        let preparation_deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            let scanned = tagged_processes(&tokens, &processes, &baseline)?;
+            if let Some(unverified) = scanned.unverified.first() {
+                return Err(unverified.message.clone());
+            }
+            let stable = !scanned.unstable;
+            scanned.remember(&mut processes, &mut Vec::new());
+            if stable {
+                break;
+            }
+            if Instant::now() >= preparation_deadline {
+                return Err("Process state kept changing while preparing the update. No installation or shutdown was requested. Let Matrix work finish, then retry.".into());
+            }
+            std::thread::sleep(Duration::from_millis(50));
         }
-        processes.extend(scanned.owned);
         Ok(Self {
             _gate: gate,
             _activity: activity,
@@ -398,14 +411,19 @@ impl Transaction {
         loop {
             // WebKit descendants inherit a unique instance token. Rescan after
             // parents exit too, covering late children and orphaned web workers.
-            tagged_processes(&tokens, &tracked, &self.baseline)?
-                .remember(&mut tracked, &mut unverified);
+            let scanned = tagged_processes(&tokens, &tracked, &self.baseline)?;
+            let mut unstable = scanned.unstable;
+            scanned.remember(&mut tracked, &mut unverified);
             if tracked.iter().all(|p| !p.alive()) {
                 // Only scan for final quiescence AFTER the tracked roots have
                 // exited. A child born while the preceding /proc enumeration
                 // was in progress must not fall into a scan/parent-exit gap.
                 let final_scan = tagged_processes(&tokens, &tracked, &self.baseline)?;
-                let clean = final_scan.owned.is_empty() && final_scan.unverified.is_empty();
+                unstable |= final_scan.unstable;
+                let clean = !final_scan.unstable
+                    && final_scan.observed.is_empty()
+                    && final_scan.owned.is_empty()
+                    && final_scan.unverified.is_empty();
                 final_scan.remember(&mut tracked, &mut unverified);
                 if clean && tracked.iter().all(|p| !p.alive()) {
                     return Ok(());
@@ -414,6 +432,9 @@ impl Transaction {
             if Instant::now() >= deadline {
                 if let Some(process) = unverified.iter().find(|process| process.identity.alive()) {
                     return Err(process.message.clone());
+                }
+                if unstable && tracked.iter().all(|process| !process.alive()) {
+                    return Err("Process state kept changing during shutdown, so closure could not be verified. No update was installed and no process was force-stopped. Let Matrix work finish, then retry.".into());
                 }
                 return Err("Update was not installed because a Matrix process or one of its child processes did not exit. Close it normally, then try again. Nothing was force-stopped.".into());
             }
@@ -540,8 +561,20 @@ fn process_uids(pid: u32) -> Result<Vec<u32>, String> {
     }
     Ok(uids)
 }
+#[derive(Default)]
+struct UserProcessSnapshot {
+    identities: Vec<Identity>,
+    running: Vec<Identity>,
+    unstable: bool,
+}
 fn user_processes() -> Result<Vec<Identity>, String> {
-    let mut result = Vec::new();
+    Ok(user_process_snapshot()?.identities)
+}
+fn process_disappeared(path: &Path) -> bool {
+    matches!(fs::symlink_metadata(path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+}
+fn user_process_snapshot() -> Result<UserProcessSnapshot, String> {
+    let mut result = UserProcessSnapshot::default();
     for entry in fs::read_dir("/proc").map_err(err)? {
         let entry = entry.map_err(err)?;
         let Some(pid) = entry
@@ -555,16 +588,29 @@ fn user_processes() -> Result<Vec<Identity>, String> {
         // actual credentials remain this user's. Kernel Uid fields are decisive.
         let uids = match process_uids(pid) {
             Ok(uids) => uids,
-            Err(_) if !entry.path().exists() => continue,
+            Err(_) if process_disappeared(&entry.path()) => {
+                result.unstable = true;
+                continue;
+            },
             Err(_) => return Err(format!("Cannot verify credentials for process {pid}; update stopped without terminating it.")),
         };
         let uid = unsafe { libc::geteuid() };
         if uids[0] != uid && uids[1] != uid {
             continue;
         }
-        match Identity::read(pid) {
-            Ok(identity) => result.push(identity),
-            Err(_) if !entry.path().exists() => continue,
+        #[cfg(test)]
+        tests::before_process_identity(pid);
+        match Identity::observe(pid) {
+            Ok((identity, running)) => {
+                if running {
+                    result.running.push(identity.clone());
+                }
+                result.identities.push(identity);
+            },
+            Err(_) if process_disappeared(&entry.path()) => {
+                result.unstable = true;
+                continue;
+            },
             Err(_) => return Err(format!("Cannot verify process {pid}; no update will be installed while its identity is unavailable.")),
         }
     }
@@ -576,6 +622,8 @@ struct UnverifiedProcess {
 }
 impl UnverifiedProcess {
     fn new(identity: Identity, message: String) -> Self {
+        #[cfg(test)]
+        tests::unverified_observed(&identity);
         #[cfg(test)]
         if std::env::var_os("MATRIX_NATIVE_COORDINATOR_CONFIG").is_some() {
             eprintln!(
@@ -590,12 +638,15 @@ impl UnverifiedProcess {
 struct ProcessScan {
     owned: Vec<Identity>,
     unverified: Vec<UnverifiedProcess>,
+    observed: Vec<Identity>,
+    unstable: bool,
 }
 impl ProcessScan {
     fn remember(self, tracked: &mut Vec<Identity>, unverified: &mut Vec<UnverifiedProcess>) {
         for identity in self
             .owned
             .iter()
+            .chain(self.observed.iter())
             .chain(self.unverified.iter().map(|process| &process.identity))
         {
             if !tracked.contains(identity) {
@@ -613,19 +664,39 @@ fn tagged_processes(
     baseline: &[Identity],
 ) -> Result<ProcessScan, String> {
     let mut found = ProcessScan::default();
-    for identity in user_processes()? {
-        if !identity.alive() || known.contains(&identity) {
+    let snapshot = user_process_snapshot()?;
+    found.unstable = snapshot.unstable;
+    #[cfg(test)]
+    tests::after_process_snapshot(&snapshot.identities);
+    for identity in &snapshot.identities {
+        if !identity.alive() {
+            if !known.contains(identity) {
+                // A new intermediary may have forked, then exited after /proc
+                // buffered its entries. Remember it even if already a zombie:
+                // this pass is not clean, but a persistent zombie won't spin us.
+                // Baseline membership does not prove it was already dead: it
+                // may have forked after enumeration but before its stat read.
+                found.observed.push(identity.clone());
+                found.unstable = true;
+            }
+            continue;
+        }
+        if known.contains(identity) {
             continue;
         }
         let pid = identity.pid;
         let bytes = match process_environment(pid) {
             Ok(bytes) => bytes,
-            Err(_) if !identity.alive() => continue,
+            Err(_) if !identity.alive() => {
+                found.observed.push(identity.clone());
+                found.unstable = true;
+                continue;
+            }
             // A sandboxed child can be born after the ancestry snapshot, then
             // reparented when its frontend exits. Missing visibility never proves
             // it belongs to another application, including pre-existing orphans.
             Err(_) => {
-                found.unverified.push(UnverifiedProcess::new(identity, format!("Cannot verify whether process {pid} belongs to Matrix Play. No update was installed and no process was force-stopped. Leave unrelated apps running; install manually only after confirming Matrix Play and its helpers are closed.")));
+                found.unverified.push(UnverifiedProcess::new(identity.clone(), format!("Cannot verify whether process {pid} belongs to Matrix Play. No update was installed and no process was force-stopped. Leave unrelated apps running; install manually only after confirming Matrix Play and its helpers are closed.")));
                 continue;
             }
         };
@@ -643,17 +714,27 @@ fn tagged_processes(
             // turn a readable, still-tagged orphan into an unrelated process.
             // Tokens identify candidates to wait for/block on, never to signal.
             if !identity.alive() {
+                found.observed.push(identity.clone());
+                found.unstable = true;
                 continue;
             }
-            found.unverified.push(UnverifiedProcess::new(identity, format!("Cannot verify Matrix Play activity in process {pid}: its token belongs to an exited or unregistered instance. No update was installed and no process was force-stopped. Leave unrelated apps running; install manually only after confirming Matrix Play and its helpers are closed.")));
+            found.unverified.push(UnverifiedProcess::new(identity.clone(), format!("Cannot verify Matrix Play activity in process {pid}: its token belongs to an exited or unregistered instance. No update was installed and no process was force-stopped. Leave unrelated apps running; install manually only after confirming Matrix Play and its helpers are closed.")));
             continue;
         }
         if !inherited_tokens.is_empty() {
-            found.owned.push(identity);
-        } else if !baseline.contains(&identity) && identity.alive() {
+            found.owned.push(identity.clone());
+        } else if !baseline.contains(identity) {
             // A late child may also deliberately clear its environment. A new,
             // unclassified process cannot be treated as a completed shutdown.
-            found.unverified.push(UnverifiedProcess::new(identity, format!("Process {pid} started during shutdown and its ownership could not be verified. No update was installed and no process was force-stopped. Leave unrelated apps running; install manually only after confirming Matrix Play and its helpers are closed.")));
+            found.unverified.push(UnverifiedProcess::new(identity.clone(), format!("Process {pid} started during shutdown and its ownership could not be verified. No update was installed and no process was force-stopped. Leave unrelated apps running; install manually only after confirming Matrix Play and its helpers are closed.")));
+        }
+    }
+    for identity in snapshot.running {
+        if !identity.alive() {
+            // This includes baseline/known processes: an exit during this pass
+            // may have handed work to a descendant absent from its snapshot.
+            found.observed.push(identity);
+            found.unstable = true;
         }
     }
     Ok(found)
@@ -740,6 +821,106 @@ mod tests {
     use super::*;
     use std::process::{Child, Command, Stdio};
     static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    struct ScanRace {
+        root: PathBuf,
+        app: Identity,
+        stage: u8,
+        during_identity: bool,
+        baseline_only: bool,
+    }
+    thread_local! {
+        static SCAN_RACE: std::cell::RefCell<Option<ScanRace>> = const { std::cell::RefCell::new(None) };
+        static HIDDEN_OBSERVATION: std::cell::RefCell<Option<(Identity, PathBuf)>> = const { std::cell::RefCell::new(None) };
+    }
+    struct ResetScanHooks;
+    impl Drop for ResetScanHooks {
+        fn drop(&mut self) {
+            SCAN_RACE.with(|state| *state.borrow_mut() = None);
+            HIDDEN_OBSERVATION.with(|state| *state.borrow_mut() = None);
+        }
+    }
+    pub(super) fn unverified_observed(identity: &Identity) {
+        HIDDEN_OBSERVATION.with(|state| {
+            if let Some((expected, path)) = state.borrow().as_ref() {
+                if identity == expected {
+                    fs::write(path, b"").unwrap();
+                }
+            }
+        });
+    }
+    fn release_grandchild(race: &mut ScanRace, require_disappearance: bool) {
+        let pid: u32 = fs::read_to_string(race.root.join("late.ready"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        let middle = Identity::read(pid).unwrap();
+        assert!(middle.alive());
+        fs::write(race.root.join("race.spawn-leaf"), b"").unwrap();
+        wait_file(&race.root.join("race.leaf.ready"));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while if require_disappearance {
+            !process_disappeared(Path::new(&format!("/proc/{pid}")))
+        } else {
+            middle.alive()
+        } {
+            assert!(Instant::now() < deadline, "intermediary did not exit");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        if race.baseline_only {
+            assert!(
+                Path::new(&format!("/proc/{pid}")).exists(),
+                "fixture must retain the intermediary zombie"
+            );
+        }
+        race.stage = 2;
+    }
+    pub(super) fn after_process_snapshot(snapshot: &[Identity]) {
+        SCAN_RACE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(race) = state.as_mut() else {
+                return;
+            };
+            if race.stage == 0 {
+                assert!(snapshot.contains(&race.app));
+                if race.baseline_only {
+                    race.stage = 1;
+                    return;
+                }
+                fs::write(race.root.join("race.spawn-middle"), b"").unwrap();
+                wait_file(&race.root.join("late.ready"));
+                let deadline = Instant::now() + Duration::from_secs(2);
+                while race.app.alive() {
+                    assert!(Instant::now() < deadline);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                race.stage = 1;
+            } else if race.stage == 1 && !race.during_identity {
+                let pid: u32 = fs::read_to_string(race.root.join("late.ready"))
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                assert!(snapshot.iter().any(|identity| identity.pid == pid));
+                release_grandchild(race, false);
+            }
+        });
+    }
+    pub(super) fn before_process_identity(pid: u32) {
+        SCAN_RACE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(race) = state.as_mut() else {
+                return;
+            };
+            if race.stage == 1 && race.during_identity {
+                let middle: u32 = fs::read_to_string(race.root.join("late.ready"))
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                if pid == middle {
+                    release_grandchild(race, !race.baseline_only);
+                }
+            }
+        });
+    }
     /// Native-test-only evidence, captured while an unverified PID still exists.
     /// Do not record argv or environment values (which may contain secrets).
     pub(super) fn process_diagnostic(expected: &Identity) -> String {
@@ -831,6 +1012,8 @@ mod tests {
                 "late.show",
                 "runtime-app.finish",
                 "runtime-release",
+                "race.spawn-middle",
+                "race.spawn-leaf",
             ] {
                 let _ = fs::write(self.root.join(name), b"");
             }
@@ -849,14 +1032,16 @@ mod tests {
             }
             // A deliberately orphaned late-child fixture must finish before its
             // temporary directory is removed. Never signal a PID from a file.
-            if let Ok(pid) = fs::read_to_string(self.root.join("late.ready"))
-                .unwrap_or_default()
-                .parse::<u32>()
-            {
-                if let Ok(identity) = Identity::read(pid) {
-                    let until = Instant::now() + Duration::from_secs(2);
-                    while identity.alive() && Instant::now() < until {
-                        std::thread::sleep(Duration::from_millis(10));
+            for name in ["late.ready", "race.leaf.ready"] {
+                if let Ok(pid) = fs::read_to_string(self.root.join(name))
+                    .unwrap_or_default()
+                    .parse::<u32>()
+                {
+                    if let Ok(identity) = Identity::read(pid) {
+                        let until = Instant::now() + Duration::from_secs(2);
+                        while identity.alive() && Instant::now() < until {
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
                     }
                 }
             }
@@ -972,6 +1157,9 @@ mod tests {
             }
             if mode != "stubborn" && instance.stop_requested() {
                 if mode.starts_with("late-") {
+                    if mode == "late-race" {
+                        wait_file(&root.join("race.spawn-middle"));
+                    }
                     let (_, module) = module_path!().split_once("::").unwrap();
                     let mut command = Command::new(std::env::current_exe().unwrap());
                     if mode == "late-tagged" {
@@ -1004,6 +1192,30 @@ mod tests {
         };
         let root = PathBuf::from(root);
         let mode = std::env::var("MATRIX_FIXTURE_MODE").unwrap();
+        if mode == "late-race" || mode == "baseline-race" {
+            fs::write(root.join("late.ready"), std::process::id().to_string()).unwrap();
+            wait_file(&root.join("race.spawn-leaf"));
+            let (_, module) = module_path!().split_once("::").unwrap();
+            Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    &format!("{module}::late_child_fixture"),
+                    "--nocapture",
+                ])
+                .env("MATRIX_LIFECYCLE_FIXTURE", &root)
+                .env("MATRIX_FIXTURE_MODE", "race-leaf")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            wait_file(&root.join("race.leaf.ready"));
+            return;
+        }
+        if mode == "race-leaf" {
+            fs::write(root.join("race.leaf.ready"), std::process::id().to_string()).unwrap();
+            wait_file(&root.join("late.finish"));
+            return;
+        }
         if mode == "late-hidden" {
             assert_eq!(unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0) }, 0);
         }
@@ -1119,11 +1331,15 @@ mod tests {
         fs::write(root.path().join("late.hide"), b"").unwrap();
         wait_file(&root.path().join("late.hidden"));
         assert!(process_environment(process.id()).is_err());
+        let _reset_hooks = ResetScanHooks;
+        HIDDEN_OBSERVATION.with(|state| {
+            *state.borrow_mut() = Some((identity.clone(), root.path().join("late.observed")))
+        });
         let release_root = root.path().to_owned();
         let released = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let did_release = released.clone();
         let release = std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(100));
+            wait_file(&release_root.join("late.observed"));
             fs::write(release_root.join("late.show"), b"").unwrap();
             wait_file(&release_root.join("late.visible"));
             std::thread::sleep(Duration::from_millis(150));
@@ -1137,27 +1353,143 @@ mod tests {
         assert!(released_before_return && !identity.alive());
         assert!(process.wait().unwrap().success());
     }
+    fn assert_grandchild_handoff_blocks(during_identity: bool, baseline_only: bool) {
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let root = tempfile::tempdir().unwrap();
+        let mut app = if baseline_only {
+            let (_, module) = module_path!().split_once("::").unwrap();
+            FixtureChild::new(
+                Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        &format!("{module}::late_child_fixture"),
+                        "--nocapture",
+                    ])
+                    .env("MATRIX_LIFECYCLE_FIXTURE", root.path())
+                    .env("MATRIX_FIXTURE_MODE", "baseline-race")
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .unwrap(),
+                root.path(),
+            )
+        } else {
+            child(root.path(), "race-app", "late-race")
+        };
+        wait_file(&root.path().join(if baseline_only {
+            "late.ready"
+        } else {
+            "race-app.ready"
+        }));
+        let identity = Identity::read(app.id()).unwrap();
+        let transaction = Transaction::prepare(root.path(), &fake_exe(root.path())).unwrap();
+        let _reset_hooks = ResetScanHooks;
+        SCAN_RACE.with(|state| {
+            *state.borrow_mut() = Some(ScanRace {
+                root: root.path().to_owned(),
+                app: identity,
+                stage: 0,
+                during_identity,
+                baseline_only,
+            })
+        });
+        let result = transaction.shutdown(Duration::from_secs(1));
+        SCAN_RACE.with(|state| assert_eq!(state.borrow().as_ref().unwrap().stage, 2));
+        let pid: u32 = fs::read_to_string(root.path().join("race.leaf.ready"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        let leaf = Identity::read(pid).unwrap();
+        let alive_at_return = leaf.alive();
+        // Voluntary fixture exit, after checking the protected replacement boundary.
+        fs::write(root.path().join("late.finish"), b"").unwrap();
+        assert!(app.wait().unwrap().success());
+        assert!(alive_at_return);
+        assert!(
+            result.is_err(),
+            "replacement crossed a live grandchild: {result:?}"
+        );
+        assert!(result
+            .unwrap_err()
+            .contains("ownership could not be verified"));
+    }
+    #[test]
+    fn grandchild_handoff_after_snapshot_cannot_report_quiescence() {
+        assert_grandchild_handoff_blocks(false, false);
+    }
+    #[test]
+    fn grandchild_handoff_during_identity_read_cannot_report_quiescence() {
+        assert_grandchild_handoff_blocks(true, false);
+    }
+    #[test]
+    fn baseline_zombie_handoff_during_identity_read_cannot_report_quiescence() {
+        assert_grandchild_handoff_blocks(true, true);
+    }
+    #[test]
+    fn newly_observed_persistent_zombie_does_not_prevent_eventual_quiescence() {
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let root = tempfile::tempdir().unwrap();
+        let transaction = Transaction::prepare(root.path(), &fake_exe(root.path())).unwrap();
+        let mut child = Command::new("/bin/true").spawn().unwrap();
+        let identity = Identity::read(child.id()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while identity.alive() {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(Path::new(&format!("/proc/{}", identity.pid)).exists());
+        let result = transaction.shutdown(Duration::from_secs(1));
+        assert!(child.wait().unwrap().success());
+        assert!(
+            result.is_ok(),
+            "stable zombie kept invalidating the scan: {result:?}"
+        );
+    }
     #[test]
     fn test_process_diagnostics_are_bounded_and_do_not_include_environment_values() {
-        let mut process = Command::new("/bin/sleep")
-            .arg("0.2")
+        let root = tempfile::tempdir().unwrap();
+        let ready = root.path().join("ready");
+        let mut process = Command::new("/bin/sh")
+            .args([
+                "-c",
+                "printf ready > \"$1\"; read line",
+                "matrix-diagnostic-fixture",
+            ])
+            .arg(&ready)
             .env(
                 "MATRIX_LIFECYCLE_FIXTURE",
                 "synthetic-secret-must-not-be-logged",
             )
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
             .unwrap();
+        wait_file(&ready);
         let identity = Identity::read(process.id()).unwrap();
+        let executable = fs::read_link(format!("/proc/{}/exe", process.id())).unwrap();
         let diagnostic = process_diagnostic(&identity);
+        process
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"finish\n")
+            .unwrap();
         assert!(process.wait().unwrap().success());
         assert!(diagnostic.len() < 16384);
         assert!(!diagnostic.contains("synthetic-secret-must-not-be-logged"));
         let diagnostic: serde_json::Value = serde_json::from_str(&diagnostic).unwrap();
         assert_eq!(diagnostic["expected"]["pid"], identity.pid);
-        assert!(diagnostic["process_and_ancestors"][0]["exe"]
-            .as_str()
-            .unwrap()
-            .ends_with("/sleep"));
+        assert_eq!(
+            diagnostic["process_and_ancestors"][0]["exe"]
+                .as_str()
+                .unwrap(),
+            executable.to_string_lossy()
+        );
         assert!(diagnostic["process_and_ancestors"][0]["marker_names"]
             .as_array()
             .unwrap()
