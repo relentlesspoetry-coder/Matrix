@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     io::{Read, Write},
     path::PathBuf,
-    process::{Command, Stdio},
+    process::Stdio,
     time::Duration,
 };
 #[derive(Serialize, Deserialize)]
@@ -53,7 +53,7 @@ fn install(request: &Request, download: &core::Downloaded) -> Result<(), String>
         core::install_appimage(download, &request.target)?;
         return Ok(());
     }
-    let mut child = Command::new("/usr/bin/pkexec")
+    let mut child = super::appimage_environment::command("/usr/bin/pkexec")
         .arg("/usr/lib/matrix-play/matrix-install-update")
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -132,7 +132,7 @@ pub fn run() -> Result<(), String> {
     let saved = lifecycle::save_outcome(&root, &outcome);
     drop(transaction);
     // Reopen once on success or recoverable failure. No game is relaunched.
-    let reopened = Command::new(&request.target)
+    let reopened = super::appimage_environment::command(&request.target)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

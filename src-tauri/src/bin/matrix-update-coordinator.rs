@@ -1,5 +1,7 @@
 //! Copied out of the application resources before shutdown. Headless by design.
 #![allow(dead_code)]
+#[path = "../appimage_environment.rs"]
+mod appimage_environment;
 #[path = "../update_lifecycle.rs"]
 mod update_lifecycle;
 #[path = "../update_worker.rs"]

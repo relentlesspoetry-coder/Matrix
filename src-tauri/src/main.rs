@@ -3,6 +3,7 @@
     windows_subsystem = "windows"
 )]
 
+mod appimage_environment;
 mod artwork;
 mod bounded_io;
 #[cfg(test)]
@@ -1419,7 +1420,7 @@ fn isolate_runtime_cache() {
 }
 
 fn launch_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
-    let mut command = Command::new(program);
+    let mut command = appimage_environment::command(program);
     // The cache override belongs to Matrix, not to games or external applications.
     if let Some(original) = ORIGINAL_CACHE_HOME.get() {
         match original {
@@ -1431,7 +1432,6 @@ fn launch_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
             }
         }
     }
-    command.env_remove("MATRIX_INSTANCE_TOKEN");
     command
 }
 

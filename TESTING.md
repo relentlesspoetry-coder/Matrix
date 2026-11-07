@@ -2,7 +2,7 @@
 
 ## Version 0.5.11 async ownership and console-library checks
 
-Local Rust 1.99.1 passes 105 headless backend tests, 16 cover-core tests (two
+Local Rust 1.99.1 passes 111 headless backend tests, 16 cover-core tests (two
 opt-in live-provider checks omitted), 31 updater-core tests and 114 JavaScript
 fixtures. Folder, release/signing, DEB-helper and log-lifetime checks also pass,
 along with formatting, syntax and patch-whitespace checks. Release fixtures use
@@ -80,6 +80,16 @@ Unverifiable processes intentionally block updates rather than being killed.
 
 Versions through 0.5.10 do not implement these lifecycle gates. Save and close
 running work and Matrix Play, then install the first upgraded version manually.
+
+The expanded AppImage test exposed a real external-launch defect: AppRun's
+bundle-specific PYTHONHOME/PYTHONPATH prevented the host Python writer from loading
+its standard library. A subprocess regression reproduces the failure, then verifies
+shared launch cleanup while retaining a user-provided module path. Cleanup applies
+only to a verified Matrix AppImage and removes bundle-owned paths, not unrelated
+user environment values. An original PYTHONHOME already overwritten by AppRun
+without a saved copy cannot be reconstructed. The internal log sink retains its
+bundled runtime.
+Actual extracted-AppImage verification must pass on the final exact commit.
 
 PS3/Wii U automatic artwork is not included: a separately staged provider change
 needs correction and production-transport verification.

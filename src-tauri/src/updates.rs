@@ -38,16 +38,7 @@ fn identify_appimage(
     appdir: &std::path::Path,
     exe: &std::path::Path,
 ) -> Option<PathBuf> {
-    let image = image.canonicalize().ok()?;
-    let appdir = appdir.canonicalize().ok()?;
-    let exe = exe.canonicalize().ok()?;
-    // A launcher can inherit APPIMAGE from another application. Only our own
-    // mounted/extracted AppImage may be replaced by this process.
-    if image.is_file() && exe.starts_with(&appdir) && exe.file_name()? == "matrix-frontend" {
-        Some(image)
-    } else {
-        None
-    }
+    super::appimage_environment::Context::identify(image, appdir, exe).map(|context| context.image)
 }
 fn running_appimage() -> Option<PathBuf> {
     identify_appimage(
@@ -68,20 +59,6 @@ fn mode() -> String {
         "download"
     }
     .into()
-}
-fn clean_appimage_environment(command: &mut std::process::Command) {
-    if std::env::var_os("APPIMAGE").is_some() {
-        command
-            .env_remove("APPDIR")
-            .env_remove("APPIMAGE")
-            .env_remove("ARGV0");
-        if let Some(original) = std::env::var_os("LD_LIBRARY_PATH_ORIG") {
-            command.env("LD_LIBRARY_PATH", original);
-        } else {
-            command.env_remove("LD_LIBRARY_PATH");
-        }
-        command.env_remove("LD_PRELOAD");
-    }
 }
 impl Default for Service {
     fn default() -> Self {
@@ -287,7 +264,6 @@ impl Service {
             std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
                 .map_err(|e| e.to_string())?;
             let mut command = super::launch_command(&executable);
-            clean_appimage_environment(&mut command);
             let mut child = command
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
@@ -387,17 +363,6 @@ pub(crate) fn restart_updated(
         .clone()
         .ok_or("Install an update before restarting")?;
     let mut command = super::launch_command(target);
-    if std::env::var_os("APPIMAGE").is_some() {
-        command
-            .env_remove("APPDIR")
-            .env_remove("APPIMAGE")
-            .env_remove("ARGV0");
-        if let Some(original) = std::env::var_os("LD_LIBRARY_PATH_ORIG") {
-            command.env("LD_LIBRARY_PATH", original);
-        } else {
-            command.env_remove("LD_LIBRARY_PATH");
-        }
-    }
     command.spawn().map_err(|e|format!("Update is installed, but automatic restart failed: {e}. Open Matrix Play again from your application menu."))?;
     app.exit(0);
     Ok(())
