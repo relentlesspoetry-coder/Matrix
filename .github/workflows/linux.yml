@@ -22,7 +22,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libdbus-1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xdg-utils webkit2gtk-driver xvfb xauth python3-pil
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libdbus-1-dev dbus-daemon libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xdg-utils webkit2gtk-driver xvfb xauth python3-pil
       - name: Prepare Rust
         run: rustup default stable
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
@@ -32,13 +32,30 @@ jobs:
             cover-core -> target
             src-tauri -> target
       - run: npm ci
+      - name: Prepare isolated process-test account
+        run: |
+          # Never reuse the runner UID: its protected service is intentionally
+          # unverifiable to Matrix's fail-closed process ownership checks.
+          sudo useradd --create-home --user-group --shell /bin/bash matrix-test
+          sudo chmod 0700 /home/matrix-test
+          sudo install -d -o matrix-test -g matrix-test -m 0700 /home/matrix-test/runtime
+          sudo install -d -o matrix-test -g matrix-test -m 0755 /home/matrix-test/bin /home/matrix-test/work /home/matrix-test/artifacts
+          sudo cp -R tests /home/matrix-test/work/tests
+          sudo chown -R matrix-test:matrix-test /home/matrix-test/work/tests
       - name: Test Rust and managed folders
         run: |
           cargo test --locked --manifest-path update-core/Cargo.toml
           cargo test --locked --manifest-path cover-core/Cargo.toml
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --lib -- --test-threads=1
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --bin matrix-frontend -- --test-threads=1
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --lib --no-run --message-format=json > "$RUNNER_TEMP/matrix-headless-tests.json"
+          headless=$(python3 scripts/find-test-binary.py "$RUNNER_TEMP/matrix-headless-tests.json" lib src-tauri/src/lib.rs)
+          sudo install -o matrix-test -g matrix-test -m 0755 "$headless" /home/matrix-test/bin/backend-tests
+          scripts/run-ci-as-test-user.sh /home/matrix-test/bin/backend-tests --test-threads=1
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --bin matrix-frontend --no-run --message-format=json > "$RUNNER_TEMP/matrix-desktop-tests.json"
+          desktop=$(python3 scripts/find-test-binary.py "$RUNNER_TEMP/matrix-desktop-tests.json" bin src-tauri/src/main.rs)
+          sudo install -o matrix-test -g matrix-test -m 0755 "$desktop" /home/matrix-test/bin/desktop-tests
+          scripts/run-ci-as-test-user.sh /home/matrix-test/bin/desktop-tests --test-threads=1
           python3 tests/test_structure.py
+          python3 tests/test_ci_process_account.py
           python3 tests/test_release.py
           python3 tests/test_deb_package.py
           python3 tests/test_launch_log_lifetime.py
@@ -59,7 +76,9 @@ jobs:
           WEBKIT_DISABLE_COMPOSITING_MODE: '1'
           WEBKIT_DISABLE_DMABUF_RENDERER: '1'
           LIBGL_ALWAYS_SOFTWARE: '1'
-        run: xvfb-run -a python3 tests/test_normal_startup.py src-tauri/target/release/matrix-frontend --screenshot test-artifacts/normal-startup.png
+        run: |
+          sudo install -o matrix-test -g matrix-test -m 0755 src-tauri/target/release/matrix-frontend /home/matrix-test/bin/matrix-frontend
+          scripts/run-ci-as-test-user.sh dbus-run-session -- xvfb-run -a python3 /home/matrix-test/work/tests/test_normal_startup.py /home/matrix-test/bin/matrix-frontend --screenshot /home/matrix-test/artifacts/normal-startup.png
       - name: Test actual desktop window
         env:
           WEBKIT_DISABLE_COMPOSITING_MODE: '1'
@@ -67,7 +86,8 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: '1'
         run: |
           cargo install tauri-driver --version 2.1.0 --locked
-          xvfb-run -a python3 tests/test_native.py src-tauri/target/release/matrix-frontend --screenshots test-artifacts/native
+          sudo install -o matrix-test -g matrix-test -m 0755 "$(command -v tauri-driver)" /home/matrix-test/bin/tauri-driver
+          scripts/run-ci-as-test-user.sh dbus-run-session -- xvfb-run -a python3 /home/matrix-test/work/tests/test_native.py /home/matrix-test/bin/matrix-frontend --coordinator-tests /home/matrix-test/bin/backend-tests --screenshots /home/matrix-test/artifacts/native
       - name: Test extracted AppImage shutdown
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
@@ -76,7 +96,8 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: '1'
         run: |
           images=(src-tauri/target/release/bundle/appimage/*.AppImage)
-          xvfb-run -a python3 tests/test_native.py "${images[0]}" --shutdown-only --screenshots test-artifacts/native-appimage
+          sudo install -o matrix-test -g matrix-test -m 0755 "${images[0]}" /home/matrix-test/bin/Matrix.AppImage
+          scripts/run-ci-as-test-user.sh dbus-run-session -- xvfb-run -a python3 /home/matrix-test/work/tests/test_native.py /home/matrix-test/bin/Matrix.AppImage --coordinator-tests /home/matrix-test/bin/backend-tests --shutdown-only --screenshots /home/matrix-test/artifacts/native-appimage
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Matrix-Play-linux-x86_64
@@ -84,6 +105,14 @@ jobs:
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
+      - name: Collect isolated test diagnostics
+        if: always()
+        run: |
+          if sudo test -d /home/matrix-test/artifacts; then
+            mkdir -p test-artifacts
+            sudo cp -R /home/matrix-test/artifacts/. test-artifacts/
+            sudo chown -R "$(id -u):$(id -g)" test-artifacts
+          fi
       - name: Upload startup diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

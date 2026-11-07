@@ -18,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 HELPER = 'usr/lib/matrix-play/matrix-install-update'
 FRONTEND = 'usr/bin/matrix-frontend'
 COORDINATOR = 'matrix-update-coordinator'
+PERSISTENT_GUARD = 'var/lib/matrix-play/update.lock'
+POSTINST = ROOT / 'src-tauri/debian/postinst.sh'
 PACKAGE = 'matrix-play'
 AMD64_ELF = (2, 1, 62)  # ELF64, little-endian, EM_X86_64
 
@@ -47,6 +49,33 @@ def verify_deb(package, version):
                             dependency.strip())
                for dependency in dependencies.split(',')):
         raise ValueError('Depends: the secure update installer requires pkexec')
+    # Inspect the control archive too: the stable installer guard must be
+    # provisioned by a safe maintainer script, never by installing a payload
+    # file that would replace its locked inode. Nothing here is executed.
+    with tempfile.TemporaryFile() as control:
+        subprocess.run(['dpkg-deb', '--ctrl-tarfile', str(package)], stdout=control, check=True)
+        control.seek(0)
+        with tarfile.open(fileobj=control, mode='r:') as archive:
+            scripts = [member for member in archive if member.name.removeprefix('./').lstrip('/') == 'postinst']
+            if len(scripts) != 1:
+                raise ValueError('postinst: missing or duplicate control archive member')
+            script = scripts[0]
+            if not script.isfile():
+                raise ValueError('postinst: must be a regular file')
+            if (script.uid, script.gid) != (0, 0):
+                raise ValueError('postinst: must be owned by root:root')
+            if script.mode & 0o022 or script.mode & 0o111 != 0o111:
+                raise ValueError('postinst: must be executable and not group/other-writable')
+            if script.mode & 0o7000:
+                raise ValueError('postinst: unexpected special permission bits')
+            if script.size > 65536:
+                raise ValueError('postinst: unexpectedly large script')
+            with archive.extractfile(script) as source:
+                body = source.read(65537)
+            # Tauri may surround the repository hook with its own boilerplate;
+            # the exact reviewed hook must remain present and unmodified.
+            if not body.startswith(b'#!') or POSTINST.read_bytes().strip() not in body:
+                raise ValueError('postinst: missing expected persistent-lock provisioning hook')
     # Use a temporary file rather than buffering an entire installer in memory.
     # Nothing is extracted; tar metadata and just the ELF headers are read.
     with tempfile.TemporaryFile() as payload:
@@ -59,6 +88,8 @@ def verify_deb(package, version):
                 while name.startswith('./'):
                     name = name[2:]
                 name = name.lstrip('/')
+                if name == PERSISTENT_GUARD:
+                    raise ValueError('Persistent update guard must not be a replaceable package payload')
                 if name.startswith('usr/lib/') and name.endswith('/' + COORDINATOR):
                     name = COORDINATOR
                 if name not in (HELPER, FRONTEND, COORDINATOR):
@@ -95,7 +126,9 @@ def synthetic_elf(machine=62, elf_class=2):
 
 def fixture_deb(path, *, package=PACKAGE, version='1.2.3', architecture='amd64',
                 helper=True, uid=0, gid=0, mode=0o755, kind=tarfile.REGTYPE,
-                helper_elf=None, frontend_elf=None, duplicate=False, depends='pkexec', coordinator=True):
+                helper_elf=None, frontend_elf=None, duplicate=False, depends='pkexec', coordinator=True,
+                postinst=True, postinst_uid=0, postinst_gid=0, postinst_mode=0o755,
+                postinst_kind=tarfile.REGTYPE, postinst_body=None, postinst_duplicate=False, persistent_payload=False):
     """Write a minimal ar/DEB with controlled tar metadata, without root access."""
     def tar_bytes(entries):
         output = io.BytesIO()
@@ -118,10 +151,20 @@ def fixture_deb(path, *, package=PACKAGE, version='1.2.3', architecture='amd64',
         entry = tarfile.TarInfo('./usr/lib/matrix-play/' + COORDINATOR)
         entry.mode = 0o755
         entries.append((entry, synthetic_elf()))
+    controls = [(tarfile.TarInfo('./control'), control)]
+    if postinst:
+        entry = tarfile.TarInfo('./postinst')
+        entry.uid, entry.gid, entry.mode, entry.type = postinst_uid, postinst_gid, postinst_mode, postinst_kind
+        entry.linkname = 'control' if postinst_kind in (tarfile.SYMTYPE, tarfile.LNKTYPE) else ''
+        controls.append((entry, POSTINST.read_bytes() if postinst_body is None else postinst_body))
+        if postinst_duplicate:
+            controls.append(controls[-1])
+    if persistent_payload:
+        entries.append((tarfile.TarInfo('./' + PERSISTENT_GUARD), b''))
     with path.open('wb') as output:
         output.write(b'!<arch>\n')
         for name, data in [('debian-binary', b'2.0\n'),
-                           ('control.tar', tar_bytes([(tarfile.TarInfo('./control'), control)])),
+                           ('control.tar', tar_bytes(controls)),
                            ('data.tar', tar_bytes(entries))]:
             output.write(f'{name + "/":<16}{0:<12}{0:<6}{0:<6}{"100644":<8}{len(data):<10}`\n'.encode())
             output.write(data)
@@ -146,6 +189,29 @@ class PackageTests(unittest.TestCase):
         hook = ROOT / 'src-tauri' / config['bundle']['linux']['deb']['postInstallScript']
         self.assertIn('update.lock', hook.read_text())
         self.assertIn('--bin matrix-update-coordinator', config['build']['beforeBuildCommand'])
+
+    def test_postinst_and_persistent_guard_are_validated_without_execution(self):
+        cases = [
+            ({'postinst': False}, 'missing'),
+            ({'postinst_duplicate': True}, 'duplicate'),
+            ({'postinst_uid': 1000}, 'root:root'),
+            ({'postinst_gid': 1000}, 'root:root'),
+            ({'postinst_mode': 0o644}, 'executable'),
+            ({'postinst_mode': 0o775}, 'group/other-writable'),
+            ({'postinst_mode': 0o4755}, 'special permission'),
+            ({'postinst_kind': tarfile.SYMTYPE}, 'regular file'),
+            ({'postinst_kind': tarfile.LNKTYPE}, 'regular file'),
+            ({'postinst_body': b'#!/bin/sh\nexit 0\n'}, 'provisioning hook'),
+            ({'postinst_body': b'x' * 65537}, 'large script'),
+            ({'persistent_payload': True}, 'replaceable package payload'),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            for index, (options, expected) in enumerate(cases):
+                with self.subTest(options=options.keys()):
+                    path = Path(directory) / f'unsafe-hook-{index}.deb'
+                    fixture_deb(path, **options)
+                    with self.assertRaisesRegex(ValueError, expected):
+                        verify_deb(path, '1.2.3')
 
     def test_invalid_packages(self):
         cases = [

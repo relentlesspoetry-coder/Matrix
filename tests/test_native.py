@@ -46,6 +46,7 @@ def main():
     args.add_argument('--driver', default='tauri-driver')
     args.add_argument('--webkit-driver', default='WebKitWebDriver')
     args.add_argument('--online', action='store_true')
+    args.add_argument('--coordinator-tests', type=Path, help='Prebuilt headless Rust test harness; avoids compiler/cache access under an isolated test UID')
     args.add_argument('--shutdown-only', action='store_true', help='Only the real native update-confirmation and process lifecycle integration')
     args.add_argument('--check-updates', action='store_true', help='Check the real public GitHub updater (network required)')
     args.add_argument('--download-update', action='store_true', help='Download and verify a newer release through the actual UI; never install it')
@@ -185,7 +186,7 @@ def main():
             if cfg.shutdown_only:
                 check_shutdown_prompt()
                 from native_update_lifecycle import exercise
-                exercise(binary, env, home, invoke, js, wait_for)
+                exercise(binary, env, home, invoke, js, wait_for, cfg.coordinator_tests)
                 return
             wait_for(lambda: js('return document.querySelector(".brand-logo")?.naturalWidth > 0'))
             discovered=invoke('bootstrap')
@@ -708,7 +709,7 @@ def main():
             # This final test deliberately closes the real native windows using
             # the production cooperative handler. Only test-owned PIDs qualify.
             from native_update_lifecycle import exercise
-            exercise(binary, env, home, invoke, js, wait_for)
+            exercise(binary, env, home, invoke, js, wait_for, cfg.coordinator_tests)
         except Exception:
             try:
                 print('Native UI failure state:', json.dumps(js('return {page:state.page, overlay:state.overlay, busy:state.launchBusy, launches:state.launches, active:document.activeElement.outerHTML, keyEvents:window.__keyEvents, tabStops:[...document.querySelectorAll("#overlay-root button,#overlay-root input,#overlay-root select,#overlay-root textarea,#overlay-root summary")].map(node=>({html:node.outerHTML,tabIndex:node.tabIndex,disabled:node.matches(":disabled"),hidden:!!node.closest("[hidden],[inert]"),rects:node.getClientRects().length,visibility:getComputedStyle(node).visibility})), launchStatus:document.querySelector("#launch-status")?.textContent}')))

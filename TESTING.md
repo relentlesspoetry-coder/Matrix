@@ -2,7 +2,7 @@
 
 ## Version 0.5.11 async ownership and console-library checks
 
-Local Rust 1.99.1 passes 102 headless backend tests, 16 cover-core tests (two
+Local Rust 1.99.1 passes 103 headless backend tests, 16 cover-core tests (two
 opt-in live-provider checks omitted), 31 updater-core tests and 114 JavaScript
 fixtures. Folder, release/signing, DEB-helper and log-lifetime checks also pass,
 along with formatting, syntax and patch-whitespace checks. Release fixtures use
@@ -58,6 +58,14 @@ failure and reopening. Recovery and cancellation messages remain visible until a
 explicit retry rather than being erased by an automatic update check. A real signed AppImage was staged only onto disposable
 fixture targets to verify duplicate-install rollback preservation. Repeated core
 suites exercise inherited lock descriptors and concurrent transactions.
+
+Process-ownership fixtures run under a separate unprivileged CI account with a
+clean environment and copied test binaries. The runner's protected background
+service deliberately fails the production ownership check when it shares a UID;
+isolation avoids that unrelated test-environment blocker without relaxing the
+updater's fail-closed checks or sharing runner credentials. Built-DEB checks also
+inspect the executable, root-owned post-install hook without running it, and
+reject a replaceable update-lock file in the package payload.
 
 The expanded native pipeline opens two actual Matrix windows, refuses a third
 while the update gate is held, verifies both actual exits before a harmless

@@ -14,7 +14,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def exercise(binary, env, home, invoke, js, wait_for):
+def exercise(binary, env, home, invoke, js, wait_for, coordinator_tests=None):
     registry = Path(f'/tmp/matrix-play-lifecycle-{os.geteuid()}')
     appimage = binary.name.endswith('.AppImage')
 
@@ -54,8 +54,15 @@ def exercise(binary, env, home, invoke, js, wait_for):
         helper_env['MATRIX_NATIVE_COORDINATOR_CONFIG'] = str(config)
         # The same production Transaction is exercised through a test-only Rust
         # entry point. This command never downloads or installs a package.
-        command = ['cargo', 'test', '--locked', '--manifest-path', str(ROOT/'src-tauri/Cargo.toml'),
-                   '--no-default-features', '--lib', 'native_coordinator_fixture', '--', '--nocapture', '--test-threads=1']
+        if coordinator_tests is not None:
+            # Built under the runner, copied privately, then executed as this
+            # isolated UID. No toolchain/cache permission changes are needed.
+            command = [str(coordinator_tests.resolve(strict=True)), '--exact',
+                       'backend::update_lifecycle::tests::native_coordinator_fixture',
+                       '--nocapture', '--test-threads=1']
+        else:
+            command = ['cargo', 'test', '--locked', '--manifest-path', str(ROOT/'src-tauri/Cargo.toml'),
+                       '--no-default-features', '--lib', 'native_coordinator_fixture', '--', '--nocapture', '--test-threads=1']
         log = (home/f'coordinator-{name}.log').open('w+')
         process = subprocess.Popen(command, env=helper_env, stdout=log, stderr=subprocess.STDOUT)
         return process, output, log

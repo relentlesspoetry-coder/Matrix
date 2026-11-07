@@ -672,6 +672,74 @@ mod tests {
     use super::*;
     use std::process::{Child, Command, Stdio};
     static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// Only wraps explicitly spawned disposable test children. On a test panic,
+    /// release their fixture barriers and reap them instead of contaminating the
+    /// following fail-closed process scan. No production process is signalled.
+    struct FixtureChild {
+        child: Child,
+        root: PathBuf,
+    }
+    impl FixtureChild {
+        fn new(child: Child, root: &Path) -> Self {
+            Self {
+                child,
+                root: root.to_owned(),
+            }
+        }
+    }
+    impl std::ops::Deref for FixtureChild {
+        type Target = Child;
+        fn deref(&self) -> &Child {
+            &self.child
+        }
+    }
+    impl std::ops::DerefMut for FixtureChild {
+        fn deref_mut(&mut self) -> &mut Child {
+            &mut self.child
+        }
+    }
+    impl Drop for FixtureChild {
+        fn drop(&mut self) {
+            // Each fixture directory is private to one test. The marker names
+            // are handled exclusively by the harmless child entry points below.
+            if let Ok(entries) = fs::read_dir(&self.root) {
+                for entry in entries.flatten() {
+                    if entry.path().extension().is_some_and(|ext| ext == "ready") {
+                        let _ = fs::write(entry.path().with_extension("finish"), b"");
+                    }
+                }
+            }
+            for name in ["late.finish", "runtime-app.finish", "runtime-release"] {
+                let _ = fs::write(self.root.join(name), b"");
+            }
+            let until = Instant::now() + Duration::from_secs(2);
+            loop {
+                match self.child.try_wait() {
+                    Ok(Some(_)) | Err(_) => break,
+                    Ok(None) if Instant::now() >= until => {
+                        // Exact unreaped Child handle from this fixture only.
+                        let _ = self.child.kill();
+                        let _ = self.child.wait();
+                        break;
+                    }
+                    Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+                }
+            }
+            // A deliberately orphaned late-child fixture must finish before its
+            // temporary directory is removed. Never signal a PID from a file.
+            if let Ok(pid) = fs::read_to_string(self.root.join("late.ready"))
+                .unwrap_or_default()
+                .parse::<u32>()
+            {
+                if let Ok(identity) = Identity::read(pid) {
+                    let until = Instant::now() + Duration::from_secs(2);
+                    while identity.alive() && Instant::now() < until {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                }
+            }
+        }
+    }
     fn fixture_name() -> String {
         let (_, module) = module_path!().split_once("::").unwrap();
         format!("{module}::process_fixture")
@@ -800,7 +868,9 @@ mod tests {
     }
     #[test]
     fn late_children_with_hidden_or_cleared_environment_never_allow_replacement() {
-        let _serial = SERIAL.lock().unwrap();
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         for mode in ["late-hidden", "late-cleared"] {
             let root = tempfile::tempdir().unwrap();
             let mut app = child(root.path(), "late", mode);
@@ -846,12 +916,14 @@ mod tests {
     }
     #[test]
     fn appimage_runtime_ancestor_must_exit_before_replacement() {
-        let _serial = SERIAL.lock().unwrap();
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let root = tempfile::tempdir().unwrap();
         let image = root.path().join("MatrixFixture.AppImage");
         fs::copy(std::env::current_exe().unwrap(), &image).unwrap();
         let (_, module) = module_path!().split_once("::").unwrap();
-        let mut runtime = Command::new(&image)
+        let runtime = Command::new(&image)
             .args([
                 "--exact",
                 &format!("{module}::runtime_wrapper_fixture"),
@@ -862,6 +934,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
+        let mut runtime = FixtureChild::new(runtime, root.path());
         wait_file(&root.path().join("runtime-app.ready"));
         let transaction =
             Transaction::prepare_with_runtime(root.path(), &fake_exe(root.path()), Some(&image))
@@ -878,8 +951,8 @@ mod tests {
         assert!(runtime.wait().unwrap().success());
         release.join().unwrap();
     }
-    fn child(root: &Path, name: &str, mode: &str) -> Child {
-        Command::new(std::env::current_exe().unwrap())
+    fn child(root: &Path, name: &str, mode: &str) -> FixtureChild {
+        let child = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", &fixture_name(), "--nocapture"])
             .env("MATRIX_LIFECYCLE_FIXTURE", root)
             .env("MATRIX_FIXTURE_NAME", name)
@@ -888,7 +961,8 @@ mod tests {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .unwrap()
+            .unwrap();
+        FixtureChild::new(child, root)
     }
     fn wait_file(path: &Path) {
         let until = Instant::now() + Duration::from_secs(5);
@@ -903,8 +977,28 @@ mod tests {
         p
     }
     #[test]
+    fn fixture_panic_releases_owned_children_before_the_next_test() {
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let root = tempfile::tempdir().unwrap();
+        let captured = std::sync::Mutex::new(None);
+        let result = std::panic::catch_unwind(|| {
+            let app = child(root.path(), "panic-cleanup", "stubborn");
+            wait_file(&root.path().join("panic-cleanup.ready"));
+            *captured.lock().unwrap() = Some(Identity::read(app.id()).unwrap());
+            panic!("intentional fixture cleanup regression");
+        });
+        assert!(result.is_err());
+        assert!(!captured.into_inner().unwrap().unwrap().alive());
+        assert!(instances(root.path()).unwrap().is_empty());
+    }
+
+    #[test]
     fn two_instances_exit_before_replacement_and_gate_blocks_new_startups() {
-        let _serial = SERIAL.lock().unwrap();
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let root = tempfile::tempdir().unwrap();
         let mut a = child(root.path(), "a", "normal");
         let mut b = child(root.path(), "b", "normal");
@@ -935,7 +1029,9 @@ mod tests {
     }
     #[test]
     fn live_game_lease_blocks_without_closing_frontend_or_unrelated_process() {
-        let _serial = SERIAL.lock().unwrap();
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let root = tempfile::tempdir().unwrap();
         let mut app = child(root.path(), "game", "busy");
         wait_file(&root.path().join("game.ready"));
@@ -950,7 +1046,9 @@ mod tests {
     }
     #[test]
     fn unresponsive_frontend_aborts_without_force_stopping_it() {
-        let _serial = SERIAL.lock().unwrap();
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let root = tempfile::tempdir().unwrap();
         let mut app = child(root.path(), "stuck", "stubborn");
         wait_file(&root.path().join("stuck.ready"));
@@ -966,12 +1064,15 @@ mod tests {
     }
     #[test]
     fn legacy_same_inode_and_separate_same_name_candidates_are_never_signalled() {
-        let _serial = SERIAL.lock().unwrap();
+        let _serial = SERIAL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let root = tempfile::tempdir().unwrap();
         for name in ["legacy", "matrix-frontend"] {
             let exe = root.path().join(name);
             fs::copy("/bin/sleep", &exe).unwrap();
-            let mut sleeper = Command::new(&exe).arg("0.4").spawn().unwrap();
+            let mut sleeper =
+                FixtureChild::new(Command::new(&exe).arg("0.4").spawn().unwrap(), root.path());
             let expected = if name == "legacy" {
                 exe
             } else {
