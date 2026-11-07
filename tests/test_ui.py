@@ -97,19 +97,26 @@ with sync_playwright() as p:
     assert native.locator('.console-card').count()==18
     native.wait_for_function('[...document.querySelectorAll(".console-image")].length === 18 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)')
     screenshot(native,'matrix-native-home.png')
-    native.get_by_role('button',name='Browse PlayStation 5 library').click()
-    assert 'Library only' in native.locator('.console-hero').inner_text()
-    assert native.locator('.platform-notice').is_visible()
-    assert native.locator('.console-hero [data-action="configure"]').count()==0
-    before=native.evaluate('window.__calls.filter(c=>["launch_console_game","open_emulator"].includes(c[0])).length')
-    native.locator('.game-card').click()
-    assert native.locator('[data-action="play-console"]').count()==0
-    native.get_by_role('button',name='Favorite',exact=True).click()
-    assert native.evaluate('window.__favorites.ps5.length')==1
-    assert native.evaluate('window.__calls.filter(c=>["launch_console_game","open_emulator"].includes(c[0])).length')==before
-    screenshot(native,'matrix-library-only.png')
-    native.keyboard.press('Escape')
-    native.get_by_role('button',name='All consoles',exact=True).click()
+    for platform, id in [('PlayStation 5', 'ps5'), ('Nintendo Switch 2', 'switch2')]:
+        native.get_by_role('button',name=f'Browse {platform} library').click()
+        assert 'Experimental custom emulator support' in native.locator('.platform-notice').inner_text()
+        native.locator('.console-hero [data-action="configure"]').click()
+        assert native.locator('.advanced-setup').get_attribute('open') is not None
+        assert '{gameDir}' in native.locator('.advanced-setup').inner_text()
+        assert 'without arguments' in native.locator('.emulator-dialog > p').inner_text()
+        native.locator('#emulator-launcher').select_option('executable')
+        native.locator('#emulator-path').fill('/home/example/Apps/My Emulator')
+        native.locator('#emulator-name').fill('My custom emulator')
+        args='--game\n{gameDir}' if id=='ps5' else '-f\n-g\n{game}'
+        native.locator('#launch-args').fill(args)
+        native.get_by_role('button',name='Save emulator',exact=True).click()
+        native.wait_for_function('document.querySelector("#config-form")===null')
+        saved=native.evaluate('window.__calls.filter(c=>c[0]==="save_emulator").at(-1)[1]')
+        assert saved['id']==id and saved['launchArgs']==args.split('\n')
+        native.get_by_role('button',name='Open emulator',exact=True).click()
+        native.wait_for_function('(id)=>window.__calls.some(c=>c[0]==="open_emulator" && c[1].id===id)',arg=id)
+        screenshot(native,f'matrix-custom-{id}.png')
+        native.get_by_role('button',name='All consoles',exact=True).click()
     native.get_by_role('button',name='Browse PlayStation Vita library').click()
     assert 'SDL frontend' in native.locator('.platform-notice').inner_text()
     native.get_by_role('button',name='All consoles',exact=True).click()

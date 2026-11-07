@@ -137,7 +137,8 @@ const SPECS: &[ConsoleSpec] = &[
         id: "ps5",
         dir: "PS5",
         games: "PS5 Games",
-        extensions: &["pkg", "iso"],
+        // Keep legacy collection formats; a custom emulator decides what it can load.
+        extensions: &["pkg", "iso", "elf", "zar"],
     },
     ConsoleSpec {
         id: "vita",
@@ -170,7 +171,8 @@ struct EmulatorProfile {
     flatpak_runtime_fonts: Option<bool>,
     #[serde(default)]
     extract_appimage: bool,
-    /// Each entry is a literal argv token. {game} is the ONLY interpolation token.
+    /// Each entry is a literal argv token. Custom PS5/Switch 2 profiles also
+    /// support {gameDir}; placeholders must occupy a whole token, never shell text.
     #[serde(default)]
     launch_args: Vec<String>,
 }
@@ -280,17 +282,9 @@ fn games_dir(id: &str) -> Result<PathBuf, String> {
     Ok(matrix_root()?.join(s.dir).join(s.games))
 }
 
-fn library_only(id: &str) -> bool {
+fn custom_emulator_only(id: &str) -> bool {
     matches!(id, "ps5" | "switch2")
 }
-fn require_launch_adapter(id: &str) -> Result<(), String> {
-    spec(id)?;
-    if library_only(id) {
-        return Err("Library only: Matrix Play has no verified Linux launch adapter for this console. Files and favorites can be organized here.".into());
-    }
-    Ok(())
-}
-
 fn guessed_emulator(id: &str) -> &'static str {
     match id {
         "switch" => "Eden",
@@ -517,6 +511,13 @@ fn is_ps4_eboot(id: &str, path: &Path) -> bool {
             .is_some_and(|p| p.join("sce_sys/param.sfo").is_file())
 }
 
+fn is_ps5_eboot(id: &str, path: &Path) -> bool {
+    id == "ps5"
+        && path
+            .file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("eboot.bin"))
+}
+
 // Scanning and direct validation must present the same title without changing
 // the canonical path used by launches, favorites or artwork.
 fn console_game_title(id: &str, path: &Path, roots: &[PathBuf]) -> String {
@@ -526,7 +527,7 @@ fn console_game_title(id: &str, path: &Path, roots: &[PathBuf]) -> String {
     if is_ps3_eboot(id, path) {
         return ps3_title(path);
     }
-    let name = if is_ps4_eboot(id, path) {
+    let name = if is_ps4_eboot(id, path) || is_ps5_eboot(id, path) {
         path.parent().and_then(Path::file_name)
     } else {
         path.file_stem()
@@ -544,6 +545,7 @@ fn supported_console_file(s: &ConsoleSpec, path: &Path) -> bool {
     (s.extensions.contains(&extension.as_str()) && !(s.id == "ps3" && extension == "pkg"))
         || is_ps3_eboot(s.id, path)
         || is_ps4_eboot(s.id, path)
+        || is_ps5_eboot(s.id, path)
         || libraries::is_playlist(s.id, path)
 }
 
@@ -914,7 +916,7 @@ fn save_emulator(
     extract_appimage: Option<bool>,
     flatpak_runtime_fonts: Option<bool>,
 ) -> Result<(), String> {
-    require_launch_adapter(&id)?;
+    spec(&id)?;
     let launcher = match launcher.as_deref().unwrap_or("executable") {
         "executable" => emulators::Launcher::Executable,
         "appimage" => emulators::Launcher::Appimage,
@@ -997,8 +999,36 @@ fn open_console_folder(id: String) -> Result<(), String> {
     Ok(())
 }
 
+fn console_launch_args(
+    profile: &EmulatorProfile,
+    id: &str,
+    game: &Path,
+) -> Result<Vec<String>, String> {
+    let mut substituted = false;
+    let mut args = Vec::new();
+    for arg in immersive::game_args(profile, id) {
+        let path = if arg == "{game}" {
+            Some(game)
+        } else if custom_emulator_only(id) && arg == "{gameDir}" {
+            Some(game.parent().ok_or("Invalid game path")?)
+        } else {
+            None
+        };
+        if let Some(path) = path {
+            args.push(path.to_string_lossy().into_owned());
+            substituted = true;
+        } else {
+            args.push(arg);
+        }
+    }
+    if !substituted {
+        args.push(game.to_string_lossy().into_owned());
+    }
+    Ok(args)
+}
+
 fn launch_console_impl(id: String, uid: String) -> Result<launches::Info, String> {
-    require_launch_adapter(&id)?;
+    spec(&id)?;
     let game = scan_console_impl(&id)?
         .into_iter()
         .find(|g| g.uid == uid)
@@ -1010,19 +1040,7 @@ fn launch_console_impl(id: String, uid: String) -> Result<launches::Info, String
         .ok_or("Configure an emulator for this console first")?;
     launches::preflight(profile)?;
     let mut command = emulators::command(profile, &id, Some(Path::new(&game.path)))?;
-    let args = immersive::game_args(profile, &id);
-    let mut substituted = false;
-    for arg in args {
-        if arg == "{game}" {
-            command.arg(&game.path);
-            substituted = true;
-        } else {
-            command.arg(arg);
-        }
-    }
-    if !substituted {
-        command.arg(&game.path);
-    }
+    command.args(console_launch_args(profile, &id, Path::new(&game.path))?);
     command.current_dir(Path::new(&game.path).parent().ok_or("Invalid game path")?);
     launches::start(command, &id)
 }
@@ -1035,7 +1053,7 @@ async fn launch_console_game(id: String, uid: String) -> Result<launches::Info, 
         .map_err(|e| e.to_string())?
 }
 fn open_emulator_impl(id: String) -> Result<launches::Info, String> {
-    require_launch_adapter(&id)?;
+    spec(&id)?;
     let settings = load_settings()?;
     let profile = settings
         .profiles
@@ -1839,6 +1857,69 @@ mod tests {
         assert!(root.path().join("data/matrix/launches").is_dir());
     }
     #[test]
+    fn custom_nextgen_launch_arguments_are_literal_and_console_scoped() {
+        let game = Path::new("/games/A title; $(never run)/eboot.bin");
+        let profile = EmulatorProfile {
+            emulator_path: "/apps/custom emulator".into(),
+            launch_args: vec![
+                "--game".into(),
+                "{gameDir}".into(),
+                "--literal=$(no)".into(),
+            ],
+            ..Default::default()
+        };
+        for id in ["ps5", "switch2"] {
+            assert_eq!(
+                console_launch_args(&profile, id, game).unwrap(),
+                ["--game", "/games/A title; $(never run)", "--literal=$(no)"]
+            );
+            assert!(immersive::setup_args(&profile, id).is_empty());
+        }
+        // The new token cannot reinterpret an older console's saved argv.
+        assert_eq!(
+            console_launch_args(&profile, "ps4", game).unwrap(),
+            [
+                "--game",
+                "{gameDir}",
+                "--literal=$(no)",
+                game.to_str().unwrap()
+            ]
+        );
+        let profile = EmulatorProfile {
+            launch_args: vec!["--file={game}".into(), "{game}".into()],
+            ..profile
+        };
+        assert_eq!(
+            console_launch_args(&profile, "ps5", game).unwrap(),
+            ["--file={game}", game.to_str().unwrap()]
+        );
+    }
+
+    #[test]
+    fn ps5_custom_scan_keeps_collection_files_and_adds_exact_boot_targets() {
+        let root = tempfile::tempdir().unwrap();
+        let title = root.path().join("An Extracted Title");
+        fs::create_dir_all(&title).unwrap();
+        for name in ["eboot.bin", "unrelated.bin"] {
+            fs::write(title.join(name), b"synthetic").unwrap();
+        }
+        for name in ["Archive.zar", "Homebrew.elf", "Legacy.pkg", "Legacy.iso"] {
+            fs::write(root.path().join(name), b"synthetic").unwrap();
+        }
+        let games = scan_console_in("ps5", &[root.path().into()]).unwrap();
+        assert_eq!(games.len(), 5);
+        assert!(games.iter().any(|g| g.title == "An Extracted Title"));
+        assert!(!games.iter().any(|g| g.path.ends_with("unrelated.bin")));
+        assert!(!supported_console_file(
+            spec("ps4").unwrap(),
+            &title.join("eboot.bin")
+        ));
+        assert!(scan_console_in("switch2", &[root.path().into()])
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
     fn parse_vdf_tokens() {
         assert_eq!(
             quoted_tokens("  \"path\" \"/home/bless/Games/Steam\""),
@@ -1961,7 +2042,7 @@ mod tests {
             assert!(launch_console_impl(id.into(), stored.uid.clone())
                 .err()
                 .unwrap()
-                .contains("Library only"));
+                .contains("Configure an emulator"));
             assert_eq!(
                 favorites::set_favorite(id.into(), stored.uid, true)
                     .unwrap()
@@ -1971,7 +2052,50 @@ mod tests {
             assert!(open_emulator_impl(id.into())
                 .err()
                 .unwrap()
-                .contains("Library only"));
+                .contains("Set up an emulator"));
+            save_cover(
+                id.into(),
+                stored.path.clone(),
+                include_bytes!("../../tests/fixtures/demo-cover.png").to_vec(),
+            )
+            .unwrap();
+            // Registration never runs the selected file. Arbitrary Linux
+            // filenames work, without borrowing another console's engine.
+            let launcher = games_dir(id).unwrap().parent().unwrap().join("My Emulator");
+            fs::write(&launcher, b"#!/bin/sh\nprintf '%s\\n' \"$@\"\n").unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&launcher, fs::Permissions::from_mode(0o700)).unwrap();
+            save_emulator(
+                id.into(),
+                "My custom emulator".into(),
+                launcher.to_string_lossy().into(),
+                vec!["--load".into(), "{game}".into()],
+                Some("executable".into()),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let settings = load_settings().unwrap();
+            let profile = &settings.profiles[id];
+            assert!(!profile.auto_detected);
+            assert!(settings.favorites[id].contains(&stored.path));
+            assert!(get_cover(id.into(), stored.path.clone()).unwrap().is_some());
+            assert_eq!(fs::read(&stored.path).unwrap(), b"stored file only");
+            assert_eq!(profile.emulator_path, launcher.to_string_lossy());
+            assert!(discovery::identity(profile, id).is_none());
+            let mut command =
+                emulators::command(profile, id, Some(Path::new(&stored.path))).unwrap();
+            command.args(console_launch_args(profile, id, Path::new(&stored.path)).unwrap());
+            let output = command.output().unwrap();
+            assert!(output.status.success());
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap(),
+                format!("--load\n{}\n", stored.path)
+            );
+            assert!(immersive::setup_args(profile, id).is_empty());
         }
 
         assert!(validate_game("ps1", &uid).is_err());

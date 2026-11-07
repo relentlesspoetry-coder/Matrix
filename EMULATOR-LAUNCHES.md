@@ -28,11 +28,50 @@ Current Vita3K is detected as an AppImage/native executable. Matrix has no verif
 
 PS4 scanning accepts extracted `eboot.bin` only beside `sce_sys/param.sfo`, or explicit ELF files. PS4 PKG installation packages are excluded from game launches. Vita scanning accepts VPK/ZIP content archives, not arbitrary eboot files or a guessed installed title ID. Importing installed Vita3K title libraries from external configuration is not implemented.
 
-PS5 and Switch 2 are **library-only collections**. Matrix has no verified Linux launch adapter for them. The backend blocks game launch, emulator open and emulator setup, while permitting local covers and console-scoped favorites. Stored PKG/ISO (PS5) and NSP/XCI (Switch 2) extensions are collection filters, not evidence of playable format support. PS4/original-Switch engine capabilities never extend to these successor consoles.
+## Custom PS5 and Switch 2 emulators
+
+PS5 and Switch 2 accept manually selected Linux AppImages, executable files and
+installed Flatpaks through **Set up emulator**, including Save and open emulator.
+There is no automatic discovery/linking or built-in fullscreen preset for these
+platforms. A display name never grants another console's capabilities: original
+Switch and PS4 adapters are not reused. Matrix does not download emulators, games,
+firmware or keys, and does not install, extract or decrypt game files.
+
+Enter each launch argument on a separate line. `{game}` is the selected file;
+`{gameDir}` is its containing directory. Each placeholder must occupy its own
+line. Other arguments are literal, with no shell expansion or quoting required.
+If neither placeholder is present, Matrix appends the selected file as one final
+argument, as it does for other custom profiles. `{gameDir}` is available only for
+PS5/Switch 2, so other consoles' saved arguments are unchanged. **Open emulator**
+passes no arguments for these custom profiles; a command-line core may print help
+or exit instead of showing a configuration window.
+
+Examples checked against current upstream documentation on 2026-11-07, not
+against installed emulator binaries or real games:
+
+- [KytyPS5](https://github.com/KytyPS5/KytyPS5#running): choose the Linux
+  `kyty_emulator` core. For an extracted game represented by `eboot.bin`, enter
+  `--game` and `{gameDir}` on two lines. For an ELF or ZAR, use `--game` and
+  `{game}`. Its graphical `kyty_launcher` is a different program; the core's CLI
+  example does not establish launcher CLI support. Existing PKG/ISO collection
+  entries stay visible and keep favorites/covers, but are not documented KytyPS5
+  boot targets. Do not use `{gameDir}` on a package and expect Matrix to install it.
+- [Eglantine command line](https://github.com/Djihads80/Eglantine/blob/nx2/docs/user/CommandLine.md):
+  enter `-f`, `-g` and `{game}` on three lines for its documented fullscreen game
+  launch. Choose your actual installed Linux build. This is an explicit custom
+  command, not an inference that an original-Switch emulator supports Switch 2.
+
+The projects describe their support as experimental and may change between
+builds. File extensions and successful process startup do not establish game
+compatibility. The PS5 scanner recognizes exact `eboot.bin` filenames and uses
+the containing folder's display name; arbitrary `.bin` files are not scanned.
+Existing library folders, canonical file identities, covers, favorites and saved
+profiles are retained. Custom Flatpaks retain read-only library access and must
+already have whatever external permissions their own setup requires.
 
 ## Validation boundary
 
-Rust tests check real option selection, conflicting saved options, exact engine/console identity and distinct shadPS4 launcher/core syntax. Native desktop tests run the real Matrix IPC and execute harmless fixture launchers to check PCSX2/RMG argv, paths with spaces, normal Open emulator behavior, log handling and blocked collection launches. They do not emulate games or prove every engine's fullscreen rendering. Chromium tests use a mock IPC bridge. The user confirmed real PCSX2 Flatpak game launching in v0.5.5 and, after installing/reopening v0.5.6, explicitly confirmed fullscreen gameplay with no PCSX2 menus. Other engines and PS4/Vita gameplay still need real hardware/game testing. No emulators, games, firmware, licenses or keys are distributed.
+Rust tests check real option selection, conflicting saved options, exact engine/console identity and distinct shadPS4 launcher/core syntax. Native desktop tests run the real Matrix IPC and execute harmless fixture launchers to check PCSX2/RMG argv, paths with spaces, normal Open emulator behavior, log handling and manually configured PS5/Switch 2 launches. They do not emulate games or prove every engine's fullscreen rendering. Chromium tests use a mock IPC bridge. The user confirmed real PCSX2 Flatpak game launching in v0.5.5 and, after installing/reopening v0.5.6, explicitly confirmed fullscreen gameplay with no PCSX2 menus. Other engines and PS4/Vita gameplay still need real hardware/game testing. No emulators, games, firmware, licenses or keys are distributed.
 
 
 ## Launch log lifetime
@@ -161,7 +200,7 @@ These are file recognition and display improvements, not new emulator engines.
 Launch adapters, path-based favorite/artwork identities, console separation and
 sandbox write permissions are unchanged. Compressed disc artwork may still need
 an explicit confirmed disc ID or local image. PS3 PKG remains an install package,
-PS4 remains experimental, and PS5/Switch 2 remain library-only.
+PS4 remains experimental; PS5/Switch 2 now use the explicit custom-emulator path described above.
 
 Installed Vita import remains deferred: the [current Vita3K parser](https://github.com/Vita3K/Vita3K/blob/master/vita3k/config/src/config.cpp)
 resolves `--installed-path`/`-r` against the title IDs in its own configured

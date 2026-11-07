@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.12
+
+- Enable manual PS5 and Switch 2 emulator setup, saving and launching for Linux AppImages, executables and installed Flatpaks. Keep experimental support notices, explicit arguments and console capability boundaries; do not auto-link PS4/original-Switch emulators.
+- Add PS5 extracted eboot.bin, ELF and ZAR scanning without removing existing PKG/ISO collections, favorites or artwork. Support a literal {gameDir} argument for custom PS5/Switch 2 folder-based launch commands. Open emulator passes no game arguments.
+- Add custom-profile registration, literal-argument, format, UI and native IPC fixtures. These are synthetic launch checks, not real PS5/Switch 2 game compatibility tests.
+
 ## 0.5.11
 
 - Prompt users to save progress, close launched games/apps and wait for installers to finish. Block detected activity, close only cooperating Matrix windows, and verify their exit before installation through a separate coordinator. Never terminate games/installers or signal unrelated processes.

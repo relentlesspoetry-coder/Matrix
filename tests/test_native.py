@@ -200,15 +200,39 @@ def main():
             wait_for(lambda: log.read_text().splitlines()==n64base+['--fullscreen','--nogui','--quit-after-emulation',str(n64game)])
             invoke('open_emulator',{'id':'n64'})
             wait_for(lambda: log.read_text().splitlines()==n64base)
-            stored=library/'PS5/PS5 Games/Collection.pkg'
-            stored.write_text('Stored collection fixture, never executable')
-            for command,params in [('launch_console_game',{'id':'ps5','uid':str(stored)}),('open_emulator',{'id':'ps5'})]:
+            # Real IPC with harmless custom scripts, not PS5/Switch 2 gameplay.
+            for id, relative, argv in [
+                ('ps5', 'PS5/PS5 Games/An Extracted Title/eboot.bin', ['--game', '{gameDir}']),
+                ('switch2', 'Switch 2/Switch 2 Games/A Title; literal.xci', ['-f', '-g', '{game}']),
+            ]:
+                stored=library/relative
+                stored.parent.mkdir(parents=True, exist_ok=True)
+                stored.write_text('Synthetic fixture, not a playable game')
                 try:
-                    invoke(command,params)
-                    raise AssertionError('Library-only console accepted launch')
-                except RuntimeError as error: assert 'Library only' in str(error)
-            assert log.read_text().splitlines()==n64base
-            assert invoke('set_favorite',{'id':'ps5','uid':str(stored),'favorite':True})==[str(stored)]
+                    invoke('open_emulator', {'id':id})
+                    raise AssertionError('Unconfigured console accepted launch')
+                except RuntimeError as error: assert 'Set up an emulator' in str(error)
+                custom=home/('My '+id+' Emulator')
+                custom.write_text(launcher);custom.chmod(0o700)
+                invoke('save_emulator', {'id':id,'emulatorName':'My custom emulator','emulatorPath':str(custom),'launchArgs':argv,'launcher':'executable'})
+                saved=invoke('bootstrap')['profiles'][id]
+                assert saved['emulatorPath']==str(custom) and not saved['autoDetected']
+                assert any(g['uid']==str(stored) for g in invoke('scan_console', {'id':id}))
+                log.unlink(missing_ok=True)
+                invoke('launch_console_game', {'id':id,'uid':str(stored)})
+                expected=['--game',str(stored.parent)] if id=='ps5' else ['-f','-g',str(stored)]
+                wait_for(lambda: log.read_text().splitlines()==expected)
+                log.unlink()
+                invoke('open_emulator', {'id':id})
+                wait_for(lambda: log.exists() and not log.read_text().strip())
+                assert invoke('set_favorite', {'id':id,'uid':str(stored),'favorite':True})==[str(stored)]
+                # Unknown Flatpak apps may be explicitly selected without gaining
+                # another console's flags or write permissions.
+                invoke('save_emulator', {'id':id,'emulatorName':'Custom Flatpak','emulatorPath':'','launchArgs':argv,'launcher':'flatpak','flatpakId':'org.matrix.TestEmulator','flatpakInstallation':'user'})
+                log.unlink()
+                invoke('launch_console_game', {'id':id,'uid':str(stored)})
+                folder=library/('PS5/PS5 Games' if id=='ps5' else 'Switch 2/Switch 2 Games')
+                wait_for(lambda: log.read_text().splitlines()==['run','--user',f'--filesystem={folder}:ro','org.matrix.TestEmulator']+expected)
             log.unlink()
 
             image_candidates=[c for c in discovered['emulatorDiscovery']['candidates'] if c['profile'].get('emulatorPath')==str(appimage)]

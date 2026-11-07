@@ -307,7 +307,8 @@ fn desktop_paths(text: &str) -> Vec<PathBuf> {
 }
 pub(crate) fn auto_link(settings: &mut Settings, report: &mut Report) {
     for spec in SPECS {
-        if library_only(spec.id) {
+        // Experimental successor platforms require an explicit manual choice.
+        if custom_emulator_only(spec.id) {
             continue;
         }
         // Manual choices win. Replace a missing auto-link only when a single
@@ -455,7 +456,7 @@ pub(crate) fn discover() -> Result<Report, String> {
         }
     }
     for spec in SPECS {
-        if library_only(spec.id) {
+        if custom_emulator_only(spec.id) {
             continue;
         }
         let dir = matrix_root()?.join(spec.dir);
@@ -482,6 +483,38 @@ mod tests {
         fs::write(path, b"#!/bin/sh\nexit 0\n").unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
     }
+    #[test]
+    fn experimental_custom_profiles_are_never_automatically_linked_or_replaced() {
+        let mut report = Report::default();
+        for id in ["ps5", "switch2"] {
+            report.candidates.push(Candidate {
+                id: format!("fixture|{id}"),
+                console_ids: vec![id.into()],
+                profile: EmulatorProfile {
+                    emulator_name: "Fixture candidate".into(),
+                    auto_detected: true,
+                    ..Default::default()
+                },
+                source: "Synthetic candidate".into(),
+                ready: true,
+            });
+        }
+        let mut settings = Settings::default();
+        auto_link(&mut settings, &mut report);
+        assert!(settings.profiles.is_empty());
+        settings.profiles.insert(
+            "ps5".into(),
+            EmulatorProfile {
+                emulator_name: "My selected emulator".into(),
+                emulator_path: "/apps/custom".into(),
+                ..Default::default()
+            },
+        );
+        auto_link(&mut settings, &mut report);
+        assert_eq!(settings.profiles["ps5"].emulator_path, "/apps/custom");
+        assert!(report.linked.is_empty());
+    }
+
     #[test]
     fn native_discovery_lists_all_choices_and_does_not_auto_choose() {
         let root = tempfile::tempdir().unwrap();

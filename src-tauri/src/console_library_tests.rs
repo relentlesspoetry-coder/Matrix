@@ -178,8 +178,10 @@ fn library_fixture() {
         assert_eq!(scan_console_impl(id).unwrap()[0].uid, game.uid);
         assert_eq!(fs::read(&path).unwrap(), b"synthetic eboot");
     }
-    assert!(require_launch_adapter("ps5").is_err());
-    assert!(require_launch_adapter("switch2").is_err());
+    assert!(custom_emulator_only("ps5"));
+    assert!(custom_emulator_only("switch2"));
+    assert!(!custom_emulator_only("ps4"));
+    assert!(!custom_emulator_only("switch"));
 }
 
 #[test]

@@ -53,6 +53,12 @@ pub(crate) fn validate_profile_paths(
 /// or applying gameplay-only fullscreen/headless options. Do not call game_args:
 /// its injected options deliberately hide the configuration interface.
 pub(crate) fn setup_args(profile: &EmulatorProfile, console: &str) -> Vec<String> {
+    // A custom PS5/Switch 2 command has no verified setup CLI. Game arguments
+    // may include arbitrary option/value pairs, so never guess which to retain.
+    // Open the chosen program with no arguments; explain this in setup.
+    if custom_emulator_only(console) {
+        return Vec::new();
+    }
     let engine = discovery::identity(profile, console).unwrap_or("");
     let (flags, pairs): (&[&str], &[&str]) = match engine {
         "PCSX2" => (
