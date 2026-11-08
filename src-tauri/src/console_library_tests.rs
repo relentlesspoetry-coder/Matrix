@@ -441,6 +441,7 @@ fn relative_config_fixture() {
     assert!(!log.exists(), "No ambiguous profile may launch");
     let save = |args: Vec<String>| {
         save_emulator(
+            profile_saves::begin().unwrap(),
             "gamecube".into(),
             "Dolphin".into(),
             emulator.to_string_lossy().into(),

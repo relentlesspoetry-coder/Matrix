@@ -283,6 +283,26 @@ for (const outcome of ['resolve', 'reject']) test(`old emulator save ${outcome} 
   assert.equal(f.node('#config-error').textContent,'New form');
   assert.equal(submit.disabled,false);assert.equal(old.dataset.saving,undefined);
 });
+for (const newestSucceeds of [true, false]) test(`reopened emulator saves retain the newest successful choice (${newestSucceeds})`, async () => {
+  const f=fixture(), older=deferred(), newer=deferred();let writes=0;
+  f.responders.save_emulator=()=>++writes===1?older.promise:newer.promise;
+  const makeForm=name=>({id:'config-form',dataset:{id:'ps2'},values:{emulatorName:name,emulatorPath:'/test/'+name,folderPath:'/games',launcher:'executable'}});
+  const first=makeForm('older'), second=makeForm('newer');
+  f.node('#config-error');f.state.overlay='configure';
+  f.nodes.set('#config-form',first);
+  f.listeners.submit[0]({target:first,submitter:{dataset:{}},preventDefault(){}});
+  // Closing and reopening creates a different form, so its submit is permitted.
+  f.nodes.set('#config-form',second);
+  f.listeners.submit[0]({target:second,submitter:{dataset:{}},preventDefault(){}});
+  assert.equal(writes,2);
+  if(newestSucceeds)newer.resolve();else newer.reject(Error('Invalid newer choice'));
+  await tick();
+  // Even successful IPC responses can arrive after a newer commit's response.
+  older.resolve();await tick();
+  assert.equal(f.state.configs.ps2.emulatorName,newestSucceeds?'newer':'older');
+  assert.equal(first.dataset.saving,undefined);assert.equal(second.dataset.saving,undefined);
+});
+
 test('completed Windows registration cannot close replacement registration dialog', async () => {
   const f=fixture(), saving=deferred();f.responders.add_windows_game=()=>saving.promise;
   const old=f.node('#windows-form');old.id='windows-form';old.values={title:'Game',target:'/test.desktop'};

@@ -231,8 +231,12 @@ fn install_with_preserver(
         .to_os_string();
     backup_name.push(".previous");
     let backup = parent.join(backup_name);
+    // The signed bytes and rollback files must remain inaccessible to other
+    // users until publication. TempDir's default 0777 masked by umask can leave
+    // this directory group-writable, allowing substitution after verification.
     let staging = tempfile::Builder::new()
         .prefix(".matrix-update-")
+        .permissions(fs::Permissions::from_mode(0o700))
         .tempdir_in(parent)
         .map_err(|_| "Cannot write the AppImage folder. The update is downloaded; move it to a writable location.")?;
     let next = staging.path().join("next");

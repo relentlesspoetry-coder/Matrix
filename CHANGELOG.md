@@ -2,11 +2,13 @@
 
 ## 0.5.17
 
+- Create AppImage update staging with private 0700 permissions atomically, preventing another local group member from substituting verified payloads under a permissive umask. Preserve signature, hash, rollback and cleanup checks.
 - Keep working automatically detected emulator selections when a bounded AppImage scan omits them or Flatpak inventory fails. Replace a saved installation only after confirming it is unavailable; preserve manual selections and uncertain filesystem states.
 - Place the automatic game operand before shadPS4 QtLauncher's core delimiter when a custom argument list ends with `-g` or `--game`.
 - Run library bootstrap/scans, Flatpak inventory/profile validation, and cover reads/writes on background blocking workers so slow storage or external inventory cannot freeze the native UI thread. Bound local cover operations to one at a time so nearby cards cannot multiply image-decoding memory. Keep existing IPC names and library data unchanged.
 - Move lifecycle coordination out of predictable shared `/tmp` names into a validated private directory under the account database's canonical home. Ignore environment overrides, support legitimate home symlinks, preserve cross-instance leases, and leave unsafe existing entries untouched. Close older Matrix copies before upgrading and do not launch them during installation.
-- Add regression coverage for incomplete discovery, launch argument placement, protected lifecycle locations and native responsiveness during deliberately delayed Flatpak inventory. No gameplay compatibility or new emulator support is claimed.
+- Keep successful manual emulator saves ordered across windows in one process: a delayed older save cannot replace a newer successful selection, and a newer failed save does not suppress an older valid one. Retain the existing cross-process settings transaction lock and data format.
+- Add regression coverage for incomplete discovery, launch argument placement, protected lifecycle locations, AppImage staging under four umasks, and native responsiveness/save ordering during deliberately delayed Flatpak inventory. No gameplay compatibility or new emulator support is claimed.
 
 ## 0.5.16
 

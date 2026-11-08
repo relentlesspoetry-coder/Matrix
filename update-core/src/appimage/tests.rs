@@ -526,3 +526,81 @@ fn completed_transaction_unlocks_while_an_unrelated_child_is_still_before_exec()
     assert!(excluded_before_exit);
     assert!(acquired_after_exit.is_ok());
 }
+
+#[test]
+fn staging_stays_private_under_common_umasks() {
+    const CHILD: &str = "MATRIX_APPIMAGE_STAGING_UMASK_FIXTURE";
+    if std::env::var_os(CHILD).is_none() {
+        // umask is process-global. Change it only in a disposable subprocess,
+        // never in the parallel test runner or the user's desktop process.
+        let (_, module) = module_path!().split_once("::").unwrap();
+        let name = format!("{module}::staging_stays_private_under_common_umasks");
+        for mask in ["000", "002", "022", "077"] {
+            let output = std::process::Command::new("/bin/sh")
+                .args([
+                    "-c",
+                    "umask \"$1\"; shift; exec \"$@\"",
+                    "appimage-staging-fixture",
+                    mask,
+                ])
+                .arg(std::env::current_exe().unwrap())
+                .args(["--exact", &name])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(output.status.success(), "umask {mask}: {stdout}\n{stderr}");
+            assert!(
+                stdout.contains("test result: ok. 1 passed; 0 failed;"),
+                "Expected one passing child test for umask {mask}: {stdout}\n{stderr}"
+            );
+        }
+        return;
+    }
+    for prior_backup in [false, true] {
+        for fail in [false, true] {
+            let f = Fixture::new(prior_backup);
+            // A traversable but non-writable containing folder must not expose
+            // writable staging to a shared-group member under umask 002.
+            fs::set_permissions(f.root.path(), fs::Permissions::from_mode(0o755)).unwrap();
+            let mut checkpoints = 0;
+            let result = install(&f.download, &f.target, |step| {
+                let staging: Vec<_> = fs::read_dir(f.root.path())
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path())
+                    .filter(|path| {
+                        path.file_name()
+                            .unwrap()
+                            .as_encoded_bytes()
+                            .starts_with(b".matrix-update-")
+                    })
+                    .collect();
+                assert_eq!(staging.len(), 1);
+                let meta = fs::symlink_metadata(&staging[0]).unwrap();
+                assert!(meta.is_dir());
+                assert_eq!(meta.permissions().mode() & 0o777, 0o700);
+                checkpoints += 1;
+                if step == Step::Staged {
+                    assert_eq!(fs::read(staging[0].join("next")).unwrap(), NEW);
+                    f.assert_original(prior_backup);
+                    if fail {
+                        return Err("injected private-staging failure".into());
+                    }
+                }
+                Ok(())
+            });
+            if fail {
+                assert_eq!(result.unwrap_err(), "injected private-staging failure");
+                assert_eq!(checkpoints, 1);
+                f.assert_original(prior_backup);
+            } else {
+                result.unwrap();
+                assert_eq!(checkpoints, 3);
+                assert_eq!(fs::read(&f.target).unwrap(), NEW);
+                assert_eq!(fs::read(&f.backup).unwrap(), OLD);
+            }
+            f.assert_no_staging();
+        }
+    }
+}

@@ -1,5 +1,12 @@
 # Matrix Play updates
 
+Version 0.5.17 also creates AppImage installation staging as 0700 at creation
+time, independent of the process umask. This prevents another local group member
+from replacing an already-verified staged payload. An older AppImage still runs
+its old updater while installing this release: if the computer uses shared groups
+and a permissive umask, close Matrix and manually download/replace it with the
+official 0.5.17 AppImage. Subsequent updates use the repaired staging protection.
+
 Lifecycle coordination uses the account database's canonical home directory and
 a private `.matrix-play-lifecycle` child, independent of HOME, TMPDIR and XDG
 overrides. Matrix validates ownership and protected ancestors before creating it.

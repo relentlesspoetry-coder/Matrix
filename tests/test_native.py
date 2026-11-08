@@ -235,6 +235,40 @@ def main():
                 inventory_release.touch()
                 flatpak.write_text(healthy_inventory)
             print('PASS: slow bootstrap, Flatpak listing and profile validation leave native IPC responsive')
+            # A slow older save must not replace a newer successful choice.
+            # Real IPC exercises ticket reservation before blocking validation.
+            saved_settings_path=home/'config/matrix/frontend.json'
+            saved_settings=saved_settings_path.read_bytes()
+            try:
+                inventory_started.unlink(missing_ok=True)
+                inventory_release.unlink(missing_ok=True)
+                flatpak.write_text(delayed_inventory)
+                slow_profile={'id':'ps2','emulatorName':'Older Flatpak choice','emulatorPath':'',
+                    'launchArgs':['{game}'],'launcher':'flatpak',
+                    'flatpakId':'org.matrix.TestEmulator','flatpakInstallation':'user'}
+                js("""window.__olderSave={done:false};
+                    window.__TAURI__.core.invoke('save_emulator',arguments[0])
+                    .then(value=>window.__olderSave={done:true,value})
+                    .catch(error=>window.__olderSave={done:true,error:String(error)});""",slow_profile)
+                wait_for(lambda: inventory_started.exists(),timeout=5)
+                fast_profile={'id':'ps2','emulatorName':'Newer executable choice',
+                    'emulatorPath':str(library/'PS2/TestEmulator.AppImage'),
+                    'launchArgs':['{game}'],'launcher':'executable'}
+                invoke('save_emulator',fast_profile)
+                assert not js('return window.__olderSave.done'), 'Older inventory must still be waiting'
+                inventory_release.touch()
+                wait_for(lambda: js('return window.__olderSave.done'))
+                assert 'newer emulator choice' in js('return window.__olderSave.error || ""')
+                retained=invoke('bootstrap')['profiles']['ps2']
+                assert retained['emulatorName']==fast_profile['emulatorName']
+                assert retained['emulatorPath']==fast_profile['emulatorPath']
+                assert retained['launcher']=='executable'
+                # Restore this disposable fixture's original discovery profiles.
+                saved_settings_path.write_bytes(saved_settings)
+            finally:
+                inventory_release.touch()
+                flatpak.write_text(healthy_inventory)
+            print('PASS: delayed older profile save cannot overwrite a newer successful IPC save')
             # Reproduce a shadPS4 AppImage moved after discovery, without executing it.
             old_ps4=home/'Downloads/shadPS4QtLauncher-linux-qt-build/shadPS4QtLauncher-qt.AppImage'
             old_ps4.parent.mkdir(parents=True)

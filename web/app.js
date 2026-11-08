@@ -734,6 +734,8 @@ function refreshCoverUI(selected) {
 }
 
 const coverSelections=new Map(), coverWrites=new Map();
+// Successful responses may arrive out of order, even after their disk commits.
+const emulatorSaveRequests=new Map(), emulatorSavedRequests=new Map();
 async function reconcileSavedCover(selected,key,selection) {
   // A newer file read may fail while an earlier write is still in progress.
   // Wait for that write before reading the actual retained cover from disk.
@@ -1131,8 +1133,11 @@ function setupEvents() {
     const profile={emulatorName,emulatorPath,launchArgs,launcher,flatpakId,flatpakInstallation,extractAppimage:form.has('extractAppimage'),flatpakRuntimeFonts:form.has('flatpakRuntimeFonts')};
     if (state.native) {
       owner.dataset.saving='true';
+      const request=(emulatorSaveRequests.get(id)||0)+1;emulatorSaveRequests.set(id,request);
       const submit=event.submitter || event.target.querySelector('[type=submit]:not([data-open-after-save])');const openAfterSave=event.submitter?.dataset.openAfterSave==='true';submit.disabled=true;$('#config-error').textContent='';
       void nativeInvoke('save_emulator', {id,...profile,allowExecute:form.has('allowExecute')}).then(() => {
+        if ((emulatorSavedRequests.get(id)||0)>request) return;
+        emulatorSavedRequests.set(id,request);
         state.configs[id]=profile;
         const current=state.overlay==='configure' && $('#config-form')===owner;
         if (current) dismissOverlay();

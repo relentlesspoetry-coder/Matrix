@@ -19,6 +19,7 @@ mod launch_log;
 mod launches;
 mod libraries;
 mod local_artwork;
+mod profile_saves;
 mod settings;
 mod steam_libraries;
 mod update_lifecycle;
@@ -921,6 +922,7 @@ async fn discover_emulators() -> Result<discovery::Report, String> {
 }
 
 fn save_emulator(
+    request: profile_saves::Request,
     id: String,
     emulator_name: String,
     emulator_path: String,
@@ -958,9 +960,11 @@ fn save_emulator(
         allow_execute.unwrap_or(false),
     )?;
     immersive::validate_profile_paths(&profile, &id)?;
-    update_settings(|settings| {
-        settings.profiles.insert(id, profile);
-        Ok(())
+    profile_saves::commit(request, &id, || {
+        update_settings(|settings| {
+            settings.profiles.insert(id.clone(), profile);
+            Ok(())
+        })
     })
 }
 
@@ -2136,6 +2140,7 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&launcher, fs::Permissions::from_mode(0o700)).unwrap();
             save_emulator(
+                profile_saves::begin().unwrap(),
                 id.into(),
                 "My custom emulator".into(),
                 launcher.to_string_lossy().into(),

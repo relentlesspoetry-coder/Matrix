@@ -28,6 +28,21 @@ checks. Actual native window and extracted AppImage lifecycle suites pass twice;
 slow Flatpak inventory leaves update-status IPC responsive. The versioned release
 commit must repeat the same gates before GitHub publishes its installers.
 
+An extended review held publication before installers were released. It found
+a separate AppImage staging weakness under permissive umasks and an async
+profile-save ordering regression. AppImage staging now requests 0700 atomically;
+a subprocess regression checks umasks 000, 002, 022 and 077, all publication
+checkpoints, success with/without a prior backup and preserved originals on an
+injected pre-publication failure. A harmless filesystem checkpoint replica
+demonstrated the old payload-substitution schedule, not a cross-UID exploit test.
+Three backend ordering tests and two reopened-dialog JavaScript tests protect
+manual saves. A native IPC regression delays an older Flatpak validation while a
+newer executable save completes, then checks that the older save is rejected and
+the new profile remains. Request ordering is process-local; separate processes
+retain the existing settings transaction lock and last-commit behavior. All 136
+JavaScript tests pass locally. The expanded repair must pass exact-tree CI before
+publication.
+
 No user computer, real emulator, proprietary game or host package installation
 was used by the review. Native tests use disposable Flatpak/launcher shims; they
 do not certify actual game or emulator compatibility.

@@ -1,6 +1,6 @@
 //! Heavy synchronous backend operations run on the blocking pool, not GTK's
 //! main thread or the async executor. Keep their public IPC names unchanged.
-use super::{artwork, emulators, Bootstrap, Game};
+use super::{artwork, emulators, profile_saves, Bootstrap, Game};
 
 async fn blocking<T: Send + 'static>(
     operation: impl FnOnce() -> Result<T, String> + Send + 'static,
@@ -53,8 +53,12 @@ pub(crate) async fn save_emulator(
     extract_appimage: Option<bool>,
     flatpak_runtime_fonts: Option<bool>,
 ) -> Result<(), String> {
+    // Reserve order before dispatching to the pool: validation workers may
+    // finish in any order, and reopened dialogs share this process-wide order.
+    let request = profile_saves::begin()?;
     blocking(move || {
         super::save_emulator(
+            request,
             id,
             emulator_name,
             emulator_path,
