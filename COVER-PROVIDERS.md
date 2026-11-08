@@ -1,5 +1,77 @@
 # Matrix Play cover providers — reviewed November 5, 2026
 
+## Version 0.5.16 — original Switch product-code covers, reviewed November 8, 2026
+
+Switch now has a bounded GameTDB provider. This makes **16 of 18 libraries**
+provider-capable, not sixteen complete catalogs. **PS5 and Switch 2 still require
+local artwork.** Most Switch files named only with a sixteen-digit title ID need
+one explicit product-code/region confirmation; this release does not map those
+IDs automatically or read encrypted game content.
+
+[GameTDB's Switch Downloads page](https://www.gametdb.com/Switch/Downloads)
+documents the Switch database and artwork packs, and its
+[homepage](https://www.gametdb.com/) says downloads need no signup. Indexed
+first-party text was available; direct website requests returned 403. No HTML
+scraper, access workaround, bulk download or claim about unknown robots rules
+is implemented. These access examples are not a copyright/redistribution grant.
+No provider-specific numerical rate limit was established. Existing conservative
+serialization (at least two seconds between requests), seven-day misses,
+Retry-After/403/429/503 cooldowns and validated bounded HTTPS/image handling apply.
+
+The actual artwork host returned HTTP 200 for
+`https://art.gametdb.com/switch/coverM/US/AAACA.jpg`: a decoded 352×570 JPEG showing
+Super Mario Odyssey, consistent with [GameTDB's AAACA entry](https://www.gametdb.com/Switch/AAACA).
+The `box/US/AAACA.png` image was also inspected (300×486): it is a front-facing
+case, not an angled 3D cover. Only the verified `coverM/{region}/{product}.jpg`
+family is implemented. The 3D preference reuses the flat cover/cache and clearly
+states the fallback. There is no guessed 3D endpoint or alternate region request.
+
+- Product identity is an exact five-character alphanumeric GameTDB code plus a
+  required artwork region, e.g. `AAACA-US`. Filename lookup accepts a complete
+  code-only stem or an explicit bracket/parenthesis token, e.g.
+  `Game [HAC-P-AAACA-USA].nsp`. Ordinary title words are not searched.
+- Full original-Switch packaging prefixes `HAC-P-` and `LA-H-` are accepted.
+  Explicit USA/EUR/JPN/AUS/KOR labels map to US/EN/JA/AU/KO. EUR intentionally
+  selects English European artwork and the UI discloses this. Other supported
+  explicit provider regions are FR, DE, ES, IT, NL, PT, RU, ZHCN and ZHTW.
+  Missing region, conflicting codes/regions and Switch 2 markers require review.
+- Sixteen-digit title IDs are never truncated, converted or sent as product IDs.
+  Switch 2 product codes can collide with original Switch codes, so Switch 2
+  remains separate and never borrows this provider. No header keys or game bytes
+  are read/uploaded for this new identity path.
+- Only the constrained product code and selected artwork region/style go to
+  GameTDB. No title, filename or local path is sent. Confirmations expire when
+  the file size/modification time changes. Local/imported covers remain first
+  priority, including explicit Find exact cover actions. Cache keys include the
+  console and region; misses never silently fall back to another region.
+
+### Remaining source gaps
+
+[Switchbrew's Switch 2 title list](https://www.switchbrew.org/wiki/Switch_2:_Title_list/Games)
+has IDs and names but no supported cover endpoint. [TitleDB issue 18](https://github.com/blawar/titledb/issues/18)
+describes missing Switch 2 IDs, and [Nlib's own documentation](https://github.com/ghost-land/Nlib-API)
+only documents its original Switch `01` catalog. A Switch 1 icon is not evidence
+of a Switch 2 edition's cover. No verified PS5 PPSA-to-cover public API or stable
+provider-supported unauthenticated catalog was found; unofficial PlayStation
+Store scraping is not implemented.
+
+[IGDB's official API](https://api-docs.igdb.com/) is a possible future
+platform-aware search provider, requiring Twitch app credentials/OAuth, with
+4 requests/second and 8 concurrent requests and applicable developer terms.
+[SteamGridDB's official client](https://github.com/SteamGridDB/node-steamgriddb)
+also requires an API key. Neither has been established here as an exact
+PPSA/0400-title-ID replacement. No credentials are embedded, new account access
+is not created, and these sources are not claimed as implemented coverage.
+
+Regression fixtures cover explicit identities, invalid inputs, conflicting
+regions/generations, no-request title-ID misses, persisted confirmation and
+invalidation, separate caches and custom-cover precedence. CI now requires the
+production Rust Switch download smoke test before installer builds, and the
+real native online suite tests automatic Switch download plus the exact-code UI
+and retained custom art. All game fixtures are synthetic. Live sample success
+is not universal catalog or gameplay verification.
+
+
 ## Version 0.5.15 extension — Libretro, reviewed November 8, 2026
 
 This adds a title-based provider for eleven more Matrix libraries: PS3, PS4,

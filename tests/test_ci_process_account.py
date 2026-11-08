@@ -147,5 +147,14 @@ class ProcessAccountTests(unittest.TestCase):
         self.assertLess(workflow.index('- name: Verify live Libretro cover templates'), workflow.index('- name: Build Linux installers'))
 
 
+    def test_switch_cover_provider_has_a_required_live_gate(self):
+        workflow = (ROOT/'.github/workflows/linux.yml').read_text()
+        step = workflow.split('- name: Verify live Switch GameTDB cover template\n', 1)[1].split('\n      - ', 1)[0]
+        self.assertIn('live_switch_gametdb_template -- --ignored', step)
+        self.assertNotIn('continue-on-error', step)
+        self.assertNotIn('||', step)
+        self.assertLess(workflow.index('- name: Verify live Switch GameTDB cover template'), workflow.index('- name: Build Linux installers'))
+
+
 if __name__ == '__main__':
     unittest.main()

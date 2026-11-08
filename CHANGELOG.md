@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.16
+
+- Add original Switch GameTDB downloads using exact five-character product codes and explicit artwork regions, such as AAACA-US or a filename containing [HAC-P-AAACA-USA]. Ordinary 16-digit title IDs cannot be converted safely and need product-code/region confirmation in game details.
+- Keep custom covers first, preserve offline caches and region/console boundaries, and disclose the flat-cover fallback when 3D is selected. Never reuse original Switch artwork for Switch 2 or guess a missing region.
+- Add identity/cache/privacy regressions, a required live Switch-provider CI gate and native automatic-download/custom-cover-preservation checks. Automatic providers now cover 16 of 18 libraries with incomplete catalogs; PS5 and Switch 2 remain manual-only while a suitable provider is verified.
+
 ## 0.5.15
 
 - Fix DEB updates rejected with “Installer requires protected root-owned staging”. Create the temporary installer directory privately at creation time, independent of common system umasks, while retaining ownership, signature, hash and downgrade checks.

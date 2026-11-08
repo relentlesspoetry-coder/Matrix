@@ -2324,6 +2324,41 @@ mod tests {
             assert_eq!(read_cover_bytes(kind, &uid, &game).unwrap(), Some(png));
             assert_eq!(fs::read(&file).unwrap(), b"unchanged synthetic game");
         }
+        // Switch identity is constrained, and manual images remain first priority.
+        let switch_file = games_dir("switch")
+            .unwrap()
+            .join("Game [0100000000010000].nsp");
+        fs::write(&switch_file, b"synthetic unchanged Switch file").unwrap();
+        let switch_uid = switch_file
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            download_cover_impl("switch".into(), switch_uid.clone(), None)
+                .unwrap()
+                .status,
+            "needs-serial"
+        );
+        let png = include_bytes!("../../tests/fixtures/demo-cover.png").to_vec();
+        save_cover("switch".into(), switch_uid.clone(), png.clone()).unwrap();
+        for confirmed in [None, Some("AAACA-US".into())] {
+            assert_eq!(
+                download_cover_impl("switch".into(), switch_uid.clone(), confirmed)
+                    .unwrap()
+                    .status,
+                "local"
+            );
+        }
+        let game = validate_game("switch", &switch_uid).unwrap();
+        assert_eq!(
+            read_cover_bytes("switch", &switch_uid, &game).unwrap(),
+            Some(png)
+        );
+        assert_eq!(
+            fs::read(&switch_file).unwrap(),
+            b"synthetic unchanged Switch file"
+        );
         assert!(
             save_artwork_settings(true, "3d".into(), Some(true))
                 .unwrap()

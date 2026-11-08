@@ -64,7 +64,7 @@ Regression checks now include an actual painted, non-WebDriver window, normal la
 
 ## Install the Linux test release
 
-Download **Matrix-Play_0.5.15_amd64.deb** from the [v0.5.15 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.15), then run `sudo apt install ./Matrix-Play_0.5.15_amd64.deb` in its download folder. Open **Matrix Play** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
+Download **Matrix-Play_0.5.16_amd64.deb** from the [v0.5.16 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.16), then run `sudo apt install ./Matrix-Play_0.5.16_amd64.deb` in its download folder. Open **Matrix Play** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
 
 ![Real compiled Matrix Play window in an isolated test display](screenshots/matrix-linux-home.png)
 
@@ -112,9 +112,9 @@ Select a game's **heart**, then choose **My favorites** or **Favorites (count)**
 
 Native favorites are saved with Matrix Play settings in `$XDG_CONFIG_HOME/matrix/frontend.json`, independent of the browser cache. Compatible favorites from older UI storage are imported once; removing a favorite does not cause it to return on the next launch. Unavailable games retain their saved entries and reappear as favorites when their exact paths return. Browser preview favorites still use browser storage.
 
-## Automatic PS1 / PS2 cover art
+## Automatic cover art
 
-Automatic missing-art scans now run after native library scans and Refresh. **Emulators & folders → Cover artwork** controls automatic downloads and default/3D style. xlenore templates use PS1/PS2 serials; GameTDB templates use GameCube/Wii disc IDs. Titles are never fuzzily matched. Details show the result and identity source, and allow an explicit serial confirmation. Choose cover imports an image for any library.
+Automatic missing-art scans run after native library scans and Refresh. Providers are available for 16 of 18 libraries, with incomplete catalogs. Switch uses an exact five-character GameTDB product code plus artwork region, such as AAACA-US, or a filename containing [HAC-P-AAACA-USA]. Common 16-digit title IDs require product-code/region confirmation in details. Switch uses flat covers even with 3D selected. PS5 and Switch 2 remain local-cover only. **Emulators & folders → Cover artwork** controls automatic downloads and default/3D style. xlenore templates use PS1/PS2 serials; GameTDB templates use GameCube/Wii disc IDs. Titles are never fuzzily matched. Details show the result and identity source, and allow an explicit serial confirmation. Choose cover imports an image for any library.
 
 Serial detection supports filenames and bounded ISO9660 SYSTEM.CNF parsing, including simple one-file, zero-origin raw BIN/CUE data tracks. Compressed images need a filename serial or user confirmation. Unsupported/ambiguous layouts stay unresolved. Local/manual covers take priority. Downloaded art, provenance, positive and negative caches persist in the XDG data directory. Provider requests are serialized, spaced, bounded, and back off on errors. The browser preview never downloads covers.
 
@@ -240,7 +240,7 @@ UI-only preview: open `web/index.html` in Chromium, Firefox or another browser. 
 
 1. Real emulator/game testing on Zorin, installed-package use on user machines, and Wayland/native-display behavior. Compilation, DEB generation and the actual Tauri window have been tested in a virtual X11 display.
 2. Additional emulator-specific adapters for unusual command-line syntax, Switch installed content, installed Vita titles, Wii U metadata, Dreamcast multidisc grouping and emulator-specific Flatpak options. PS3 installed EBOOT folders and PS1 .m3u playlists are supported as described above. Emulator support differs between versions; the generic launch template is not guaranteed to work for every executable.
-3. Additional authorized artwork/metadata providers beyond PS1/PS2 and GameCube/Wii, nonstandard Sony serial formats and compressed-disc identity extraction remain future work. Manual cover imports work for every library; TheCoverProject automation is not enabled.
+3. Verified PS5/Switch 2 artwork providers, automatic Switch title-ID-to-product-code mapping, nonstandard Sony serial formats and compressed-disc identity extraction remain future work. Manual cover imports work for every library; TheCoverProject automation is not enabled.
 4. Windows games are organized through existing `.desktop` shortcuts only. These must already work outside Matrix Play; any software they invoke is managed externally. Matrix Play does not install, configure or invoke a Windows compatibility runtime directly. Steam games continue to launch through the owning Steam installation, whose own compatibility choices are outside Matrix Play.
 5. Physical-controller testing, nonstandard controller mappings and controller-only text entry/system dialogs remain future work. Standard-mapped navigation and launch/exit diagnostics are implemented; emulator input configuration remains external.
 6. Broader emulator-specific and distribution testing. The existing native harness uses non-proprietary fixtures and harmless test launchers; it does not validate actual gameplay.

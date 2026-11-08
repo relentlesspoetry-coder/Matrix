@@ -2,7 +2,7 @@
 
 Run under xvfb-run; install tauri-driver and webkit2gtk-driver first.
 The launcher fixtures are harmless scripts, not real emulators or Steam.
-Use --online to include two real cover downloads; all game data is synthetic.
+Use --online to include three real cover downloads; all game data is synthetic.
 """
 import argparse
 import base64
@@ -65,12 +65,15 @@ def main():
         library = home / 'Games/Matrix'
         ps2 = library / 'PS2/PS2 Games'
         ps1 = library / 'PS1/PS1 Games'
-        for path in [ps1, ps2, home/'config/matrix', home/'bin', home/'.local/share/Steam/steamapps']:
+        switch = library / 'Switch/Switch Games'
+        for path in [ps1, ps2, switch, home/'config/matrix', home/'bin', home/'.local/share/Steam/steamapps']:
             path.mkdir(parents=True, exist_ok=True)
         ps2game = ps2 / 'Test Game [SLUS-20312].chd'
         ps1game = ps1 / 'Test Game [SLUS-00664].chd'
         ps2game.write_text('Synthetic fixture; not a playable ROM.')
         ps1game.write_text('Synthetic fixture; not a playable ROM.')
+        switchgame = switch / 'Test Game [HAC-P-AAACA-USA].nsp'
+        switchgame.write_text('Synthetic fixture; not a playable ROM.')
         legacy = {'uid':str(home/'Windows Fixture.exe'),'title':'Legacy Windows Fixture','target':str(home/'Windows Fixture.exe'),'runner':'retired-runtime'}
         (home/'config/matrix/frontend.json').write_text(json.dumps({'artwork': {'enabled': cfg.online, 'style': 'default'}, 'windows':[legacy]}))
         manifest = home/'.local/share/Steam/steamapps/appmanifest_12345.acf'
@@ -461,7 +464,22 @@ def main():
             if cfg.online:
                 wait_for(lambda: invoke('get_cover', {'kind':'ps2','uid':str(ps2game)}), 60)
                 wait_for(lambda: invoke('get_cover', {'kind':'ps1','uid':str(ps1game)}), 60)
+                wait_for(lambda: invoke('get_cover', {'kind':'switch','uid':str(switchgame)}), 60)
                 wait_for(lambda: js('return document.querySelector(".game-cover img")?.complete'))
+            # Actual Switch product-code controls, cache and manual-cover precedence.
+            js("openGame('switch',arguments[0])", str(switchgame))
+            assert js('return document.querySelector("#cover-serial").placeholder') == 'AAACA-US'
+            assert 'not the 16-digit title ID' in js('return document.querySelector(".cover-tools").textContent')
+            switch_cover = (Path(__file__).parent/'fixtures/demo-cover.png').read_bytes()
+            invoke('save_cover', {'kind':'switch','uid':str(switchgame),'bytes':list(switch_cover)})
+            js('document.querySelector("#cover-serial").value="AAACA-US"')
+            click('[data-action="download-cover"]')
+            wait_for(lambda: js('return document.querySelector(".cover-result").textContent.includes("Using your local cover")'))
+            assert invoke('get_cover', {'kind':'switch','uid':str(switchgame)}) == 'data:image/png;base64,'+base64.b64encode(switch_cover).decode()
+            assert switchgame.read_text() == 'Synthetic fixture; not a playable ROM.'
+            screenshot('matrix-linux-switch-covers.png')
+            click('[data-action="close"]')
+            print('PASS: native Switch product-code/region controls and custom-cover preservation; game bytes unchanged')
             click('[data-action="favorite"]')
             wait_for(lambda: invoke('bootstrap')['favorites'].get('ps2') == [str(ps2game)])
             click('[data-action="console-favorites"]')
@@ -792,7 +810,7 @@ def main():
             print('PASS: native favorites survive process restart and webview reload, remain console-scoped, and preserve profiles; Flatpak discovery/setup/launch argv use harmless fixtures')
             print('PASS: real Tauri/WebKit window, native IPC, 18 libraries, PS1/PS2 scanning, manual/cache artwork, console boundaries, persisted settings, three launcher argument paths')
             if cfg.online:
-                print('PASS: real desktop automatic PS1 and PS2 cover downloads (synthetic serial-labelled game fixtures)')
+                print('PASS: real desktop automatic PS1, PS2 and Switch cover downloads (synthetic identity-labelled game fixtures)')
             # This final test deliberately closes the real native windows using
             # the production cooperative handler. Only test-owned PIDs qualify.
             from native_update_lifecycle import exercise, preserve_diagnostics

@@ -47,6 +47,7 @@ pub fn normalize_for(kind: &str, text: &str) -> Result<String, String> {
         return crate::title::normalize(text);
     }
     match kind {
+        "switch" => crate::switch::normalize(text),
         "ps1" | "ps2" => normalize(text),
         "gamecube" | "wii" => {
             let id = text.trim().to_ascii_uppercase();
@@ -246,6 +247,9 @@ fn disc_serial(path: &Path, kind: &str) -> BTreeSet<String> {
 }
 
 pub fn detect(path: &Path, kind: &str) -> Result<(String, String), String> {
+    if kind == "switch" {
+        return crate::switch::detect(path);
+    }
     if crate::title::system(kind).is_some() {
         return crate::title::detect(path);
     }

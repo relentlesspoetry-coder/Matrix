@@ -33,7 +33,7 @@ function fixture() {
 test('all documented title catalogs have exact-title controls and flat-cover guidance',()=>{
   const f=fixture();
   assert.equal(f.TITLE_COVER_KINDS.length,11);
-  assert.equal(f.AUTO_COVER_KINDS.length,15);
+  assert.equal(f.AUTO_COVER_KINDS.length,16);
   for(const kind of f.TITLE_COVER_KINDS){
     f.openGame(kind,kind+'-game');
     const html=f.node('#overlay-root').innerHTML;
@@ -47,7 +47,7 @@ test('all documented title catalogs have exact-title controls and flat-cover gui
 
 test('unverified platforms stay manual and are excluded from automatic scans',async()=>{
   const f=fixture();
-  for(const kind of ['switch','ps5','switch2']){
+  for(const kind of ['ps5','switch2']){
     f.openGame(kind,kind+'-game');
     const html=f.node('#overlay-root').innerHTML;
     assert.match(html,/No verified automatic provider/);
@@ -56,7 +56,7 @@ test('unverified platforms stay manual and are excluded from automatic scans',as
   }
   f.state.artwork.titleEnabled=true;
   await f.scanArtwork();
-  assert.equal(f.calls.length,15);
+  assert.equal(f.calls.length,16);
   assert.deepEqual(f.calls.map(c=>c.args.kind).sort(),Array.from(f.AUTO_COVER_KINDS).sort());
   assert.ok(f.calls.every(c=>c.name==='download_cover' && c.args.serial===null));
 });
@@ -65,17 +65,17 @@ test('upgraded settings do not start filename-based requests until enabled',asyn
   const f=fixture();
   assert.equal(f.state.artwork.titleEnabled,false);
   await f.scanArtwork();
-  assert.deepEqual(f.calls.map(c=>c.args.kind).sort(),['gamecube','ps1','ps2','wii']);
+  assert.deepEqual(f.calls.map(c=>c.args.kind).sort(),['gamecube','ps1','ps2','switch','wii']);
   assert.match(f.coverMessage('gba','gba-game'),/Enable title-based covers/);
   f.state.artwork={enabled:true,style:'default'};
   f.calls.length=0;
   await f.scanArtwork();
-  assert.equal(f.calls.length,4,'Missing legacy field is disabled, not implicitly opted in');
+  assert.equal(f.calls.length,5,'Missing legacy field is disabled, not implicitly opted in');
 });
 
 test('provider attribution and preferences accurately describe title disclosure and coverage limits',()=>{
   const f=fixture();
-  for (const [kind,provider] of [['ps2','xlenore'],['wii','GameTDB'],['vita','Libretro']]){
+  for (const [kind,provider] of [['ps2','xlenore'],['wii','GameTDB'],['switch','GameTDB'],['vita','Libretro']]){
     f.state.coverStatus.set(kind+'|'+kind+'-game',{message:'Saved',url:'https://fixture',serial:'Exact Title',source:'user-confirmed'});
     assert.ok(f.coverMessage(kind,kind+'-game').includes(provider));
   }
@@ -83,7 +83,7 @@ test('provider attribution and preferences accurately describe title disclosure 
   const html=f.node('#screen').innerHTML;
   assert.match(html,/filename-based catalog title/);
   assert.match(html,/full paths are not uploaded/);
-  assert.match(html,/Switch, PS5 and Switch 2 still need local covers/);
+  assert.match(html,/PS5 and Switch 2 still need local covers/);
   assert.match(html,/Local covers take priority/);
 });
 
@@ -95,4 +95,16 @@ test('legacy providers retain serial controls and do not become title lookups',(
     assert.match(html,/maxlength="16"/);
     assert.doesNotMatch(html,/Confirm exact catalog title/);
   }
+});
+
+test('Switch controls require exact product and artwork region, not title-ID guessing',()=>{
+  const f=fixture();
+  f.openGame('switch','switch-game');
+  const html=f.node('#overlay-root').innerHTML;
+  assert.match(html,/Confirm Switch product code and region/);
+  assert.match(html,/placeholder="AAACA-US"/);
+  assert.match(html,/not the 16-digit title ID/);
+  assert.match(html,/Only flat covers/);
+  assert.match(html,/no Switch 2 fallback/);
+  assert.doesNotMatch(html,/Confirm exact catalog title/);
 });

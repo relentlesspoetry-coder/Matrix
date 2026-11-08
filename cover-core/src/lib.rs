@@ -1,4 +1,5 @@
 pub mod identity;
+pub mod switch;
 pub mod title;
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
@@ -66,7 +67,7 @@ fn stamp(path: &Path) -> Result<String, String> {
 }
 
 pub fn supports(kind: &str) -> bool {
-    matches!(kind, "ps1" | "ps2" | "gamecube" | "wii") || title::system(kind).is_some()
+    matches!(kind, "ps1" | "ps2" | "gamecube" | "wii" | "switch") || title::system(kind).is_some()
 }
 
 pub fn url(kind: &str, serial: &str, style: &str) -> Result<String, String> {
@@ -75,6 +76,9 @@ pub fn url(kind: &str, serial: &str, style: &str) -> Result<String, String> {
     }
     if title::system(kind).is_some() {
         return title::url(kind, serial);
+    }
+    if kind == "switch" {
+        return switch::url(serial);
     }
     let serial = identity::normalize_for(kind, serial)?;
     if matches!(kind, "gamecube" | "wii") {
@@ -274,8 +278,12 @@ pub fn cached_cover(root: &Path, kind: &str, path: &Path, style: &str) -> Option
     }
 }
 
+fn flat_provider(kind: &str) -> bool {
+    title::system(kind).is_some() || kind == "switch"
+}
+
 fn effective_style<'a>(kind: &str, style: &'a str) -> &'a str {
-    if title::system(kind).is_some() && style == "3d" {
+    if flat_provider(kind) && style == "3d" {
         "default"
     } else {
         style
@@ -304,7 +312,7 @@ pub fn fetch(
             })
         }
     };
-    let flat_fallback = title::system(kind).is_some() && style == "3d";
+    let flat_fallback = flat_provider(kind) && style == "3d";
     let style = effective_style(kind, style);
     fs::create_dir_all(root).map_err(|e| e.to_string())?;
     let lock = OpenOptions::new()
@@ -430,6 +438,8 @@ pub fn fetch(
             outcome.message = if reply.status == 404 {
                 if title::system(kind).is_some() {
                     "No cover for this exact console and catalog title. Check the title, region and edition in game details, or choose a local cover.".into()
+                } else if kind == "switch" {
+                    "No cover for this exact Switch product code and artwork region. Check both in game details, or choose a local cover. Switch has flat covers only.".into()
                 } else {
                     "No cover for this exact console, serial and style. Choose a local cover or another style.".into()
                 }
@@ -523,7 +533,7 @@ mod tests {
             assert_eq!(url(kind, "Title", "default"), url(kind, "Title", "3d"));
             assert!(url(kind, "Title", "../default").is_err());
         }
-        for kind in ["ps5", "switch", "switch2", "steam", "windows"] {
+        for kind in ["ps5", "switch2", "steam", "windows"] {
             assert!(!supports(kind));
             assert!(url(kind, "Title", "default").is_err());
         }
@@ -685,6 +695,141 @@ mod tests {
             assert_eq!(outcome.status, "downloaded", "{kind}: {}", outcome.message);
             assert!(cached_cover(&root, kind, &path, "default").is_some());
         }
+    }
+
+    #[test]
+    fn switch_product_identity_cache_and_safe_missing_ids() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("covers");
+        let game = game(tmp.path(), "Game [HAC-P-AAACA-USA].nsp");
+        let mut http = fake(200);
+        let result = fetch(&root, "switch", &game, "3d", None, &mut http).unwrap();
+        assert_eq!(result.status, "downloaded");
+        assert_eq!(result.serial.as_deref(), Some("AAACA-US"));
+        assert_eq!(result.source.as_deref(), Some("filename-product-code"));
+        assert!(result.message.contains("Flat cover"));
+        assert_eq!(
+            http.urls,
+            vec!["https://art.gametdb.com/switch/coverM/US/AAACA.jpg"]
+        );
+        assert_eq!(
+            cached_cover(&root, "switch", &game, "default"),
+            cached_cover(&root, "switch", &game, "3d")
+        );
+        assert!(cached_cover(&root, "switch2", &game, "default").is_none());
+        let mut absent = Fake {
+            reply: None,
+            urls: vec![],
+        };
+        assert_eq!(
+            fetch(&root, "switch", &game, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "cached"
+        );
+        fs::write(&game, b"replaced file size").unwrap();
+        assert!(cached_cover(&root, "switch", &game, "default").is_none());
+        let unknown = tmp.path().join("Game [0100000000010000].xci");
+        fs::write(&unknown, b"synthetic").unwrap();
+        assert_eq!(
+            fetch(&root, "switch", &unknown, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "needs-serial"
+        );
+        for value in [
+            "AAACA",
+            "0100000000010000",
+            "BEE-P-AAACA-USA",
+            "AAACA-US/../EN",
+        ] {
+            assert!(fetch(
+                &root,
+                "switch",
+                &unknown,
+                "default",
+                Some(value),
+                &mut absent
+            )
+            .is_err());
+        }
+        release_cooldown(&root);
+        let mut missing = fake(404);
+        assert_eq!(
+            fetch(
+                &root,
+                "switch",
+                &unknown,
+                "default",
+                Some("AAACA-EN"),
+                &mut missing
+            )
+            .unwrap()
+            .status,
+            "not-found"
+        );
+        let retry = fetch(&root, "switch", &unknown, "3d", None, &mut absent).unwrap();
+        assert!(retry.message.contains("product code and artwork region"));
+        assert!(!retry.message.contains("another style"));
+        assert_eq!(missing.urls.len(), 1, "No silent US/other-region fallback");
+        assert!(missing.urls[0].contains("/EN/AAACA.jpg"));
+        assert_eq!(
+            fetch(&root, "switch", &unknown, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "not-found"
+        );
+        assert!(cached_cover(&root, "switch", &unknown, "default").is_none());
+        assert_eq!(
+            fetch(
+                &root,
+                "switch",
+                &unknown,
+                "default",
+                Some("AAACA-US"),
+                &mut absent
+            )
+            .unwrap()
+            .status,
+            "cached"
+        );
+        fs::write(
+            &unknown,
+            b"replacement of the file invalidates confirmation",
+        )
+        .unwrap();
+        assert_eq!(
+            fetch(&root, "switch", &unknown, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "needs-serial"
+        );
+        assert!(absent.urls.is_empty());
+        assert!(url("switch2", "AAACA-US", "default").is_err());
+        assert!(url("switch", "AAACA-US", "../default").is_err());
+    }
+
+    #[test]
+    #[ignore = "Explicit live Switch GameTDB smoke test; downloads a temporary cover"]
+    fn live_switch_gametdb_template() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("covers");
+        let path = game(tmp.path(), "Game [HAC-P-AAACA-USA].nsp");
+        let outcome = fetch(&root, "switch", &path, "default", None, &mut Http).unwrap();
+        assert_eq!(outcome.status, "downloaded", "{}", outcome.message);
+        let saved = cached_cover(&root, "switch", &path, "default").unwrap();
+        assert_eq!(validate_image(&fs::read(&saved).unwrap()).unwrap(), "jpg");
+        let mut absent = Fake {
+            reply: None,
+            urls: vec![],
+        };
+        assert_eq!(
+            fetch(&root, "switch", &path, "3d", None, &mut absent)
+                .unwrap()
+                .status,
+            "cached"
+        );
+        assert_eq!(Some(saved), cached_cover(&root, "switch", &path, "3d"));
     }
 
     #[test]
