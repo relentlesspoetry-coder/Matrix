@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.19
+
+- Reject or skip Linux paths containing non-UTF-8 bytes instead of converting them into a different actionable filename. Preserve existing valid UTF-8 game IDs, favorites/artwork keys and file contents.
+- Apply the checked path boundary to console scanning/launching, console and Steam folder registration, Windows shortcuts and emulator setup/discovery, including symlinks whose resolved target cannot be represented safely. Reject unsafe AppImage selections before changing execute permissions.
+- Add six synthetic regressions for invalid filename bytes, invalid ancestor directories, literal replacement-character lookalikes and symlink targets. This prevents wrong-file aliases; it does not add arbitrary-byte filename support or rename any files.
+
 ## 0.5.18
 
 - Keep slow bootstrap/refresh responses from reverting newly saved emulator selections, artwork preferences or favorites; use the same guarded state loading for initialization and Find emulators.

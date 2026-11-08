@@ -214,9 +214,12 @@ fn add_image(map: &mut BTreeMap<String, Candidate>, path: &Path) {
     let Ok(path) = path.canonicalize() else {
         return;
     };
+    let Ok(path_string) = actionable_path(&path) else {
+        return;
+    };
     let profile = EmulatorProfile {
         emulator_name: engine.name.into(),
-        emulator_path: path.to_string_lossy().into_owned(),
+        emulator_path: path_string,
         launcher: Launcher::Appimage,
         launch_args: args(engine, engine.consoles[0]),
         auto_detected: true,
@@ -396,6 +399,9 @@ fn add_native(map: &mut BTreeMap<String, Candidate>, spec: &ConsoleSpec, path: P
         return;
     }
     let path = path.canonicalize().unwrap_or(path);
+    let Ok(path_string) = actionable_path(&path) else {
+        return;
+    };
     insert(
         map,
         Candidate {
@@ -406,7 +412,7 @@ fn add_native(map: &mut BTreeMap<String, Candidate>, spec: &ConsoleSpec, path: P
                     .map(|e| e.name)
                     .unwrap_or(guessed_emulator(spec.id))
                     .into(),
-                emulator_path: path.to_string_lossy().into_owned(),
+                emulator_path: path_string,
                 launcher: if appimage(&path) {
                     Launcher::Appimage
                 } else {
@@ -511,6 +517,32 @@ mod tests {
         fs::write(path, b"#!/bin/sh\nexit 0\n").unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
     }
+    #[test]
+    fn discovery_skips_non_utf8_targets_but_keeps_literal_replacement_names() {
+        use std::os::unix::{ffi::OsStringExt, fs::PermissionsExt};
+        let temp = tempfile::tempdir().unwrap();
+        let mut map = BTreeMap::new();
+        for byte in [0xff, 0xfe] {
+            let parent = temp.path().join(std::ffi::OsString::from_vec(vec![byte]));
+            fs::create_dir(&parent).unwrap();
+            let target = parent.join("pcsx2.AppImage");
+            fs::write(&target, b"\x7fELF0000AI\x02synthetic image").unwrap();
+            fs::set_permissions(&target, fs::Permissions::from_mode(0o700)).unwrap();
+            let alias = temp.path().join(format!("pcsx2-{byte}.AppImage"));
+            std::os::unix::fs::symlink(&target, &alias).unwrap();
+            add_image(&mut map, &alias);
+            add_native(&mut map, spec("ps2").unwrap(), alias);
+            assert!(map.is_empty());
+        }
+        let valid = temp.path().join("pcsx2-\u{fffd}.AppImage");
+        fs::write(&valid, b"\x7fELF0000AI\x02synthetic image").unwrap();
+        fs::set_permissions(&valid, fs::Permissions::from_mode(0o700)).unwrap();
+        add_image(&mut map, &valid);
+        add_native(&mut map, spec("ps2").unwrap(), valid.clone());
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.values().next().unwrap().profile.emulator_path, valid.to_str().unwrap());
+    }
+
     #[test]
     fn incomplete_scan_preserves_existing_executable_and_uncertain_paths() {
         let root = tempfile::tempdir().unwrap();

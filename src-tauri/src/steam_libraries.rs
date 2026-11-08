@@ -47,7 +47,7 @@ fn add_to_settings(
     path: &Path,
     launcher: SteamLauncher,
 ) -> Result<(), String> {
-    let path = normalize_root(path)?.to_string_lossy().into_owned();
+    let path = actionable_path(&normalize_root(path)?)?;
     if let Some(existing) = settings
         .steam_libraries
         .iter_mut()
@@ -124,6 +124,28 @@ pub(crate) fn command_for_launch(uid: &str, launcher: SteamLauncher) -> Result<C
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn registration_rejects_non_utf8_parent_and_symlink_targets() {
+        use std::os::unix::ffi::OsStringExt;
+        let temp = tempfile::tempdir().unwrap();
+        let invalid = temp.path().join(std::ffi::OsString::from_vec(b"Steam-\xfe".to_vec()));
+        let lookalike = temp.path().join("Steam-\u{fffd}");
+        fs::create_dir_all(invalid.join("steamapps")).unwrap();
+        fs::create_dir_all(lookalike.join("steamapps")).unwrap();
+        let alias = temp.path().join("alias");
+        std::os::unix::fs::symlink(&invalid, &alias).unwrap();
+        let mut settings = Settings::default();
+        for path in [&invalid, &alias] {
+            assert!(add_to_settings(&mut settings, path, SteamLauncher::Flatpak)
+                .unwrap_err().contains("non-UTF-8"));
+            assert!(settings.steam_libraries.is_empty());
+        }
+        add_to_settings(&mut settings, &lookalike, SteamLauncher::Native).unwrap();
+        assert_eq!(settings.steam_libraries[0].path,
+            lookalike.join("steamapps").to_str().unwrap());
+        assert!(invalid.join("steamapps").is_dir());
+    }
+
     #[test]
     fn registration_normalizes_updates_and_preserves_other_settings() {
         let root = tempfile::tempdir().unwrap();

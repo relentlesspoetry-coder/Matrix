@@ -286,6 +286,14 @@ fn spec(id: &str) -> Result<&'static ConsoleSpec, String> {
         .ok_or_else(|| "Unsupported console".into())
 }
 
+// JSON paths must round-trip to exactly the same filesystem object. Never use
+// replacement characters for identifiers or paths that can later be launched.
+fn actionable_path(path: &Path) -> Result<String, String> {
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "This path contains non-UTF-8 filename bytes and cannot be used safely. Choose a UTF-8 path; no files have been changed.".into())
+}
+
 fn games_dir(id: &str) -> Result<PathBuf, String> {
     let s = spec(id)?;
     Ok(matrix_root()?.join(s.dir).join(s.games))
@@ -634,13 +642,15 @@ fn scan_console_with_customizations(
             if !canonical.starts_with(&canonical_folder) {
                 continue;
             }
+            let Ok(uid) = actionable_path(&canonical) else {
+                continue;
+            };
             if libraries::is_playlist(id, &canonical) {
                 match libraries::playlist_members(id, &canonical, roots) {
                     Ok(members) => grouped_members.extend(members),
                     Err(_) => continue,
                 }
             }
-            let uid = canonical.to_string_lossy().to_string();
             if seen.insert(uid.clone()) {
                 games.push(Game {
                     uid: uid.clone(),
@@ -980,11 +990,11 @@ fn add_windows_game(title: String, target: String, runner: String) -> Result<Win
     validate_windows_shortcut(path, &runner)?;
     let canonical = path.canonicalize().map_err(|e| e.to_string())?;
     validate_windows_shortcut(&canonical, &runner)?;
-    let uid = canonical.to_string_lossy().to_string();
+    let uid = actionable_path(&canonical)?;
     let game = WindowsGame {
-        uid,
+        uid: uid.clone(),
         title: title.trim().into(),
-        target: canonical.to_string_lossy().into(),
+        target: uid,
         runner,
     };
     update_settings(|settings| {
@@ -1035,14 +1045,14 @@ fn console_launch_args(
             None
         };
         if let Some(path) = path {
-            args.push(path.to_string_lossy().into_owned());
+            args.push(actionable_path(path)?);
             substituted = true;
         } else {
             args.push(arg);
         }
     }
     if !substituted {
-        args.push(game.to_string_lossy().into_owned());
+        args.push(actionable_path(game)?);
     }
     Ok(args)
 }
@@ -1211,7 +1221,7 @@ fn validate_game(kind: &str, uid: &str) -> Result<Game, String> {
         libraries::playlist_members(kind, &game_path, &roots)?;
     }
     let title = console_game_title(kind, &game_path, &roots);
-    let uid = game_path.to_string_lossy().into_owned();
+    let uid = actionable_path(&game_path)?;
     Ok(Game {
         uid: uid.clone(),
         title,
@@ -1647,6 +1657,59 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn console_paths_never_alias_invalid_bytes_to_replacement_characters() {
+        use std::os::unix::ffi::OsStringExt;
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let mut originals = Vec::new();
+        for byte in [0xff, 0xfe] {
+            let path = root.join(std::ffi::OsString::from_vec(
+                [b"Title-".as_slice(), &[byte], b".iso"].concat(),
+            ));
+            fs::write(&path, [byte]).unwrap();
+            originals.push((path, vec![byte]));
+        }
+        let invalid_parent = root.join(std::ffi::OsString::from_vec(b"folder-\xff".to_vec()));
+        fs::create_dir(&invalid_parent).unwrap();
+        let nested = invalid_parent.join("Valid.iso");
+        fs::write(&nested, b"nested").unwrap();
+        originals.push((nested.clone(), b"nested".to_vec()));
+        let lookalike = root.join("Title-\u{fffd}.iso");
+        fs::write(&lookalike, b"lookalike").unwrap();
+        let rows = scan_console_in("ps2", &[root.clone()]).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].uid, lookalike.to_str().unwrap());
+        assert_eq!(rows[0].path, rows[0].uid);
+        assert_eq!(fs::read(&rows[0].path).unwrap(), b"lookalike");
+        let profile = EmulatorProfile::default();
+        assert_eq!(console_launch_args(&profile, "ps2", &lookalike).unwrap(),
+            [lookalike.to_str().unwrap()]);
+        for (path, bytes) in originals {
+            assert!(actionable_path(&path).is_err());
+            assert!(console_launch_args(&profile, "ps2", &path).is_err());
+            assert_eq!(fs::read(path).unwrap(), bytes);
+        }
+        assert!(scan_console_in("ps2", &[invalid_parent]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn windows_shortcut_rejects_non_utf8_canonical_symlink_target() {
+        use std::os::unix::ffi::OsStringExt;
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join(std::ffi::OsString::from_vec(b"Game-\xff.desktop".to_vec()));
+        fs::write(&target, b"original shortcut").unwrap();
+        let alias = temp.path().join("alias.desktop");
+        std::os::unix::fs::symlink(&target, &alias).unwrap();
+        let lookalike = temp.path().join("Game-\u{fffd}.desktop");
+        fs::write(&lookalike, b"different shortcut").unwrap();
+        let error = add_windows_game("Game".into(), alias.to_str().unwrap().into(), "desktop".into())
+            .err().expect("must reject before changing settings");
+        assert!(error.contains("non-UTF-8"));
+        assert_eq!(fs::read(target).unwrap(), b"original shortcut");
+        assert_eq!(fs::read(lookalike).unwrap(), b"different shortcut");
+    }
+
     #[test]
     fn all_console_paths_are_unique_and_valid() {
         let mut ids = HashSet::new();

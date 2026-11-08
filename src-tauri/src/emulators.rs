@@ -77,6 +77,7 @@ fn validate_file(path: &str, appimage: bool, allow_execute: bool) -> Result<Stri
     let path = Path::new(path)
         .canonicalize()
         .map_err(|error| file_path_error(path, error))?;
+    let path_string = actionable_path(&path)?;
     if !path.is_file() {
         return Err("Choose an emulator file, not a folder.".into());
     }
@@ -109,7 +110,7 @@ fn validate_file(path: &str, appimage: bool, allow_execute: bool) -> Result<Stri
             }
         }
     }
-    Ok(path.to_string_lossy().into_owned())
+    Ok(path_string)
 }
 pub(crate) fn prepare(
     mut profile: EmulatorProfile,
@@ -243,8 +244,8 @@ pub(crate) async fn browse_emulator(
             .blocking_pick_file()
             .map(|file| {
                 file.into_path()
-                    .map(|p| p.to_string_lossy().into_owned())
                     .map_err(|e| e.to_string())
+                    .and_then(|p| actionable_path(&p))
             })
             .transpose()
     })
@@ -254,6 +255,27 @@ pub(crate) async fn browse_emulator(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn selected_emulator_never_aliases_non_utf8_canonical_target() {
+        use std::os::unix::{ffi::OsStringExt, fs::PermissionsExt};
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join(std::ffi::OsString::from_vec(b"pcsx2-\xff.AppImage".to_vec()));
+        let bytes = b"\x7fELF0000AI\x02synthetic image";
+        fs::write(&target, bytes).unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+        let alias = temp.path().join("pcsx2-alias.AppImage");
+        std::os::unix::fs::symlink(&target, &alias).unwrap();
+        let lookalike = temp.path().join("pcsx2-\u{fffd}.AppImage");
+        fs::write(&lookalike, bytes).unwrap();
+        fs::set_permissions(&lookalike, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(validate_file(alias.to_str().unwrap(), true, true)
+            .unwrap_err().contains("non-UTF-8"));
+        assert_eq!(fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(fs::read(&target).unwrap(), bytes);
+        assert_eq!(validate_file(lookalike.to_str().unwrap(), true, false).unwrap(),
+            lookalike.to_str().unwrap());
+    }
+
     #[test]
     fn sidecar_save_access_is_limited_to_recognized_game_parent() {
         let root = tempfile::tempdir().unwrap();

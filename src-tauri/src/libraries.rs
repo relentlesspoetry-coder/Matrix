@@ -45,7 +45,9 @@ fn folders_in(id: &str, managed: &Path, settings: &Settings) -> Vec<Folder> {
 }
 
 pub(crate) fn folders(id: &str) -> Result<Vec<Folder>, String> {
-    Ok(folders_in(id, &games_dir(id)?, &load_settings()?))
+    let managed = games_dir(id)?;
+    actionable_path(&managed)?;
+    Ok(folders_in(id, &managed, &load_settings()?))
 }
 
 pub(crate) fn roots(id: &str) -> Result<Vec<PathBuf>, String> {
@@ -53,6 +55,7 @@ pub(crate) fn roots(id: &str) -> Result<Vec<PathBuf>, String> {
         .into_iter()
         .filter(|f| f.available)
         .filter_map(|f| Path::new(&f.path).canonicalize().ok())
+        .filter(|path| path.to_str().is_some())
         .collect())
 }
 
@@ -90,6 +93,7 @@ fn register(settings: &mut Settings, id: &str, path: &Path, managed: &Path) -> R
     if !path.is_dir() {
         return Err("Choose a folder, not a game file.".into());
     }
+    let saved_path = actionable_path(&path)?;
     if path.parent().is_none() {
         return Err("Choose a game library folder, not the filesystem root.".into());
     }
@@ -103,7 +107,7 @@ fn register(settings: &mut Settings, id: &str, path: &Path, managed: &Path) -> R
     if paths.len() >= 32 {
         return Err("At most 32 external folders can be registered per console.".into());
     }
-    paths.push(path.to_string_lossy().into_owned());
+    paths.push(saved_path);
     Ok(())
 }
 
@@ -139,8 +143,8 @@ pub(crate) async fn browse_library_folder(app: tauri::AppHandle) -> Result<Optio
             .blocking_pick_folder()
             .map(|file| {
                 file.into_path()
-                    .map(|p| p.to_string_lossy().into_owned())
                     .map_err(|e| e.to_string())
+                    .and_then(|p| actionable_path(&p))
             })
             .transpose()
     })
@@ -236,6 +240,27 @@ pub(crate) fn has_manual_cover(root: &Path, id: &str, uid: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn registration_rejects_non_utf8_targets_without_aliasing_saved_roots() {
+        use std::os::unix::ffi::OsStringExt;
+        let temp = tempfile::tempdir().unwrap();
+        let invalid = temp.path().join(std::ffi::OsString::from_vec(b"Games-\xff".to_vec()));
+        let lookalike = temp.path().join("Games-\u{fffd}");
+        fs::create_dir(&invalid).unwrap();
+        fs::create_dir(&lookalike).unwrap();
+        let alias = temp.path().join("alias");
+        std::os::unix::fs::symlink(&invalid, &alias).unwrap();
+        let mut settings = Settings::default();
+        let managed = temp.path().join("managed");
+        for path in [&invalid, &alias] {
+            assert!(register(&mut settings, "ps2", path, &managed).unwrap_err().contains("non-UTF-8"));
+            assert!(settings.library_folders.is_empty());
+        }
+        register(&mut settings, "ps2", &lookalike, &managed).unwrap();
+        assert_eq!(settings.library_folders["ps2"], [lookalike.to_str().unwrap()]);
+        assert!(invalid.is_dir());
+    }
+
     #[test]
     fn registration_preserves_managed_folders_and_unrelated_settings() {
         let tmp = tempfile::tempdir().unwrap();
