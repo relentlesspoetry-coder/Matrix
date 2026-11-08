@@ -36,13 +36,62 @@ function fixture() {
   let source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
   source=source.replace('readPrefs(); setupEvents(); render(); window.matrixStartup?.complete(); void initializeArt(); void initializeNative();','');
   vm.runInContext(source+`;hydrateNativeCovers=()=>{};renderLaunchStatus=()=>{};toast=()=>{};gameCover=()=>'';
-    globalThis.api={state,renderConsole,renderGameResults,renderSettings,renderExternal,dismissOverlay,toggleFavorite,handleAction};`,context);
+    globalThis.api={state,renderHome,renderConsole,renderGameResults,renderSettings,renderExternal,dismissOverlay,toggleFavorite,handleAction};`,context);
   const api=context.api;api.state.page='console';api.state.consoleId='ps2';api.state.imported.ps2=[{uid:'game-1',title:'First'},{uid:'game-2',title:'Second'}];
   api.renderConsole();
   const find=(action,value,uid)=>[...groups.screen,...groups.results].find(n=>n.dataset.action===action&&(value===undefined||n.dataset.value===value)&&(uid===undefined||n.dataset.uid===uid));
   return {...api,document,find,groups,modal(){const n=node({},'overlay');groups.overlay.push(n);n.focus();return n;}};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+function homeFixture() {
+ const f=fixture();f.state.page='home';f.state.consoleId=null;f.renderHome();return f;
+}
+for(const vendor of ['Sony','Nintendo','Sega','All']) test(`Home ${vendor} filter retains focus across repeated activation`,async()=>{
+ const f=homeFixture();
+ for(let i=0;i<2;i++) {
+  const before=f.find('vendor',vendor);before.focus();await f.handleAction(before);
+  assert.equal(f.state.vendor,vendor);assert.equal(before.isConnected,false);
+  assert.equal(f.document.activeElement,f.find('vendor',vendor));
+ }
+});
+test('Home refresh retains the focused console card',()=>{
+ const f=homeFixture();
+ for(let i=0;i<2;i++) {
+  const before=f.groups.screen.find(n=>n.dataset.action==='console'&&n.dataset.id==='ps2');before.focus();
+  f.state.imported.ps2.push({uid:'refresh-'+i,title:'New game'});f.renderHome();
+  assert.equal(before.isConnected,false);
+  assert.equal(f.document.activeElement,f.groups.screen.find(n=>n.dataset.action==='console'&&n.dataset.id==='ps2'));
+ }
+});
+test('Home disappearing console falls back to the selected brand',()=>{
+ const f=homeFixture();f.groups.screen.find(n=>n.dataset.action==='console'&&n.dataset.id==='ps2').focus();
+ f.state.vendor='Nintendo';f.renderHome();
+ assert.equal(f.document.activeElement,f.find('vendor','Nintendo'));
+});
+for(const removeOpener of [false,true]) test(`Home refresh ${removeOpener?'falls back from':'remaps'} modal opener without stealing focus`,()=>{
+ const f=homeFixture(),opener=f.groups.screen.find(n=>n.dataset.action==='console'&&n.dataset.id==='ps2');opener.focus();
+ f.state.lastFocus=opener;f.state.overlay='updates';const modal=f.modal();
+ if(removeOpener) f.state.vendor='Nintendo';
+ f.renderHome();
+ const target=removeOpener?f.find('vendor','Nintendo'):f.groups.screen.find(n=>n.dataset.action==='console'&&n.dataset.id==='ps2');
+ assert.equal(opener.isConnected,false);assert.equal(f.document.activeElement,modal);assert.equal(f.state.lastFocus,target);
+ f.dismissOverlay();assert.equal(f.document.activeElement,target);
+});
+test('Home refresh leaves unrelated navigation focus untouched',()=>{
+ const f=homeFixture(),navigation={isConnected:true};f.document.activeElement=navigation;
+ f.renderHome();assert.equal(f.document.activeElement,navigation);
+});
+test('Home and console navigation do not transfer focus into the next page',()=>{
+ const f=fixture();f.find('game',undefined,'game-1').focus();
+ f.state.page='home';f.state.consoleId=null;f.renderHome();assert.equal(f.document.activeElement,f.document.body);
+ f.find('vendor','Sony').focus();f.state.page='console';f.state.consoleId='ps2';f.renderConsole();
+ assert.equal(f.document.activeElement,f.document.body);
+});
+test('Home does not restore coincidentally matching controls from an unrelated screen',()=>{
+ const f=homeFixture();
+ f.document.querySelector('#screen').innerHTML='<button data-action="vendor" data-value="Sony">Unrelated control</button>';
+ f.find('vendor','Sony').focus();f.renderHome();assert.equal(f.document.activeElement,f.document.body);
+});
 test('details favorite rerender remaps opener without moving modal focus',async()=>{
  const f=fixture(),opener=f.find('game',undefined,'game-1');opener.focus();
  f.state.lastFocus=opener;f.state.overlay='game';f.state.selectedGame={id:'ps2',uid:'game-1'};

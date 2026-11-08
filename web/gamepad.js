@@ -13,17 +13,21 @@
   }
   function createInput(dispatch) {
     const pads=new Map();
-    return function poll(devices,time,enabled=true) {
+    function poll(devices,time,enabled=true) {
       const seen=new Set();
       for (const pad of devices || []) {
         if (!pad || pad.connected===false || pad.mapping!=='standard') continue;
         const key=`${pad.index}:${pad.id}`;seen.add(key);
         const current=commands(pad), previous=pads.get(key);
         // A newly connected pad must release any held buttons before acting.
-        if (!previous || !enabled) {pads.set(key,{buttons:current,next:time+400});continue;}
+        if (!previous || !enabled) {
+          pads.set(key,{buttons:current,next:time+400,blocked:new Set(Object.keys(current).filter(action=>current[action]))});
+          continue;
+        }
+        for (const action of previous.blocked) if (!current[action]) previous.blocked.delete(action);
         let fired=false;
         for (const action of ['back','activate','previous','next','up','down','left','right']) {
-          if (!current[action]) continue;
+          if (!current[action] || previous.blocked.has(action)) continue;
           const repeat=['up','down','left','right','previous','next'].includes(action);
           if (!previous.buttons[action] || (repeat && time>=previous.next)) {
             dispatch(action);previous.next=time+(previous.buttons[action]?140:400);fired=true;break;
@@ -33,7 +37,9 @@
         if (!fired && !Object.values(current).some(Boolean)) previous.next=time+400;
       }
       for (const key of pads.keys()) if (!seen.has(key)) pads.delete(key);
-    };
+    }
+    poll.reset=()=>pads.clear();
+    return poll;
   }
   function nearest(current,candidates,direction) {
     const origin=current.getBoundingClientRect(), ox=origin.left+origin.width/2, oy=origin.top+origin.height/2;
@@ -99,8 +105,13 @@
       if (running) window.requestAnimationFrame(frame);
     }
     function start() {if (!running) {running=true;window.requestAnimationFrame(frame);}}
+    // Animation frames may stop completely while hidden or unfocused, so the
+    // next sample must not turn a background press into a foreground action.
+    const rearm=()=>{poll.reset();start();};
     window.addEventListener('gamepadconnected',start);
-    document.addEventListener('visibilitychange',start);
+    window.addEventListener('blur',()=>poll.reset());
+    window.addEventListener('focus',rearm);
+    document.addEventListener('visibilitychange',rearm);
     document.addEventListener('pointerdown',()=>document.documentElement.classList.remove('gamepad-navigation'));
     document.addEventListener('keydown',event=>{if (!controllerKeyEvents.has(event)) document.documentElement.classList.remove('gamepad-navigation');});
     start();

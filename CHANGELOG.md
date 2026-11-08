@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.22
+
+- Rearm controller input on focus/visibility changes even when animation frames paused in the background. Held buttons or directions must be released before acting after reconnection/resume, preventing an accidental activation on return while retaining ordinary navigation repeats.
+- Preserve Home brand-filter and console-card focus across same-page rerenders. Keep modal and cross-page focus ownership, and fall back to the selected brand when a card disappears.
+- Merge delayed browser-preview cover initialization without replacing newer session selections or revoking their blob URLs. Preserve the existing distinction between session-only and persisted covers.
+- Retry a still-current visible cover recovery when an unrelated cover change invalidates its response. Reuse the existing deduplicated loader without weakening same-game selection or rescan ordering guards.
+- Add 23 deterministic regressions plus actual-WebKit Home keyboard and synthetic controller-resume checks. No new provider, platform or gameplay support is claimed.
+
 ## 0.5.21
 
 - Check effective-user execute access when finding native Steam in PATH. An earlier file executable only by another permission class no longer masks a working native client later in PATH. Preserve native/Flatpak/Snap routing, regular-file checks and valid executable symlinks.

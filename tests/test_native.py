@@ -545,6 +545,18 @@ def main():
                 screenshot('matrix-linux-update-check.png')
                 click('[data-action="close"]')
             screenshot('matrix-linux-home.png')
+            # Bounded actual-WebKit keyboard checks for Home brand replacement.
+            for vendor in ['Sony', 'Nintendo', 'Sega', 'All']:
+                selector = f'[data-action="vendor"][data-value="{vendor}"]'
+                js('document.querySelector(arguments[0]).focus()', selector)
+                key('\ue007')
+                assert focused(selector)
+                assert js('return state.vendor === arguments[0] && document.querySelectorAll(".console-card").length === consoles.filter(c => state.vendor === "All" || c.group === state.vendor).length', vendor)
+                key('\ue007')  # Repeated activation retains the replacement control.
+                assert focused(selector)
+            js('document.querySelector("[data-action=console][data-id=ps2]").focus();renderHome()')
+            assert focused('[data-action="console"][data-id="ps2"]')
+            print('PASS: WebKit Home brand filters, repeated activation and console-card refresh focus')
             ps1_favorite_baseline = set(invoke('bootstrap')['favorites'].get('ps1', []))
             assert ps1_favorite_baseline == {str(playlist), str(external_ps1/'Disc One.chd')}
             click('[data-action="console"][data-id="ps2"]')
@@ -823,6 +835,12 @@ def main():
             gamepad_press(5)
             assert focused('[data-action="reload-flatpaks"]')
             js('document.querySelector(".advanced-setup").open=false;document.querySelector(".advanced-setup summary").focus()')
+            # Simulate a blur/focus interval without an intervening animation
+            # frame. Held A must not activate the summary on resume.
+            gamepad_buttons()
+            js("window.dispatchEvent(new Event('blur'));window.__testPad.buttons[0].pressed=true;window.dispatchEvent(new Event('focus'))")
+            gamepad_buttons(0)
+            assert not js('return document.querySelector(".advanced-setup").open')
             gamepad_press(0)
             assert js('return document.querySelector(".advanced-setup").open')
             time.sleep(.5)  # Holding A must not toggle the summary repeatedly.

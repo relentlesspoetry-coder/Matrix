@@ -137,3 +137,56 @@ test('current missing artwork stays deduplicated until the next refresh', async 
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.state.art.get(f.key), 'data:found-after-refresh');
 });
+
+const tick = () => new Promise(resolve => setImmediate(resolve));
+const failedSelection = { type: 'image/png', size: 1, arrayBuffer: async () => { throw Error('Synthetic read failure'); } };
+const successfulSelection = { type: 'image/png', size: 1, arrayBuffer: async () => new Uint8Array([1]).buffer };
+function seedRecoveryCard(f) {
+  const card = f.replaceCard();
+  card.image = { src: 'data:retained-cover', remove() { card.image = null; } };
+  f.state.art.set(f.key, 'data:retained-cover');
+  f.state.selectedGame = { id: 'ps2', uid: 'test.iso' };
+  return card;
+}
+
+for (const outcome of ['resolve', 'reject']) test(`an unrelated selection cannot leave a recovering cover blank after stale ${outcome}`, async () => {
+  const f = fixture(), card = seedRecoveryCard(f);
+  const recovering = f.loadCover(failedSelection);
+  await tick();
+  assert.equal(card.image, null);
+  f.state.selectedGame = { id: 'ps2', uid: 'other.iso' };
+  await f.loadCover(successfulSelection);
+  f.reads[0][outcome](outcome === 'resolve' ? 'data:stale-recovery' : Error('Stale recovery failure')); await recovering;
+  assert.equal(f.state.art.has(f.key), false, 'An invalidated response must not populate the cache');
+  assert.equal(f.reads.length, 2, 'Retry the visible cover through the current-generation loader');
+  f.reads[1].resolve('data:current-retained-cover'); await tick();
+  assert.equal(f.state.art.get(f.key), 'data:current-retained-cover');
+  assert.equal(card.image.src, 'data:current-retained-cover');
+  assert.equal(f.state.art.get('ps2|other.iso'), 'blob:chosen-cover');
+  assert.equal(f.state.pendingArt.size, 0);
+});
+
+test('a newer same-game choice still supersedes pending recovery without another read', async () => {
+  const f = fixture(); seedRecoveryCard(f);
+  const recovering = f.loadCover(failedSelection);
+  await tick();
+  await f.loadCover(successfulSelection);
+  f.reads[0].resolve('data:stale-recovery'); await recovering;
+  assert.equal(f.state.art.get(f.key), 'blob:chosen-cover');
+  assert.equal(f.reads.length, 1);
+});
+
+test('recovery invalidated by a rescan reuses the newer visible-card request', async () => {
+  const f = fixture(), oldCard = seedRecoveryCard(f);
+  const recovering = f.loadCover(failedSelection);
+  await tick();
+  await f.refreshNative();
+  assert.equal(oldCard.isConnected, false);
+  assert.equal(f.reads.length, 2);
+  f.reads[0].resolve('data:before-rescan'); await recovering;
+  assert.equal(f.state.art.has(f.key), false);
+  assert.equal(f.reads.length, 2, 'Recovery must not duplicate the current-generation read');
+  f.reads[1].resolve('data:after-rescan'); await tick();
+  assert.equal(f.state.art.get(f.key), 'data:after-rescan');
+  assert.equal(f.card().image.src, 'data:after-rescan');
+});

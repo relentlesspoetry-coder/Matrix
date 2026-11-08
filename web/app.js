@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.21 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.22 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -173,7 +173,9 @@ async function initializeArt() {
       req.onerror = () => reject(req.error);
     });
     for (const item of all) {
-      if (item?.blob instanceof Blob) cacheCover(item.key, URL.createObjectURL(item.blob));
+      // Startup storage may finish after a local choice. Merge only untouched
+      // keys so the stale snapshot cannot replace or revoke that newer cover.
+      if (item?.blob instanceof Blob && !state.art.has(item.key)) cacheCover(item.key, URL.createObjectURL(item.blob));
     }
     render();
   } catch { artDb = null; /* In-memory artwork still works. */ }
@@ -216,6 +218,7 @@ function consoleCard(consoleInfo) {
   </button>`;
 }
 function renderHome() {
+  const focus = captureLibraryFocus($('#screen'), 'home');
   const visible = consoles.filter(consoleInfo => state.vendor === 'All' || consoleInfo.group === state.vendor);
   $('#screen').innerHTML = `<div class="title-row"><div><div class="eyebrow">YOUR LIBRARY</div><h1 class="page-title">Choose a console.</h1><p class="page-subtitle">Each console opens its own game collection.</p></div>
     <div class="stats"><div class="stat"><strong>${consoles.length}</strong><span>Consoles</span></div><div class="stat-separator"></div><div class="stat"><strong>${configuredCount()}</strong><span>Profiles saved</span></div></div></div>
@@ -224,6 +227,7 @@ function renderHome() {
     <div class="notice">${glyph('info')}<span>${state.native
       ? `Matrix Play reads each console’s own Games directory under ${escapeHtml(state.root)}. Steam and Windows have separate tabs.`
       : 'Browser-only preview: sample games are for design review. A native Matrix Play build creates the folders and scans installed games.'}</span></div>`;
+  restoreLibraryFocus(focus);
 }
 function gameCover(consoleInfo, game, index) {
   const key = artKey(consoleInfo.id, game.uid);
@@ -363,7 +367,7 @@ document.addEventListener?.('focusin', event => {
   if ($('#screen')?.contains?.(event.target)) lastLibraryFocus = event.target;
 });
 function captureLibraryFocus(scope, page = null) {
-  // A matching page name alone is insufficient after visiting Home: the old
+  // A matching page name alone is insufficient after replacing a screen: the old
   // screen must still be the one rendered here, not a different screen's UI.
   if (page && (lastFocusRender?.page !== page || lastFocusRender.first !== scope?.firstElementChild)) return {page};
   const describe = node => scope?.contains?.(node) ? {
@@ -384,6 +388,7 @@ function restoreLibraryFocus(saved) {
     return controls.find(node => !node.disabled && (key.id ? node.id === key.id : key.action
       && node.dataset?.action === key.action && node.dataset?.id === key.consoleId
       && node.dataset?.uid === key.uid && node.dataset?.kind === key.kind && node.dataset?.value === key.value))
+      || (state.page === 'home' ? controls.find(node => !node.disabled && node.dataset?.action === 'vendor' && node.dataset?.value === state.vendor) : null)
       || controls.find(node => node.dataset?.action === 'filter-games' && node.dataset?.value === state.gameFilter)
       || (state.page === 'settings' ? controls.find(node => !node.disabled && node.dataset?.action === 'configure' && node.dataset?.id === key.consoleId)
         || controls.find(node => !node.disabled && node.dataset?.action === 'configure') : null)
@@ -826,6 +831,15 @@ async function reconcileSavedCover(selected,key,selection) {
     if (uri) {cacheCover(key,uri);refreshCoverUI(selected);}
     else state.missingArt.add(key);
   } catch (_) { /* Leave uncached so the next visible-card read can retry. */ }
+  finally {
+    if (coverSelections.get(key)===selection && revision!==state.artRevision) {
+      // Unrelated cover changes can invalidate this recovery after its image
+      // was removed. Retry visible cards without duplicating a newer read.
+      document.querySelectorAll('.game-cover[data-art-key]').forEach(node=>{
+        if (node.dataset.artKey===key) void requestNativeCover(node);
+      });
+    }
+  }
 }
 async function loadCover(file) {
   const selected = state.selectedGame;

@@ -72,3 +72,36 @@ test('disabled controls are skipped in sequential controller navigation',()=>{
   const f=domFixture(),first=f.add('first',0,0);f.add('disabled',20,0,false,{disabled:true});const last=f.add('last',40,0);
   first.focus();f.step();f.press(5);assert.equal(f.document.activeElement,last);
 });
+
+test('newly connected or reset held navigation waits for release before repeat',()=>{
+  const actions=[],poll=createInput(action=>actions.push(action));
+  poll([pad([13])],0);poll([pad([13])],1000);
+  assert.deepEqual(actions,[]);
+  poll([pad()],1100);poll([pad([13])],1200);poll([pad([13])],1600);
+  assert.deepEqual(actions,['down','down']);
+  poll.reset();poll([pad([0,1,5,13])],2000);poll([pad([0,1,5,13])],5000);
+  assert.deepEqual(actions,['down','down']);
+  poll([pad()],5100);poll([pad([0])],5200);
+  assert.deepEqual(actions,['down','down','activate']);
+});
+for (const transition of ['visibility','focus']) test(`${transition} resume ignores held activation when background frames never ran`,()=>{
+  let currentPad=pad(),queued=[],clicks=0,focused=true;
+  const handlers={},windowHandlers={};
+  const active={...node(0,0),tagName:'BUTTON',tabIndex:0,matches:()=>false,closest:()=>null,getClientRects:()=>[{}],focus(){doc.activeElement=this;},scrollIntoView(){},click(){clicks++;}};
+  const doc={activeElement:active,visibilityState:'visible',hasFocus:()=>focused,
+    documentElement:{classList:{add(){},remove(){}}},querySelector:()=>null,querySelectorAll:()=>[active],
+    addEventListener(name,fn){(handlers[name]||=[]).push(fn);}};
+  const win={document:doc,navigator:{getGamepads:()=>[currentPad]},requestAnimationFrame(fn){queued.push(fn);},
+    getComputedStyle:()=>({visibility:'visible'}),addEventListener(name,fn){(windowHandlers[name]||=[]).push(fn);}};
+  const fire=(target,name)=>{for(const fn of target[name]||[])fn();};
+  const frame=time=>{assert.equal(queued.length,1,'Only one animation loop may be queued');queued.shift()(time);};
+  install(win);frame(0);
+  if(transition==='visibility'){doc.visibilityState='hidden';fire(handlers,'visibilitychange');}
+  else{focused=false;fire(windowHandlers,'blur');}
+  currentPad=pad([0]); // No requestAnimationFrame callbacks run while away.
+  if(transition==='visibility'){doc.visibilityState='visible';fire(handlers,'visibilitychange');}
+  else{focused=true;fire(windowHandlers,'focus');}
+  frame(1000);frame(2000);assert.equal(clicks,0);
+  currentPad=pad();frame(2100);currentPad=pad([0]);frame(2200);
+  assert.equal(clicks,1,'A fresh press after release still activates');
+});
