@@ -6,7 +6,7 @@ const {test}=require('node:test');
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 function fixture() {
   let owner=null,html='',refreshes=0;
-  const calls=[],messages=[],responders={},document={activeElement:null,querySelector(selector){
+  const calls=[],messages=[],responders={},document={activeElement:null,body:{},querySelector(selector){
     if(selector==='#overlay-root')return root;
     if(selector==='#library-folder-dialog')return owner;
     return null;
@@ -26,7 +26,9 @@ function fixture() {
   vm.runInContext(source.replace(startup,'')+`\nrefreshNative=async()=>onRefresh();toast=onToast;
     globalThis.api={EXTS,state,openLibraryFolders,browseLibraryFolder,changeLibraryFolder,showLibraryFolderRows,scanArtwork,coverMessage};`,context);
   return {...context.api,calls,messages,responders,document,owner:()=>owner,html:()=>html,refreshes:()=>refreshes,
-    button(action,folderPath){return {dataset:{action,path:folderPath},disabled:false};}};
+    button(action,folderPath,blurOnDisable=false){let disabled=false;return {dataset:{action,path:folderPath},
+      get disabled(){return disabled;},set disabled(value){disabled=value;
+        if(value && blurOnDisable && document.activeElement===this)document.activeElement=document.body;}};}};
 }
 for(const outcome of ['resolve','reject']) test(`old folder list ${outcome} cannot change replacement dialog`,async()=>{
   const f=fixture(),pending=deferred();f.responders.list_library_folders=()=>pending.promise;
@@ -114,11 +116,41 @@ test('cover scan cancellation does not send remaining new-console provider reque
   f.responders.download_cover=()=>pending.promise;const request=f.scanArtwork();f.state.artwork.enabled=false;++f.state.coverGeneration;
   pending.resolve({status:'not-found'});await request;assert.equal(f.calls.length,1);assert.equal(f.state.coverStatus.size,0);
 });
-for(const moved of [false,true]) test(`removal restores focus only when Remove still owns it (moved=${moved})`,async()=>{
+for(const moved of [false,true]) test(`removal keeps its fallback focus unless the user moves it (moved=${moved})`,async()=>{
   const f=fixture(),pending=deferred();await f.openLibraryFolders('ps2');f.responders.remove_library_folder=()=>pending.promise;
   const button=f.button('remove-library-folder','/old');f.document.activeElement=button;
   const request=f.changeLibraryFolder(button);const other={};if(moved)f.document.activeElement=other;
   pending.resolve([]);await request;assert.equal(f.document.activeElement,moved?other:f.owner().input);
+});
+for(const outcome of ['removed','recovered','unavailable'])
+  for(const newer of ['none','focus','blurred-focus','dialog'])
+    test(`disabled Remove blur preserves focus after ${outcome} with newer ${newer}`,async()=>{
+      const f=fixture(),pending=deferred();await f.openLibraryFolders('ps2');
+      const owner=f.owner();owner.input.value='/draft';
+      f.responders.remove_library_folder=()=>pending.promise;
+      f.responders.list_library_folders=()=>outcome==='unavailable' ? Promise.reject(Error('List failed')) : Promise.resolve([{path:'/old'}]);
+      const button=f.button('remove-library-folder','/old',true);f.document.activeElement=button;
+      const request=f.changeLibraryFolder(button);
+      const other={};
+      if(newer==='focus' || newer==='blurred-focus')f.document.activeElement=other;
+      if(newer==='blurred-focus')f.document.activeElement=f.document.body;
+      if(newer==='dialog') {delete f.responders.list_library_folders;await f.openLibraryFolders('wii');}
+      if(outcome==='removed')pending.resolve([]);else pending.reject(Error('Removal failed'));
+      await request;
+      const expected=newer==='focus' ? other : newer==='blurred-focus' ? f.document.body : f.owner().input;
+      assert.equal(f.document.activeElement,expected);
+      assert.equal(button.disabled,false);assert.equal(owner.input.value,'/draft');
+      if(newer==='dialog')assert.equal(f.owner().error.textContent,'');
+      else if(outcome!=='removed') {
+        assert.match(owner.error.textContent,/Removal failed/);
+        assert.match(owner.list.innerHTML,outcome==='recovered' ? /\/old/ : /unavailable/);
+      }
+    });
+test('removing an unfocused row does not take focus from another control',async()=>{
+  const f=fixture(),pending=deferred();await f.openLibraryFolders('ps2');f.owner().select.focus();
+  f.responders.remove_library_folder=()=>pending.promise;
+  const request=f.changeLibraryFolder(f.button('remove-library-folder','/old',true));
+  pending.resolve([]);await request;assert.equal(f.document.activeElement,f.owner().select);
 });
 test('failed mutation reloads rows while stale initial list cannot overwrite recovered list or error',async()=>{
   const f=fixture(),initial=deferred();let reads=0;

@@ -421,8 +421,12 @@ def main():
             unplugged_ps1 = external_ps1.with_name('Temporarily disconnected PS1')
             external_ps1.rename(unplugged_ps1)
             assert not invoke('list_library_folders', {'id':'ps1'})[1]['available']
-            click('[data-action="remove-library-folder"]')
+            # Check real WebKit keyboard focus across disabled-button blur and
+            # row replacement while removing only this synthetic registration.
+            js('document.querySelector("[data-action=remove-library-folder]").focus()')
+            key('\ue007')
             wait_for(lambda: js('return !libraryFolderBusy && document.querySelectorAll("[data-action=remove-library-folder]").length === 0'))
+            assert focused('#external-library-path')
             assert len(invoke('scan_console', {'id':'ps1'})) == 1
             unplugged_ps1.rename(external_ps1)
             for command, params in [('get_cover',{'kind':'ps1','uid':str(playlist)}), ('launch_console_game',{'id':'ps1','uid':str(playlist)})]:

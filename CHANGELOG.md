@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.21
+
+- Check effective-user execute access when finding native Steam in PATH. An earlier file executable only by another permission class no longer masks a working native client later in PATH. Preserve native/Flatpak/Snap routing, regular-file checks and valid executable symlinks.
+- Keep keyboard/controller focus inside the library-folder dialog when Remove is disabled and its row disappears. Move focus before disabling the button, without overriding later user navigation, replacement dialogs or failure recovery.
+- Add two synthetic Rust permission/symlink regressions, thirteen deterministic folder-focus cases and a real-WebKit keyboard-removal assertion. No actual game or emulator compatibility changes are claimed.
+
 ## 0.5.20
 
 - Preserve keyboard/controller focus when console libraries, Settings, Steam or Windows lists rerender. Keep open-dialog focus intact, return to the replacement opener after closing, and use a sensible filter/search fallback when a game disappears. Do not carry focus across unrelated navigation.

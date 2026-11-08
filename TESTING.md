@@ -1,5 +1,22 @@
 # Test Matrix Play on Linux
 
+## Version 0.5.21 Steam access and folder-dialog focus
+
+All 182 JavaScript tests pass locally. Thirteen new folder-dialog cases cover
+focused-button disable blur, successful removal, both recovery outcomes, newer
+dialogs, explicit focus movement and unfocused removal. Three newly modeled blur
+cases fail against the prior production function and pass with the repair.
+JavaScript/Python syntax and patch-whitespace checks pass.
+
+A harmless OS fixture reproduces the old Steam selection failure: an owner-owned
+0601 candidate precedes an executable 0700 candidate, and direct launch of the
+first fails while normal PATH lookup reaches the second. Equivalent effective-ID
+libc checks pass locally through Python ctypes, including missing/nonfiles and
+symlinks. This is not execution of the Rust helper. Rust remains unavailable
+locally; exact-version CI must run both new backend regressions as its nonroot
+test account and the new real-WebKit keyboard-removal assertion before release.
+No user PC, installed game or real emulator is used.
+
 ## Version 0.5.20 focus and preview preference repairs
 
 All 169 JavaScript tests pass locally, including 17 focus and seven preference
@@ -518,16 +535,16 @@ checks output after the launching process exits and log-write failure using
 synthetic subprocesses. Run the normal Rust suites and desktop tests as well;
 these checks do not replace a real emulator test or privileged DEB upgrade test.
 
-This is the native testing release, version 0.5.20. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
+This is the native testing release, version 0.5.21. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04
 
-1. Open the [v0.5.20 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.20) — the repository and installers are public.
-2. Download `Matrix-Play_0.5.20_amd64.deb`.
+1. Open the [v0.5.21 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.21) — the repository and installers are public.
+2. Download `Matrix-Play_0.5.21_amd64.deb`.
 3. Open a terminal in the download folder and run:
 
    ```bash
-   sudo apt install ./Matrix-Play_0.5.20_amd64.deb
+   sudo apt install ./Matrix-Play_0.5.21_amd64.deb
    ```
 
 4. Open **Matrix Play** from the application menu. You can also run `matrix-frontend` in a terminal to capture diagnostics.
@@ -536,24 +553,24 @@ APT installs the GTK/WebKit runtime dependencies if needed. Rust, Node, the sour
 
 ## Portable AppImage alternative
 
-Download `Matrix-Play_0.5.20_amd64.AppImage` from the same release. In its download folder run:
+Download `Matrix-Play_0.5.21_amd64.AppImage` from the same release. In its download folder run:
 
 ```bash
-chmod +x Matrix-Play_0.5.20_amd64.AppImage
-./Matrix-Play_0.5.20_amd64.AppImage
+chmod +x Matrix-Play_0.5.21_amd64.AppImage
+./Matrix-Play_0.5.21_amd64.AppImage
 ```
 
 If FUSE is unavailable, run it in extraction mode:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.20_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.21_amd64.AppImage
 ```
 
 The AppImage's actual native window, IPC, scanning, local covers, settings and launcher dispatch passed the same isolated desktop test in extraction mode. Other Linux distributions and native FUSE mounting have not been validated. The DEB is recommended on Zorin/Ubuntu.
 
 ## Upgrade from the blank-window build
 
-Close Matrix Play, then install the v0.5.20 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
+Close Matrix Play, then install the v0.5.21 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
 
 If a new startup problem occurs, attach `~/.local/share/matrix/startup.log` to the issue. This contains bounded startup stages and renderer/load errors, not game data. In this incident, graphics workarounds did not resolve the problem; a fresh cache directory did, which the affected user confirmed. The specific problematic shared cache file was not identified or deleted.
 

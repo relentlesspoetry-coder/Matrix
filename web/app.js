@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.20 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.21 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -711,17 +711,19 @@ async function changeLibraryFolder(button) {
   const input=owner.querySelector('input'), draft=input.value, path=remove ? button.dataset.path : draft.trim();
   const errorNode=owner.querySelector('.library-folder-error');
   if (!path) {errorNode.textContent='Choose an existing folder first.';input.focus();return;}
-  libraryFolderBusy=true;button.disabled=true;errorNode.textContent='';
+  libraryFolderBusy=true;
+  // Disabled buttons can lose focus before the reply arrives. Move it now so
+  // replacing rows cannot strand it, without overriding later user navigation.
+  if (remove && document.activeElement===button) input.focus();
+  button.disabled=true;errorNode.textContent='';
   ++owner.folderRequest; // An older initial list must not roll back this mutation.
   try {
     const args=steam ? {path,...(remove ? {} : {launcher:owner.querySelector('select').value})} : {id,path};
     const command=steam ? (remove ? 'remove_steam_library' : 'add_steam_library') : (remove ? 'remove_library_folder' : 'add_library_folder');
     const folders=await nativeInvoke(command,args);
     if ($('#library-folder-dialog')===owner) {
-      const restoreFocus=remove && document.activeElement===button;
       showLibraryFolderRows(owner,folders);
       if (!remove && input.value===draft) {input.value='';input.focus();}
-      else if (restoreFocus) input.focus();
     }
     await refreshNative();toast(remove ? 'Folder registration removed. Files and saves are unchanged.' : 'Library folder added.');
   } catch(error) {
@@ -733,9 +735,7 @@ async function changeLibraryFolder(button) {
     try {
       const folders=await nativeInvoke(steam ? 'list_steam_libraries' : 'list_library_folders',steam ? {} : {id});
       if ($('#library-folder-dialog')===owner && owner.folderRequest===request) {
-        const restoreFocus=remove && document.activeElement===button;
         showLibraryFolderRows(owner,folders);
-        if (restoreFocus) input.focus();
       }
     } catch (_) {
       if ($('#library-folder-dialog')===owner && owner.folderRequest===request) owner.querySelector('.library-folder-list').innerHTML='<li>Folder list unavailable. Close and reopen this dialog to retry.</li>';

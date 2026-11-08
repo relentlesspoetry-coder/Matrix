@@ -93,7 +93,7 @@ pub(crate) fn bounded_text(path: &Path) -> Option<String> {
 // Snap aliases named `steam` are often symlinks to the snap multiplexer.
 // A native registration must not silently dispatch through that other client.
 pub(crate) fn native_executable_in(paths: &[PathBuf]) -> Option<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
     paths
         .iter()
         .map(|directory| directory.join("steam"))
@@ -104,8 +104,19 @@ pub(crate) fn native_executable_in(paths: &[PathBuf]) -> Option<PathBuf> {
             !path.starts_with("/snap")
                 && !target.starts_with("/snap")
                 && target.file_name().is_none_or(|name| name != "snap")
-                && fs::metadata(path).is_ok_and(|metadata| {
-                    metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+                && fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
+                && CString::new(path.as_os_str().as_bytes()).is_ok_and(|path| {
+                    // Any execute bit is insufficient: owner/group selection
+                    // and ACLs can still deny this process access. Use the
+                    // effective IDs that will execute the selected client.
+                    unsafe {
+                        libc::faccessat(
+                            libc::AT_FDCWD,
+                            path.as_ptr(),
+                            libc::X_OK,
+                            libc::AT_EACCESS,
+                        ) == 0
+                    }
                 })
         })
 }
@@ -266,6 +277,54 @@ mod tests {
         fs::write(&steam, "#!/bin/sh\n").unwrap();
         fs::set_permissions(&steam, fs::Permissions::from_mode(0o700)).unwrap();
         assert_eq!(native_executable_in(&[aliases, native]), Some(steam));
+    }
+    #[test]
+    fn native_route_checks_effective_execute_access_before_selecting() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let first = root.path().join("first");
+        let second = root.path().join("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        let restricted = first.join("steam");
+        let usable = second.join("steam");
+        fs::write(&restricted, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::write(&usable, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&restricted, fs::Permissions::from_mode(0o601)).unwrap();
+        fs::set_permissions(&usable, fs::Permissions::from_mode(0o700)).unwrap();
+        // The owner cannot borrow the others' execute bit. Root can execute
+        // with any execute bit, so this particular denial requires nonroot CI.
+        if unsafe { libc::geteuid() } != 0 {
+            assert!(native_executable_in(&[first.clone()]).is_none());
+            assert_eq!(
+                native_executable_in(&[first.clone(), second.clone()]),
+                Some(usable.clone())
+            );
+        }
+        // No execute bits denies execution even for root and must still allow
+        // a later executable candidate rather than returning the first file.
+        fs::set_permissions(&restricted, fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(native_executable_in(&[first.clone()]).is_none());
+        assert_eq!(native_executable_in(&[first, second]), Some(usable));
+    }
+    #[test]
+    fn native_route_preserves_executable_symlink_and_skips_nonfiles() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let nonfile = root.path().join("nonfile");
+        let broken = root.path().join("broken");
+        let aliases = root.path().join("aliases");
+        fs::create_dir_all(nonfile.join("steam")).unwrap();
+        fs::create_dir_all(&broken).unwrap();
+        fs::create_dir_all(&aliases).unwrap();
+        std::os::unix::fs::symlink("missing", broken.join("steam")).unwrap();
+        let client = root.path().join("native-client");
+        fs::write(&client, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&client, fs::Permissions::from_mode(0o700)).unwrap();
+        let alias = aliases.join("steam");
+        std::os::unix::fs::symlink("../native-client", &alias).unwrap();
+        assert!(native_executable_in(&[nonfile.clone(), broken.clone()]).is_none());
+        assert_eq!(native_executable_in(&[nonfile, broken, aliases]), Some(alias));
     }
     #[test]
     fn steam_text_reads_are_bounded() {
