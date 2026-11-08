@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.23
+
+- Use effective-user execute access consistently for emulator discovery, readiness and profile validation, sharing the existing native Steam check. Files executable only by another permission class no longer auto-link as ready or create false ambiguity beside a usable emulator.
+- Repair a missing AppImage owner-execute bit only with the existing explicit consent, even when another permission class already has execute access. Preserve other mode bits and recheck actual access before accepting the profile; ordinary executables are never chmodded by this option.
+- Retain conservative saved-profile replacement behavior: an effective-access failure alone does not prove an installation disappeared. Preserve executable symlinks, AppImage header checks and checked UTF-8 path identities.
+- Add four synthetic regressions for permission-class selection, consent, unchanged bytes/modes, discovery and saved-choice preservation. No actual emulator/game compatibility change is claimed.
+
 ## 0.5.22
 
 - Rearm controller input on focus/visibility changes even when animation frames paused in the background. Held buttons or directions must be released before acting after reconnection/resume, preventing an accidental activation on return while retaining ordinary navigation repeats.

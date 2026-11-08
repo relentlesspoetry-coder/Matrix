@@ -73,6 +73,30 @@ fn file_path_error(path: &str, error: std::io::Error) -> String {
     };
     format!("{detail} Selected path: {path}. Use Browse to choose the current file, or Refresh detected to scan again. ({error})")
 }
+/// Check the effective IDs that will execute this regular file. Any execute
+/// bit is insufficient: permission-class selection, ACLs and mount options
+/// can still deny access. Keep executable symlinks supported.
+pub(crate) fn executable_file(path: &Path) -> bool {
+    if !fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::{ffi::CString, os::unix::ffi::OsStrExt};
+        CString::new(path.as_os_str().as_bytes()).is_ok_and(|path| unsafe {
+            libc::faccessat(
+                libc::AT_FDCWD,
+                path.as_ptr(),
+                libc::X_OK,
+                libc::AT_EACCESS,
+            ) == 0
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
 fn validate_file(path: &str, appimage: bool, allow_execute: bool) -> Result<String, String> {
     let path = Path::new(path)
         .canonicalize()
@@ -98,15 +122,27 @@ fn validate_file(path: &str, appimage: bool, allow_execute: bool) -> Result<Stri
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(&path)
-            .map_err(|e| e.to_string())?
-            .permissions();
-        if permissions.mode() & 0o111 == 0 {
+        if !executable_file(&path) {
             if appimage && allow_execute {
-                permissions.set_mode(permissions.mode() | 0o100);
-                fs::set_permissions(&path,permissions).map_err(|_|"Cannot allow this AppImage to run. Choose a file you own, or change its permissions in Files.")?;
-            } else {
-                return Err("This file is not executable. For an AppImage, enable ‘Allow this AppImage to run’.".into());
+                let mut permissions = fs::metadata(&path)
+                    .map_err(|e| e.to_string())?
+                    .permissions();
+                // Consent requests only the owner's execute bit, no extra
+                // group/other permissions or mount-policy changes.
+                if permissions.mode() & 0o100 == 0 {
+                    permissions.set_mode(permissions.mode() | 0o100);
+                    fs::set_permissions(&path,permissions).map_err(|_|"Cannot allow this AppImage to run. Choose a file you own, or change its permissions in Files.")?;
+                }
+            }
+            // Other access restrictions can still prevent execution after the
+            // mode adjustment. Reject a file still denied execute access.
+            if !executable_file(&path) {
+                let consent_hint = if appimage && !allow_execute {
+                    " For an AppImage you own, enable ‘Allow this AppImage to run’."
+                } else {
+                    ""
+                };
+                return Err(format!("Matrix Play cannot execute the selected emulator file. Check its permissions, access to containing folders, and whether its drive permits execution.{consent_hint} Selected path: {}", path.display()));
             }
         }
     }
@@ -255,6 +291,74 @@ pub(crate) async fn browse_emulator(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn executable_validation_checks_effective_access_without_changing_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("emulator");
+        let bytes = b"synthetic fixture, never executed";
+        fs::write(&file, bytes).unwrap();
+        for mode in [0o600, 0o601] {
+            if mode == 0o601 && unsafe { libc::geteuid() } == 0 {
+                continue;
+            }
+            fs::set_permissions(&file, fs::Permissions::from_mode(mode)).unwrap();
+            assert!(!executable_file(&file));
+            // Permission consent applies only to AppImages, not executables.
+            for allow in [false, true] {
+                let error = validate_file(file.to_str().unwrap(), false, allow).unwrap_err();
+                assert!(error.contains("cannot execute"));
+                assert!(error.contains(file.to_str().unwrap()));
+                assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, mode);
+            }
+        }
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).unwrap();
+        let alias = root.path().join("alias");
+        std::os::unix::fs::symlink(&file, &alias).unwrap();
+        assert!(executable_file(&alias));
+        assert_eq!(
+            validate_file(alias.to_str().unwrap(), false, false).unwrap(),
+            file.to_str().unwrap()
+        );
+        assert!(!executable_file(root.path()));
+        assert_eq!(fs::read(&file).unwrap(), bytes);
+        fs::remove_file(&file).unwrap();
+        assert!(!executable_file(&alias));
+    }
+
+    #[test]
+    fn appimage_consent_repairs_only_owner_execute_and_preserves_bytes() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let image = root.path().join("pcsx2.AppImage");
+        let alias = root.path().join("pcsx2-alias.AppImage");
+        let bytes = b"\x7fELF0000AI\x02synthetic image, never executed";
+        fs::write(&image, bytes).unwrap();
+        std::os::unix::fs::symlink(&image, &alias).unwrap();
+        for mode in [0o600, 0o601] {
+            if mode == 0o601 && unsafe { libc::geteuid() } == 0 {
+                continue;
+            }
+            fs::set_permissions(&image, fs::Permissions::from_mode(mode)).unwrap();
+            assert!(validate_file(alias.to_str().unwrap(), true, false).is_err());
+            assert_eq!(fs::metadata(&image).unwrap().permissions().mode() & 0o777, mode);
+            assert_eq!(
+                validate_file(alias.to_str().unwrap(), true, true).unwrap(),
+                image.to_str().unwrap()
+            );
+            assert_eq!(
+                fs::metadata(&image).unwrap().permissions().mode() & 0o777,
+                mode | 0o100
+            );
+            assert!(executable_file(&image));
+            assert_eq!(fs::read(&image).unwrap(), bytes);
+        }
+        fs::write(&image, b"invalid AppImage header").unwrap();
+        fs::set_permissions(&image, fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(validate_file(alias.to_str().unwrap(), true, true).is_err());
+        assert_eq!(fs::metadata(&image).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
     #[test]
     fn selected_emulator_never_aliases_non_utf8_canonical_target() {
         use std::os::unix::{ffi::OsStringExt, fs::PermissionsExt};

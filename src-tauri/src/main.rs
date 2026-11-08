@@ -355,12 +355,8 @@ fn detect_emulators_in(s: &ConsoleSpec, dir: &Path) -> Vec<PathBuf> {
         if !recognized {
             continue;
         }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if !fs::metadata(&path).is_ok_and(|m| m.permissions().mode() & 0o111 != 0) {
-                continue;
-            }
+        if !emulators::executable_file(&path) {
+            continue;
         }
         candidates.push(path);
     }
@@ -403,12 +399,8 @@ fn detect_installed_emulators_in(id: &str, paths: &[PathBuf]) -> Vec<PathBuf> {
             if !path.is_file() {
                 continue;
             }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if !fs::metadata(&path).is_ok_and(|m| m.permissions().mode() & 0o111 != 0) {
-                    continue;
-                }
+            if !emulators::executable_file(&path) {
+                continue;
             }
             let canonical = path.canonicalize().unwrap_or(path);
             if seen.insert(canonical.clone()) {

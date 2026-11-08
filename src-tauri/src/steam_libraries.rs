@@ -93,7 +93,6 @@ pub(crate) fn bounded_text(path: &Path) -> Option<String> {
 // Snap aliases named `steam` are often symlinks to the snap multiplexer.
 // A native registration must not silently dispatch through that other client.
 pub(crate) fn native_executable_in(paths: &[PathBuf]) -> Option<PathBuf> {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
     paths
         .iter()
         .map(|directory| directory.join("steam"))
@@ -104,20 +103,7 @@ pub(crate) fn native_executable_in(paths: &[PathBuf]) -> Option<PathBuf> {
             !path.starts_with("/snap")
                 && !target.starts_with("/snap")
                 && target.file_name().is_none_or(|name| name != "snap")
-                && fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
-                && CString::new(path.as_os_str().as_bytes()).is_ok_and(|path| {
-                    // Any execute bit is insufficient: owner/group selection
-                    // and ACLs can still deny this process access. Use the
-                    // effective IDs that will execute the selected client.
-                    unsafe {
-                        libc::faccessat(
-                            libc::AT_FDCWD,
-                            path.as_ptr(),
-                            libc::X_OK,
-                            libc::AT_EACCESS,
-                        ) == 0
-                    }
-                })
+                && emulators::executable_file(path)
         })
 }
 pub(crate) fn command_for_launch(uid: &str, launcher: SteamLauncher) -> Result<Command, String> {

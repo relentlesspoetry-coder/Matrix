@@ -163,17 +163,6 @@ fn args(engine: &Engine, id: &str) -> Vec<String> {
         default_args(id)
     }
 }
-fn executable(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::metadata(path).is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
-    }
-    #[cfg(not(unix))]
-    {
-        path.is_file()
-    }
-}
 fn appimage(path: &Path) -> bool {
     use std::io::Read;
     let mut bytes = [0; 11];
@@ -232,7 +221,7 @@ fn add_image(map: &mut BTreeMap<String, Candidate>, path: &Path) {
             console_ids: engine.consoles.iter().map(|s| s.to_string()).collect(),
             profile,
             source: "AppImage name and header".into(),
-            ready: executable(&path),
+            ready: emulators::executable_file(&path),
         },
     );
 }
@@ -323,6 +312,8 @@ fn confirmed_unavailable(profile: &EmulatorProfile, report: &Report) -> bool {
     }
     // A scan limit, inaccessible directory, or transient I/O error is not
     // evidence that the selected installation has been removed.
+    // Unlike candidate readiness, an effective-access failure alone is not
+    // proof of removal: preserve the saved choice on uncertain access errors.
     match fs::metadata(&profile.emulator_path) {
         Ok(metadata) => {
             use std::os::unix::fs::PermissionsExt;
@@ -425,7 +416,7 @@ fn add_native(map: &mut BTreeMap<String, Candidate>, spec: &ConsoleSpec, path: P
                 ..Default::default()
             },
             source: "Installed executable or explicit console folder".into(),
-            ready: executable(&path),
+            ready: emulators::executable_file(&path),
         },
     );
 }
@@ -517,6 +508,89 @@ mod tests {
         fs::write(path, b"#!/bin/sh\nexit 0\n").unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
     }
+    #[test]
+    fn inaccessible_execute_class_never_auto_links_or_creates_false_ambiguity() {
+        use std::os::unix::fs::PermissionsExt;
+        // Root can execute a file with any execute bit. Nonroot CI exercises
+        // permission-class selection without ever running these fixture files.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let restricted = root.path().join("pcsx2-restricted.AppImage");
+        let ready = root.path().join("pcsx2-ready.AppImage");
+        let bytes = b"\x7fELF0000AI\x02synthetic image, never executed";
+        fs::write(&restricted, bytes).unwrap();
+        fs::set_permissions(&restricted, fs::Permissions::from_mode(0o601)).unwrap();
+        let mut map = BTreeMap::new();
+        add_image(&mut map, &restricted);
+        assert_eq!(map.len(), 1);
+        let selected = map.values().next().unwrap().profile.clone();
+        assert!(!map.values().next().unwrap().ready);
+        let mut report = Report {
+            candidates: map.values().cloned().collect(),
+            ..Default::default()
+        };
+        let mut settings = Settings::default();
+        auto_link(&mut settings, &mut report);
+        assert!(settings.profiles.is_empty());
+        assert!(report.linked.is_empty());
+        assert!(report.ambiguous.is_empty());
+
+        fs::write(&ready, bytes).unwrap();
+        fs::set_permissions(&ready, fs::Permissions::from_mode(0o700)).unwrap();
+        add_image(&mut map, &ready);
+        report.candidates = map.into_values().collect();
+        auto_link(&mut settings, &mut report);
+        assert_eq!(settings.profiles["ps2"].emulator_path, ready.to_str().unwrap());
+        assert_eq!(report.linked, ["ps2"]);
+        assert!(report.ambiguous.is_empty());
+
+        // Failed access is not evidence that a previously selected install
+        // disappeared, so preserve it rather than switching silently.
+        settings.profiles.insert("ps2".into(), selected);
+        report.linked.clear();
+        auto_link(&mut settings, &mut report);
+        assert_eq!(
+            settings.profiles["ps2"].emulator_path,
+            restricted.to_str().unwrap()
+        );
+        assert!(report.linked.is_empty());
+        assert_eq!(
+            fs::metadata(&restricted).unwrap().permissions().mode() & 0o777,
+            0o601
+        );
+        assert_eq!(fs::read(&restricted).unwrap(), bytes);
+    }
+
+    #[test]
+    fn native_and_console_folder_discovery_skip_inaccessible_executables() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let restricted = root.path().join("restricted");
+        let ready = root.path().join("ready");
+        fs::create_dir(&restricted).unwrap();
+        fs::create_dir(&ready).unwrap();
+        let bad = restricted.join("pcsx2");
+        let good = ready.join("pcsx2");
+        executable_fixture(&bad);
+        executable_fixture(&good);
+        for mode in [0o600, 0o601] {
+            if mode == 0o601 && unsafe { libc::geteuid() } == 0 {
+                continue;
+            }
+            fs::set_permissions(&bad, fs::Permissions::from_mode(mode)).unwrap();
+            assert!(detect_emulators_in(spec("ps2").unwrap(), &restricted).is_empty());
+            assert_eq!(
+                detect_installed_emulators_in("ps2", &[restricted.clone(), ready.clone()]),
+                [good.clone()]
+            );
+            let mut map = BTreeMap::new();
+            add_native(&mut map, spec("ps2").unwrap(), bad.clone());
+            assert!(!map.values().next().unwrap().ready);
+        }
+    }
+
     #[test]
     fn discovery_skips_non_utf8_targets_but_keeps_literal_replacement_names() {
         use std::os::unix::{ffi::OsStringExt, fs::PermissionsExt};
