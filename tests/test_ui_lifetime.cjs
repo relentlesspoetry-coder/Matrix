@@ -11,6 +11,9 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
+function formControls(values) {
+  return Object.entries(values || {}).map(([name,value])=>({name,value,type:'text'}));
+}
 function fixture() {
   const nodes = new Map(), responders = {}, calls = [], messages = [], blobs = new Set(), revoked = [];
   const intervals = new Map(), cards = [], listeners = {};
@@ -20,6 +23,7 @@ function fixture() {
     querySelectorAll: () => cards, createElement: () => makeNode() };
   function makeNode() {
     return { dataset: {}, value: '', checked: true, disabled: false, hidden: false, isConnected: true,
+      get elements() { return formControls(this.values); },
       textContent: '', classList: { toggle() {} }, setAttribute() {},
       cloneNode() { return { ...makeNode(), dataset: { ...this.dataset } }; },
       replaceWith(replacement) {
@@ -30,7 +34,7 @@ function fixture() {
       focus() { document.activeElement = this; }, querySelectorAll() { return []; } };
   }
   const node = selector => { if (!nodes.has(selector)) nodes.set(selector, makeNode()); return nodes.get(selector); };
-  for (const selector of ['#screen', '#breadcrumbs', '#nav-consoles', '#nav-steam', '#nav-windows', '#nav-settings', '#game-results', '#overlay-root', '.app-shell', '#auto-covers', '#auto-title-covers', '#cover-style']) node(selector);
+  for (const selector of ['#screen', '#breadcrumbs', '#nav-consoles', '#nav-steam', '#nav-windows', '#nav-settings', '#game-results', '#overlay-root', '.app-shell', '#auto-covers', '#auto-title-covers', '#cover-style', '#config-save-status']) node(selector);
   node('#auto-title-covers').checked=false;
   const root = node('#overlay-root');
   let html = '';
@@ -286,7 +290,7 @@ for (const outcome of ['resolve', 'reject']) test(`old emulator save ${outcome} 
 for (const newestSucceeds of [true, false]) test(`reopened emulator saves retain the newest successful choice (${newestSucceeds})`, async () => {
   const f=fixture(), older=deferred(), newer=deferred();let writes=0;
   f.responders.save_emulator=()=>++writes===1?older.promise:newer.promise;
-  const makeForm=name=>({id:'config-form',dataset:{id:'ps2'},values:{emulatorName:name,emulatorPath:'/test/'+name,folderPath:'/games',launcher:'executable'}});
+  const makeForm=name=>({id:'config-form',dataset:{id:'ps2'},get elements(){return formControls(this.values);},values:{emulatorName:name,emulatorPath:'/test/'+name,folderPath:'/games',launcher:'executable'}});
   const first=makeForm('older'), second=makeForm('newer');
   f.node('#config-error');f.state.overlay='configure';
   f.nodes.set('#config-form',first);
@@ -629,7 +633,7 @@ function bootstrapSnapshot(overrides={}) {
     emulatorDiscovery:{candidates:[],linked:[],ambiguous:[],notices:[]},...overrides};
 }
 function submitEmulatorFixture(f,name='saved') {
-  const form={id:'config-form',dataset:{id:'ps2'},values:{emulatorName:name,emulatorPath:'/test/'+name,folderPath:'/games',launcher:'executable'}};
+  const form={id:'config-form',dataset:{id:'ps2'},get elements(){return formControls(this.values);},values:{emulatorName:name,emulatorPath:'/test/'+name,folderPath:'/games',launcher:'executable'}};
   f.nodes.set('#config-form',form);f.node('#config-error');f.state.overlay='configure';
   f.listeners.submit[0]({target:form,submitter:{dataset:{}},preventDefault(){}});
 }
@@ -714,4 +718,236 @@ test('Find emulators superseding initialization still performs the initial libra
   assert.equal(f.state.imported.ps2[0].title,'Discovered game');
   assert.equal(f.calls.filter(c=>c.name==='scan_console').length,2,'Superseded initialization must not rescan');
   assert.equal(button.disabled,false);
+});
+
+// Form controls model checked values and disabled-control omission separately.
+// The production draft comparison must still see disabled Flatpak selections.
+function settingsFormFixture(f=fixture()) {
+  const controls=[];
+  const fields={};
+  for (const [name,id,value,type='text'] of [
+    ['launcher','emulator-launcher','executable'],
+    ['emulatorName','emulator-name','Original emulator'],
+    ['emulatorPath','emulator-path','/test/original'],
+    ['launchArgs','launch-args','{game}'],
+    ['folderPath','library-path','/games'],
+    ['flatpakApp','flatpak-app',''],
+    ['allowExecute','allow-execute',true,'checkbox'],
+    ['extractAppimage','extract-appimage',false,'checkbox'],
+    ['flatpakRuntimeFonts','runtime-fonts',false,'checkbox'],
+  ]) {
+    const field=f.document.createElement('input');field.id=id;field.name=name;field.type=type;
+    if (type==='checkbox') field.checked=value;else field.value=value;
+    f.nodes.set('#'+id,field);controls.push(field);fields[name]=field;
+  }
+  f.nodes.set('[name=extractAppimage]',fields.extractAppimage);
+  const form=f.document.createElement('form');form.id='config-form';form.dataset.id='ps2';
+  Object.defineProperty(form,'elements',{get:()=>controls});
+  Object.defineProperty(form,'values',{get:()=>Object.fromEntries(controls.filter(field=>!field.disabled && (field.type!=='checkbox' || field.checked))
+    .map(field=>[field.name,field.type==='checkbox' ? 'on' : field.value]))});
+  f.nodes.set('#config-form',form);f.node('#config-error');f.state.overlay='configure';
+  for (const selector of ['#file-fields','#flatpak-fields','#appimage-options','#emulator-file-label','#emulator-file-hint','#flatpak-help','#detected-emulator']) f.node(selector);
+  // Model the select's real reset-on-innerHTML and invalid-value behavior.
+  const select=fields.flatpakApp;let selected='',options=[{value:'',dataset:{}}],html='';
+  Object.defineProperty(select,'value',{get:()=>selected,set:value=>{selected=options.some(option=>option.value===value) ? value : '';}});
+  Object.defineProperty(select,'selectedOptions',{get:()=>options.filter(option=>option.value===selected)});
+  Object.defineProperty(select,'innerHTML',{get:()=>html,set:value=>{
+    html=value;options=[...value.matchAll(/<option value="([^"]*)"(?: data-name="([^"]*)")?/g)]
+      .map(([,value,name])=>({value,dataset:name ? {name} : {}}));selected=options[0]?.value || '';
+  }});
+  const submit=(open=false)=>{
+    const button={dataset:open ? {openAfterSave:'true'} : {},disabled:false};
+    f.listeners.submit[0]({target:form,submitter:button,preventDefault(){}});return button;
+  };
+  return {...f,form,fields,submit};
+}
+const flatpakApps=[{appId:'net.pcsx2.PCSX2',installation:'system',name:'PCSX2'},
+  {appId:'org.example.Other',installation:'user',name:'Other emulator'}];
+
+for (const open of [false,true]) test(`emulator save preserves newer text and supports resaving (open=${open})`,async()=>{
+  const f=settingsFormFixture(),saving=deferred();let saves=0;
+  f.responders.save_emulator=()=>++saves===1 ? saving.promise : Promise.resolve();
+  f.responders.open_emulator=()=>Promise.resolve({phase:'exited',message:'Mock open completed.'});
+  const button=f.submit(open),writes=f.overlayWrites();
+  f.fields.emulatorName.value='Newer emulator';f.fields.launchArgs.value='--new\n{game}';
+  f.fields.emulatorName.focus();saving.resolve();await tick();
+  assert.equal(f.state.configs.ps2.emulatorName,'Original emulator');
+  assert.equal(f.state.overlay,'configure');assert.equal(f.overlayWrites(),writes);
+  assert.equal(f.document.activeElement,f.fields.emulatorName);
+  assert.equal(f.fields.emulatorName.value,'Newer emulator');assert.equal(button.disabled,false);
+  assert.match(f.node('#config-save-status').textContent,/submitted settings were saved.*Newer edits are not saved/);
+  assert.match(f.messages.at(-1),/Newer edits are still unsaved/);
+  assert.equal(f.calls.some(call=>call.name==='open_emulator'),false);
+  f.submit(open);await tick();
+  assert.equal(f.state.configs.ps2.emulatorName,'Newer emulator');
+  assert.deepEqual(Array.from(f.state.configs.ps2.launchArgs),['--new','{game}']);
+  assert.equal(f.state.overlay,null);assert.equal(f.node('#config-save-status').textContent,'');
+  assert.equal(f.calls.filter(call=>call.name==='open_emulator').length,open ? 1 : 0);
+});
+
+for (const name of ['allowExecute','extractAppimage','flatpakRuntimeFonts']) test(`emulator save preserves a later ${name} checkbox edit`,async()=>{
+  const f=settingsFormFixture(),saving=deferred();f.responders.save_emulator=()=>saving.promise;
+  f.submit();f.fields[name].checked=!f.fields[name].checked;saving.resolve();await tick();
+  assert.equal(f.state.overlay,'configure');assert.match(f.node('#config-save-status').textContent,/Newer edits are not saved/);
+});
+
+test('emulator draft comparison preserves exact text rather than trimmed save values',async()=>{
+  const f=settingsFormFixture(),saving=deferred();f.responders.save_emulator=()=>saving.promise;
+  f.submit();f.fields.emulatorName.value+=' ';saving.resolve();await tick();
+  assert.equal(f.state.overlay,'configure');assert.equal(f.fields.emulatorName.value,'Original emulator ');
+});
+
+test('failed emulator save preserves newer edits and a later retry clears stale notices',async()=>{
+  const f=settingsFormFixture(),saving=deferred();let saves=0;
+  f.responders.save_emulator=()=>++saves===1 ? saving.promise : Promise.resolve();
+  const button=f.submit(true);f.fields.emulatorPath.value='/test/new';saving.reject('Invalid original file');await tick();
+  assert.equal(f.state.overlay,'configure');assert.equal(f.fields.emulatorPath.value,'/test/new');
+  assert.equal(f.state.configs.ps2,undefined);assert.equal(button.disabled,false);assert.equal(f.form.dataset.saving,undefined);
+  assert.equal(f.node('#config-error').textContent,'Invalid original file');assert.equal(f.node('#config-save-status').textContent,'');
+  assert.equal(f.calls.some(call=>call.name==='open_emulator'),false);
+  f.submit();await tick();assert.equal(f.state.configs.ps2.emulatorPath,'/test/new');assert.equal(f.state.overlay,null);
+  assert.equal(f.node('#config-error').textContent,'');
+});
+
+for (const outcome of ['resolve','reject']) test(`Save and open ${outcome} cannot alter a reopened setup form`,async()=>{
+  const f=settingsFormFixture(),saving=deferred();f.responders.save_emulator=()=>saving.promise;
+  f.submit(true);f.dismissOverlay();const replacement=settingsFormFixture(f);
+  replacement.fields.emulatorName.value='Replacement draft';replacement.node('#config-save-status').textContent='Replacement status';
+  const writes=f.overlayWrites();saving[outcome](outcome==='reject' ? 'Old failure' : undefined);await tick();
+  assert.equal(f.state.overlay,'configure');assert.equal(f.nodes.get('#config-form'),replacement.form);
+  assert.equal(replacement.fields.emulatorName.value,'Replacement draft');assert.equal(f.overlayWrites(),writes);
+  assert.equal(f.node('#config-save-status').textContent,'Replacement status');assert.equal(f.calls.some(call=>call.name==='open_emulator'),false);
+});
+
+test('choosing a detected Flatpak while saving preserves the new draft through its delayed inventory',async()=>{
+  const f=settingsFormFixture(),saving=deferred(),loading=deferred();let saves=0;
+  f.responders.save_emulator=()=>++saves===1 ? saving.promise : Promise.resolve();f.responders.list_flatpaks=()=>loading.promise;
+  f.state.discovery.candidates=[{id:'new-flatpak',consoleIds:['ps2'],profile:{emulatorName:'PCSX2',launcher:'flatpak',flatpakId:'net.pcsx2.PCSX2',flatpakInstallation:'system',launchArgs:['--','{game}']}}];
+  f.submit(true);f.node('#detected-emulator').value='new-flatpak';f.listeners.change[0]({target:{id:'detected-emulator'}});
+  assert.equal(f.fields.flatpakApp.disabled,true);saving.resolve();await tick();
+  assert.equal(f.state.overlay,'configure');assert.equal(f.fields.emulatorName.value,'PCSX2');assert.equal(f.fields.launcher.value,'flatpak');
+  assert.equal(f.calls.some(call=>call.name==='open_emulator'),false);
+  loading.resolve(flatpakApps);await tick();
+  assert.equal(f.fields.flatpakApp.value,'net.pcsx2.PCSX2|system');assert.equal(f.fields.flatpakApp.dataset.saved,undefined);
+  f.submit();await tick();
+  assert.equal(f.state.overlay,null);assert.equal(f.state.configs.ps2.flatpakId,'net.pcsx2.PCSX2');
+  assert.equal(f.state.configs.ps2.flatpakRuntimeFonts,true);
+});
+
+test('pending Flatpak reload does not make an unchanged saved draft appear dirty',async()=>{
+  const f=settingsFormFixture(),saving=deferred(),loading=deferred();
+  f.fields.launcher.value='flatpak';f.fields.flatpakApp.dataset.saved='net.pcsx2.PCSX2|system';
+  f.responders.list_flatpaks=()=>Promise.resolve(flatpakApps);await f.loadFlatpakChoices();
+  f.responders.save_emulator=()=>saving.promise;f.submit();
+  f.responders.list_flatpaks=()=>loading.promise;const reloading=f.loadFlatpakChoices();
+  assert.equal(f.fields.flatpakApp.disabled,true);assert.equal('flatpakApp' in f.form.values,false);
+  saving.resolve();await tick();assert.equal(f.state.overlay,null);assert.equal(f.node('#config-save-status').textContent,'');
+  // DOM removal on dismissal is explicit in this small fixture.
+  f.nodes.delete('#flatpak-app');f.nodes.delete('#flatpak-help');loading.resolve(flatpakApps);await reloading;
+});
+
+test('Flatpak reload removing the selected app preserves the resulting unsaved draft',async()=>{
+  const f=settingsFormFixture(),saving=deferred();
+  f.fields.launcher.value='flatpak';f.fields.flatpakApp.dataset.saved='net.pcsx2.PCSX2|system';
+  f.responders.list_flatpaks=()=>Promise.resolve(flatpakApps);await f.loadFlatpakChoices();
+  f.responders.save_emulator=()=>saving.promise;f.submit(true);
+  f.responders.list_flatpaks=()=>Promise.resolve([]);await f.loadFlatpakChoices();saving.resolve();await tick();
+  assert.equal(f.fields.flatpakApp.value,'');assert.equal(f.state.overlay,'configure');
+  assert.match(f.node('#config-save-status').textContent,/Newer edits are not saved/);
+  assert.equal(f.calls.some(call=>call.name==='open_emulator'),false);
+});
+
+test('failed initial Flatpak listing retains its saved fallback for retry, then respects an explicit clear',async()=>{
+  const f=settingsFormFixture();f.fields.flatpakApp.dataset.saved='net.pcsx2.PCSX2|system';
+  f.responders.list_flatpaks=()=>Promise.reject('Temporary inventory error');await f.loadFlatpakChoices();
+  assert.equal(f.fields.flatpakApp.dataset.saved,'net.pcsx2.PCSX2|system');assert.equal(f.fields.flatpakApp.disabled,false);
+  f.responders.list_flatpaks=()=>Promise.resolve(flatpakApps);await f.loadFlatpakChoices();
+  assert.equal(f.fields.flatpakApp.value,'net.pcsx2.PCSX2|system');
+  f.fields.flatpakApp.value='';f.listeners.change[0]({target:f.fields.flatpakApp});await f.loadFlatpakChoices();
+  assert.equal(f.fields.flatpakApp.value,'');assert.equal(f.fields.flatpakRuntimeFonts.checked,false);
+  assert.equal(f.fields.flatpakApp.dataset.saved,undefined);
+  f.fields.launcher.value='executable';f.listeners.change[0]({target:f.fields.launcher});
+  f.fields.launcher.value='flatpak';f.listeners.change[0]({target:f.fields.launcher});await tick();
+  assert.equal(f.fields.flatpakApp.value,'','Switching installation types must not restore the cleared saved value');
+});
+
+test('only the newest initial Flatpak response consumes the saved fallback',async()=>{
+  const f=settingsFormFixture(),first=deferred(),second=deferred();let requests=0;
+  f.fields.flatpakApp.dataset.saved='net.pcsx2.PCSX2|system';f.responders.list_flatpaks=()=>++requests===1 ? first.promise : second.promise;
+  const old=f.loadFlatpakChoices(),recent=f.loadFlatpakChoices();first.resolve(flatpakApps);await old;
+  assert.equal(f.fields.flatpakApp.dataset.saved,'net.pcsx2.PCSX2|system');assert.equal(f.fields.flatpakApp.disabled,true);
+  second.reject('Current inventory error');await recent;assert.equal(f.fields.flatpakApp.dataset.saved,'net.pcsx2.PCSX2|system');
+  f.responders.list_flatpaks=()=>Promise.resolve(flatpakApps);await f.loadFlatpakChoices();
+  assert.equal(f.fields.flatpakApp.value,'net.pcsx2.PCSX2|system');assert.equal(f.fields.flatpakApp.dataset.saved,undefined);
+});
+
+test('choosing another detected installation supplies a fresh one-time Flatpak fallback',async()=>{
+  const f=settingsFormFixture();f.fields.flatpakApp.dataset.saved='net.pcsx2.PCSX2|system';
+  f.responders.list_flatpaks=()=>Promise.resolve(flatpakApps);await f.loadFlatpakChoices();
+  f.state.discovery.candidates=[{id:'other',consoleIds:['ps2'],profile:{emulatorName:'Other emulator',launcher:'flatpak',flatpakId:'org.example.Other',flatpakInstallation:'user',launchArgs:['{game}']}}];
+  f.node('#detected-emulator').value='other';f.listeners.change[0]({target:{id:'detected-emulator'}});await tick();
+  assert.equal(f.fields.flatpakApp.value,'org.example.Other|user');assert.equal(f.fields.flatpakApp.dataset.saved,undefined);
+  f.fields.flatpakApp.value='';await f.loadFlatpakChoices();assert.equal(f.fields.flatpakApp.value,'');
+});
+
+for (const open of [false,true]) test(`saving during Flatpak reload explains the wait and permits explicit retry (open=${open})`,async()=>{
+  const f=settingsFormFixture(),loading=deferred();
+  f.fields.launcher.value='flatpak';f.fields.flatpakApp.dataset.saved='net.pcsx2.PCSX2|system';
+  f.responders.list_flatpaks=()=>Promise.resolve(flatpakApps);await f.loadFlatpakChoices();
+  f.responders.list_flatpaks=()=>loading.promise;const reloading=f.loadFlatpakChoices();
+  const button=f.submit(open);f.submit(open);
+  assert.match(f.node('#config-save-status').textContent,/still loading.*then save again/);
+  assert.equal(button.disabled,false);assert.equal(f.form.dataset.saving,undefined);
+  assert.equal(f.calls.some(call=>call.name==='save_emulator' || call.name==='open_emulator'),false);
+  f.fields.emulatorName.value='Edited while waiting';loading.resolve(flatpakApps);await reloading;
+  assert.equal(f.node('#config-save-status').textContent,'');assert.equal(f.state.overlay,'configure');
+  assert.equal(f.fields.emulatorName.value,'Edited while waiting');assert.equal(f.fields.flatpakApp.value,'net.pcsx2.PCSX2|system');
+  assert.equal(f.calls.some(call=>call.name==='save_emulator' || call.name==='open_emulator'),false,'Inventory completion must not submit or launch automatically');
+  f.responders.save_emulator=()=>Promise.resolve();f.responders.open_emulator=()=>Promise.resolve({phase:'exited',message:'Mock open completed.'});
+  f.submit(open);await tick();
+  assert.equal(f.state.configs.ps2.emulatorName,'Edited while waiting');assert.equal(f.state.overlay,null);
+  assert.equal(f.calls.filter(call=>call.name==='save_emulator').length,1);
+  assert.equal(f.calls.filter(call=>call.name==='open_emulator').length,open ? 1 : 0);
+});
+
+test('failed Flatpak inventory clears the save wait notice without hiding the load error or draft',async()=>{
+  const f=settingsFormFixture(),loading=deferred();f.fields.launcher.value='flatpak';
+  f.responders.list_flatpaks=()=>loading.promise;const reloading=f.loadFlatpakChoices();
+  f.submit();assert.match(f.node('#config-save-status').textContent,/still loading/);
+  f.fields.emulatorName.value='Still my draft';loading.reject('Inventory unavailable');await reloading;
+  assert.equal(f.node('#config-save-status').textContent,'');assert.equal(f.node('#flatpak-help').textContent,'Inventory unavailable');
+  assert.equal(f.fields.flatpakApp.disabled,false);assert.equal(f.fields.emulatorName.value,'Still my draft');
+  assert.equal(f.calls.some(call=>call.name==='save_emulator'),false);
+});
+
+test('an older Flatpak response cannot clear the save wait notice for a newer reload',async()=>{
+  const f=settingsFormFixture(),first=deferred(),second=deferred();let loads=0;f.fields.launcher.value='flatpak';
+  f.responders.list_flatpaks=()=>++loads===1 ? first.promise : second.promise;
+  const old=f.loadFlatpakChoices();f.submit();const recent=f.loadFlatpakChoices();
+  first.resolve(flatpakApps);await old;assert.match(f.node('#config-save-status').textContent,/still loading/);
+  assert.equal(f.fields.flatpakApp.disabled,true);second.resolve(flatpakApps);await recent;
+  assert.equal(f.node('#config-save-status').textContent,'');
+});
+
+test('a completed Flatpak reload leaves a later saved-versus-unsaved notice intact',async()=>{
+  const f=settingsFormFixture(),loading=deferred(),saving=deferred();f.fields.launcher.value='flatpak';
+  f.responders.list_flatpaks=()=>loading.promise;const reloading=f.loadFlatpakChoices();f.submit();
+  assert.match(f.node('#config-save-status').textContent,/still loading/);
+  f.fields.launcher.value='executable';f.responders.save_emulator=()=>saving.promise;f.submit();
+  f.fields.emulatorName.value='Newer draft';saving.resolve();await tick();
+  const notice=f.node('#config-save-status').textContent;assert.match(notice,/Newer edits are not saved/);
+  loading.resolve(flatpakApps);await reloading;
+  assert.equal(f.node('#config-save-status').textContent,notice);assert.equal(f.fields.emulatorName.value,'Newer draft');
+  assert.equal(f.state.overlay,'configure');
+});
+
+test('closed Flatpak inventory cannot clear a replacement dialog save wait notice',async()=>{
+  const f=settingsFormFixture(),loading=deferred();f.fields.launcher.value='flatpak';
+  f.responders.list_flatpaks=()=>loading.promise;const reloading=f.loadFlatpakChoices();f.submit();
+  const waitMessage=f.node('#config-save-status').textContent;assert.match(waitMessage,/still loading/);
+  f.dismissOverlay();const replacement=settingsFormFixture(f);
+  replacement.node('#config-save-status').textContent=waitMessage;
+  loading.resolve(flatpakApps);await reloading;
+  assert.equal(replacement.node('#config-save-status').textContent,waitMessage);
+  assert.equal(f.nodes.get('#config-form'),replacement.form);assert.equal(f.state.overlay,'configure');
 });

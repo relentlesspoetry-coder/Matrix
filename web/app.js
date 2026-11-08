@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.23 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.24 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -656,6 +656,7 @@ function updateLauncherFields() {
   if (launcher==='flatpak') void loadFlatpakChoices();
 }
 let flatpakRequest = 0;
+const FLATPAK_LOADING_SAVE_MESSAGE='Flatpak apps are still loading. Wait for the list to finish, then save again.';
 async function loadFlatpakChoices() {
   const select=$('#flatpak-app'); if (!select) return;
   if (!state.native) { $('#flatpak-help').textContent='Installed apps are available in the Linux application.';return; }
@@ -668,9 +669,18 @@ async function loadFlatpakChoices() {
     if (!current()) return;
     select.innerHTML='<option value="">Choose an installed app…</option>'+apps.map(app=>`<option value="${escapeHtml(app.appId+'|'+app.installation)}" data-name="${escapeHtml(app.name)}">${escapeHtml(app.name)} — ${escapeHtml(app.appId)} (${escapeHtml(app.installation)})</option>`).join('');
     select.value=previous;
+    // Seed the initial choice once. Keep it for failed-load retries, but never
+    // restore it over a later explicit blank choice on reload.
+    delete select.dataset.saved;
     $('#flatpak-help').textContent=apps.length ? 'Choose your installed emulator. Matrix Play gives it access to the selected game library, with scoped save access for supported emulators.' : 'No Flatpak apps found. Install an emulator through Software, then click Reload apps.';
   } catch(error) { if (current()) $('#flatpak-help').textContent=String(error); }
-  finally { if (current()) select.disabled=false; }
+  finally {
+    if (current()) {
+      select.disabled=false;
+      const status=$('#config-save-status');
+      if (status?.textContent===FLATPAK_LOADING_SAVE_MESSAGE) status.textContent='';
+    }
+  }
 }
 function openConfigure(id) {
   const consoleInfo=byId[id];if (!consoleInfo) return;
@@ -684,7 +694,7 @@ function openConfigure(id) {
     <div id="flatpak-fields" hidden><div class="field"><label for="flatpak-app">Installed Flatpak emulator</label><select id="flatpak-app" name="flatpakApp" data-saved="${escapeHtml(current.flatpakId ? current.flatpakId+'|'+current.flatpakInstallation : '')}"><option value="">Choose an installed app…</option></select><small id="flatpak-help"></small></div><button type="button" class="button button-ghost" data-action="reload-flatpaks">Reload apps</button><label class="check-row runtime-font-choice"><input type="checkbox" id="runtime-fonts" name="flatpakRuntimeFonts" ${(current.flatpakRuntimeFonts ?? current.flatpakId==='net.pcsx2.PCSX2')?'checked':''}> Use compatible runtime fonts</label><small>Recommended for PCSX2. Avoids crashes from host font configuration; applies only to emulator launches.</small><p class="muted">Flatpak apps are installed through Software. Downloaded .flatpakref files are not executable files to browse for.</p></div>
     <div class="field"><label for="emulator-name">Emulator name</label><input id="emulator-name" name="emulatorName" maxlength="120" value="${escapeHtml(current.emulatorName || consoleInfo.emulator)}" required></div>
     <details class="advanced-setup" ${consoleInfo.customEmulator ? 'open' : ''}><summary>Advanced launch options</summary><div class="field"><label for="launch-args">Launch arguments (one per line)</label><textarea id="launch-args" name="launchArgs" rows="3">${escapeHtml((current.launchArgs?.length ? current.launchArgs : defaultLaunchArgs(id)).join('\n'))}</textarea><small>{game} is the game file. ${consoleInfo.customEmulator ? '{gameDir} is its containing folder. Put each placeholder on its own line. These arguments are used only for game launches; no fullscreen options are added.' : 'Defaults vary by console; some emulators require different options.'} Each line is passed as one argument, without a shell.</small>${consoleInfo.customEmulator ? `<p class="muted custom-launch-help">${id==='ps5' ? 'KytyPS5 core example: choose kyty_emulator, then enter --game and {gameDir} on separate lines for an extracted eboot.bin title. For ELF or ZAR, use --game and {game}. PKG/ISO collection files are not KytyPS5 boot targets.' : 'Eglantine example: enter -f, -g and {game} on three separate lines. Check the documentation for your installed build; original Switch emulator settings are not reused.'}</p>` : ''}</div></details>
-    <div class="field"><label for="library-path">Game library folder</label><input id="library-path" name="folderPath" value="${escapeHtml(state.native ? state.folders[id] || '' : current.folderPath || '')}" ${state.native?'readonly':'required'}><small>Place this console’s games here. Your emulator can stay wherever it is installed.</small></div><p id="config-error" class="config-error" role="alert"></p><div class="dialog-actions"><button class="button button-ghost" type="button" data-action="close">Cancel</button><button class="button button-primary" type="submit">Save emulator</button><button class="button button-ghost" type="submit" data-open-after-save="true">Save and open emulator</button></div></form></section></div>`;
+    <div class="field"><label for="library-path">Game library folder</label><input id="library-path" name="folderPath" value="${escapeHtml(state.native ? state.folders[id] || '' : current.folderPath || '')}" ${state.native?'readonly':'required'}><small>Place this console’s games here. Your emulator can stay wherever it is installed.</small></div><p id="config-error" class="config-error" role="alert"></p><p id="config-save-status" class="muted" role="status"></p><div class="dialog-actions"><button class="button button-ghost" type="button" data-action="close">Cancel</button><button class="button button-primary" type="submit">Save emulator</button><button class="button button-ghost" type="submit" data-open-after-save="true">Save and open emulator</button></div></form></section></div>`;
   updateLauncherFields();$('#emulator-launcher').focus();void loadDetectedEmulators();
 }
 let libraryFolderBusy = false;
@@ -1188,6 +1198,12 @@ async function handleAction(button) {
   }
   else if (action === 'pick-cover') { $('#art-input').value = ''; $('#art-input').click(); }
 }
+function emulatorFormDraft(owner) {
+  // Read controls directly: FormData omits the Flatpak choice while a reload
+  // temporarily disables it. Preserve text and checkbox edits exactly.
+  return JSON.stringify(Array.from(owner.elements).filter(field=>field.name)
+    .map(field=>[field.name,field.type==='checkbox' ? field.checked : field.value]));
+}
 function setupEvents() {
   document.addEventListener('change', event => {
     if (event.target.id==='detected-emulator') chooseDetectedEmulator();
@@ -1239,11 +1255,17 @@ function setupEvents() {
     const folderPath = String(form.get('folderPath') || '').trim();
     const launchArgs = String(form.get('launchArgs') || '').split('\n').map(s => s.trim()).filter(Boolean);
     const launcher=String(form.get('launcher') || 'executable');
+    if (launcher==='flatpak' && Array.from(owner.elements).some(field=>field.name==='flatpakApp' && field.disabled)) {
+      if ($('#config-form')===owner) $('#config-save-status').textContent=FLATPAK_LOADING_SAVE_MESSAGE;
+      return;
+    }
     const [flatpakId='',flatpakInstallation='']=String(form.get('flatpakApp') || '').split('|');
     if (!emulatorName || !folderPath || (launcher==='flatpak' ? !flatpakId : !emulatorPath)) return;
     const profile={emulatorName,emulatorPath,launchArgs,launcher,flatpakId,flatpakInstallation,extractAppimage:form.has('extractAppimage'),flatpakRuntimeFonts:form.has('flatpakRuntimeFonts')};
     if (state.native) {
       owner.dataset.saving='true';
+      const submittedDraft=emulatorFormDraft(owner);
+      $('#config-save-status').textContent='';
       const request=(emulatorSaveRequests.get(id)||0)+1;emulatorSaveRequests.set(id,request);
       const submit=event.submitter || event.target.querySelector('[type=submit]:not([data-open-after-save])');const openAfterSave=event.submitter?.dataset.openAfterSave==='true';submit.disabled=true;$('#config-error').textContent='';
       void nativeInvoke('save_emulator', {id,...profile,allowExecute:form.has('allowExecute')}).then(() => {
@@ -1251,8 +1273,11 @@ function setupEvents() {
         emulatorSavedRequests.set(id,request);
         state.configs[id]=profile;
         const current=state.overlay==='configure' && $('#config-form')===owner;
-        if (current) dismissOverlay();
-        render();toast(`${byId[id].name} emulator saved.`);if (openAfterSave && current) void launchConsole(id);
+        const edited=current && emulatorFormDraft(owner)!==submittedDraft;
+        if (current && !edited) dismissOverlay();
+        if (edited) $('#config-save-status').textContent='Your submitted settings were saved. Newer edits are not saved yet. Save again to use them.';
+        render();toast(`${byId[id].name} emulator saved.${edited ? ' Newer edits are still unsaved.' : ''}`);
+        if (openAfterSave && current && !edited) void launchConsole(id);
       }).catch(error => {if ($('#config-form')===owner) $('#config-error').textContent=String(error);else toast(String(error));})
         .finally(()=>{submit.disabled=false;delete owner.dataset.saving;});
     } else {

@@ -12,10 +12,11 @@ function fixture() {
     querySelector(selector) { return nodes.get(selector) || null; } };
   const node = selector => {
     if (!nodes.has(selector)) nodes.set(selector, { dataset: {}, value: '', textContent: '', hidden: false,
+      get elements() { return Object.entries(this.values || {}).map(([name,value])=>({name,value,type:'text'})); },
       focus() { document.activeElement = this; }, querySelectorAll() { return []; } });
     return nodes.get(selector);
   };
-  for (const selector of ['#overlay-root', '#emulator-launcher', '#file-fields', '#flatpak-fields', '#appimage-options', '#emulator-path', '#flatpak-app', '#emulator-file-label', '#emulator-file-hint', '#config-error']) node(selector);
+  for (const selector of ['#overlay-root', '#emulator-launcher', '#file-fields', '#flatpak-fields', '#appimage-options', '#emulator-path', '#flatpak-app', '#emulator-file-label', '#emulator-file-hint', '#config-error', '#config-save-status']) node(selector);
   node('#emulator-launcher').value = 'executable';
   const context = vm.createContext({ document,
     FormData: class { constructor(form) { this.values = form.values; } get(key) { return this.values[key]; } has(key) { return key in this.values; } },

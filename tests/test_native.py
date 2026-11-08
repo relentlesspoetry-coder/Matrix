@@ -859,6 +859,62 @@ def main():
             js('document.querySelector("#flatpak-app").value="org.matrix.TestEmulator|user";document.querySelector("#flatpak-app").dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#config-form").requestSubmit()')
             wait_for(lambda: invoke('bootstrap')['profiles']['ps2'].get('launcher')=='flatpak')
             wait_for(lambda: js('return !document.querySelector("#config-form")'))
+            # Actual WebKit form/draft regressions use only the existing owned
+            # Flatpak fixture and bounded inventory delay; no real emulator runs.
+            click('[data-action="configure"][data-id="ps2"]')
+            wait_for(lambda: js('return document.querySelector("#flatpak-app")?.value === "org.matrix.TestEmulator|user" && !document.querySelector("#flatpak-app").disabled && !document.querySelector("#detected-emulator").disabled'))
+            js('window.__settingsForm=document.querySelector("#config-form");document.querySelector("#flatpak-app").value="";document.querySelector("#flatpak-app").dispatchEvent(new Event("change",{bubbles:true}))')
+            click('[data-action="reload-flatpaks"]')
+            wait_for(lambda: js('return !document.querySelector("#flatpak-app").disabled'))
+            assert js('return document.querySelector("#flatpak-app").value') == '', 'Reload must preserve an explicitly cleared saved choice'
+            assert js('return document.querySelector("#config-form")===window.__settingsForm')
+            js('document.querySelector("#flatpak-app").value="org.matrix.TestEmulator|user";document.querySelector("#flatpak-app").dispatchEvent(new Event("change",{bubbles:true}))')
+            settings_before_reload=saved_settings_path.read_bytes()
+            launch_before_settings=log.read_bytes() if log.exists() else None
+            try:
+                inventory_started.unlink(missing_ok=True)
+                inventory_release.unlink(missing_ok=True)
+                flatpak.write_text(delayed_inventory)
+                click('[data-action="reload-flatpaks"]')
+                wait_for(lambda: inventory_started.exists(),timeout=5)
+                assert js('return document.querySelector("#flatpak-app").disabled')
+                click('#config-form button[type="submit"]:not([data-open-after-save])')
+                click('#config-form [data-open-after-save]')
+                assert js('return document.querySelector("#config-save-status").textContent').startswith('Flatpak apps are still loading.')
+                assert js('return document.querySelector("#config-form")===window.__settingsForm && !window.__settingsForm.dataset.saving')
+                assert saved_settings_path.read_bytes()==settings_before_reload, 'Save while listing must not write a profile'
+                js('document.querySelector("#emulator-name").value="Submitted Flatpak fixture";document.querySelector("#emulator-name").dispatchEvent(new Event("input",{bubbles:true}))')
+                inventory_release.touch()
+                wait_for(lambda: js('return !document.querySelector("#flatpak-app").disabled'))
+                assert js('return document.querySelector("#config-save-status").textContent') == ''
+                assert js('return document.querySelector("#emulator-name").value') == 'Submitted Flatpak fixture'
+                assert saved_settings_path.read_bytes()==settings_before_reload, 'Completing inventory must not submit automatically'
+                assert (log.read_bytes() if log.exists() else None)==launch_before_settings
+
+                inventory_started.unlink(missing_ok=True)
+                inventory_release.unlink(missing_ok=True)
+                click('#config-form [data-open-after-save]')
+                wait_for(lambda: inventory_started.exists(),timeout=5)
+                assert js('return window.__settingsForm.dataset.saving') == 'true'
+                js('document.querySelector("#emulator-name").value="Newer unsaved fixture";document.querySelector("#emulator-name").dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#emulator-name").focus()')
+                inventory_release.touch()
+                wait_for(lambda: js('return document.querySelector("#config-form")===window.__settingsForm && !window.__settingsForm.dataset.saving && document.querySelector("#config-save-status").textContent.includes("Newer edits are not saved")'))
+                assert focused('#emulator-name')
+                assert js('return document.querySelector("#emulator-name").value') == 'Newer unsaved fixture'
+                assert json.loads(saved_settings_path.read_text())['profiles']['ps2']['emulatorName']=='Submitted Flatpak fixture'
+                wait_for(lambda: js('return !state.launchBusy.ps2'))
+                assert (log.read_bytes() if log.exists() else None)==launch_before_settings, 'A newer draft must suppress Save and open'
+            finally:
+                inventory_release.touch()
+                flatpak.write_text(healthy_inventory)
+            click('#config-form button[type="submit"]:not([data-open-after-save])')
+            wait_for(lambda: js('return !document.querySelector("#config-form")'))
+            resaved=json.loads(saved_settings_path.read_text())['profiles']['ps2']
+            assert resaved['emulatorName']=='Newer unsaved fixture'
+            assert resaved['flatpakId']=='org.matrix.TestEmulator' and resaved['flatpakInstallation']=='user'
+            assert (log.read_bytes() if log.exists() else None)==launch_before_settings
+            js('delete window.__settingsForm')
+            print('PASS: actual WebKit retains cleared Flatpak choices and newer setup drafts, explains saves during inventory loading, suppresses stale opening, and resaves explicitly')
             click('[data-action="home"]')
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return Boolean(document.querySelector(".game-card"))'))

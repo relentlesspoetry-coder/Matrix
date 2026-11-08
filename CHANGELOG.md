@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.24
+
+- Preserve newer emulator setup edits made while a native save is pending. Keep the dialog and focused field open, explain which settings remain unsaved, and suppress Save and open until the user explicitly saves the newer draft.
+- Consume the saved Flatpak selection only on the initial successful inventory load, so clearing that selection remains cleared across reloads while failed initial loads can still retry safely.
+- Explain Save attempts during Flatpak inventory loading without silently doing nothing or queuing a later save or launch. Clear only the current loading notice when that inventory finishes.
+- Add 21 deterministic regressions and bounded actual-WebKit checks for cleared selections, loading feedback, draft/focus preservation, stale-launch prevention and explicit resaving. No emulator or game compatibility changes are claimed.
+
 ## 0.5.23
 
 - Use effective-user execute access consistently for emulator discovery, readiness and profile validation, sharing the existing native Steam check. Files executable only by another permission class no longer auto-link as ready or create false ambiguity beside a usable emulator.
