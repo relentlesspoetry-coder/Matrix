@@ -3,11 +3,27 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
 };
 
 const FORMATS: [&str; 3] = ["png", "jpg", "webp"];
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+static COVER_OPERATION: Mutex<()> = Mutex::new(());
+
+// Cover reads can fully decode a 4096-square image. Moving IPC off the UI thread
+// must not multiply that memory cost by every visible card. Call this only from
+// a blocking worker, never while holding up GTK or the async executor.
+pub(super) fn run_cover_operation<T>(
+    operation: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let _guard = COVER_OPERATION
+        .lock()
+        .map_err(|_| "Cover worker is unavailable; restart Matrix Play".to_string())?;
+    operation()
+}
 
 struct Temporary(PathBuf);
 impl Drop for Temporary {
@@ -84,6 +100,34 @@ mod tests {
     use super::*;
     use std::process::{Child, Command};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn concurrent_cover_operations_have_one_shared_memory_limit() {
+        use std::sync::{atomic::AtomicUsize, Barrier};
+        let start = Barrier::new(8);
+        let active = AtomicUsize::new(0);
+        let maximum = AtomicUsize::new(0);
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                scope.spawn(|| {
+                    start.wait();
+                    run_cover_operation(|| {
+                        let count = active.fetch_add(1, Ordering::SeqCst) + 1;
+                        maximum.fetch_max(count, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(2));
+                        active.fetch_sub(1, Ordering::SeqCst);
+                        Ok(())
+                    })
+                    .unwrap();
+                });
+            }
+        });
+        assert_eq!(maximum.load(Ordering::SeqCst), 1);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        let failed: Result<(), String> = run_cover_operation(|| Err("fixture failure".into()));
+        assert!(failed.is_err());
+        assert_eq!(run_cover_operation(|| Ok(7)).unwrap(), 7);
+    }
 
     fn writer(root: &Path, format: &str) -> Child {
         let module = module_path!().split_once("::").unwrap().1;

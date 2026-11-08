@@ -13,6 +13,11 @@ Rust/Cargo are absent in this review executor. The launch-log fixture is skipped
 without its compiler, and Chromium fails before page load because its local IPC
 socket is unavailable, including after the supported escalation. New Rust and
 native slow-inventory regressions must pass in exact-candidate CI before release.
+The first CI pass compiled and passed 144 of 147 backend tests; three new
+protected-parent fixtures correctly rejected their own permissive temporary
+ancestors. Fixtures now explicitly request 0700 without relaxing production
+checks. Independent review also added a shared local-cover memory limit and a
+concurrency/error-release regression before the next CI pass.
 No user computer, real emulator, proprietary game or host package installation
 was used by the review. Native tests use disposable Flatpak/launcher shims; they
 do not certify actual game or emulator compatibility.

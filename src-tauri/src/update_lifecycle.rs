@@ -78,7 +78,13 @@ fn protected_parent(path: &Path, uid: u32) -> Result<(), String> {
             || !protected
             || (index == 0 && meta.uid() != uid)
         {
-            return Err("Unsafe Matrix lifecycle parent; startup stopped without modifying it".into());
+            return Err(format!(
+                "Unsafe Matrix lifecycle parent {} (owner {}, mode {:04o}, expected user {}); startup stopped without modifying it",
+                ancestor.display(),
+                meta.uid(),
+                meta.mode() & 0o7777,
+                uid,
+            ));
         }
     }
     Ok(())
@@ -1611,6 +1617,19 @@ mod tests {
         // The child has not been reaped yet; a zombie is no longer executing.
         assert!(child.wait().unwrap().success());
     }
+    fn lifecycle_fixture() -> tempfile::TempDir {
+        use std::os::unix::fs::PermissionsExt;
+        // TempDir defaults to 0777 masked by umask. CI can inherit umask 002,
+        // making an ordinary tempfile ancestor group-writable. Model a protected
+        // account home explicitly instead of weakening the production guard.
+        let fixture = tempfile::Builder::new()
+            .permissions(fs::Permissions::from_mode(0o700))
+            .tempdir()
+            .unwrap();
+        protected_parent(fixture.path(), unsafe { libc::geteuid() }).unwrap();
+        fixture
+    }
+
     fn protected_fixture_directory(path: &Path) {
         use std::os::unix::fs::PermissionsExt;
         fs::create_dir(path).unwrap();
@@ -1649,7 +1668,7 @@ mod tests {
 
     #[test]
     fn lifecycle_location_is_shared_and_does_not_use_public_tmp_names() {
-        let fixture = tempfile::tempdir().unwrap();
+        let fixture = lifecycle_fixture();
         let home = fixture.path().join("account-home");
         protected_fixture_directory(&home);
         let uid = unsafe { libc::geteuid() };
@@ -1666,13 +1685,13 @@ mod tests {
     #[test]
     fn lifecycle_requires_a_protected_account_home() {
         use std::os::unix::fs::PermissionsExt;
-        let fixture = tempfile::tempdir().unwrap();
+        let fixture = lifecycle_fixture();
         let home = fixture.path().join("account-home");
         protected_fixture_directory(&home);
         let uid = unsafe { libc::geteuid() };
         // A normal readable home is fine, but other users must not write it.
         fs::set_permissions(&home, fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(lifecycle_directory(&home, uid).is_ok());
+        lifecycle_directory(&home, uid).unwrap();
         fs::set_permissions(&home, fs::Permissions::from_mode(0o777)).unwrap();
         assert!(lifecycle_directory(&home, uid).is_err());
         assert_eq!(fs::metadata(&home).unwrap().mode() & 0o777, 0o777);
@@ -1685,7 +1704,7 @@ mod tests {
     #[test]
     fn lifecycle_resolves_account_home_links_but_rejects_writable_ancestors() {
         use std::os::unix::fs::{symlink, PermissionsExt};
-        let fixture = tempfile::tempdir().unwrap();
+        let fixture = lifecycle_fixture();
         let parent = fixture.path().join("parent");
         protected_fixture_directory(&parent);
         let home = parent.join("home");
@@ -1711,10 +1730,11 @@ mod tests {
     #[test]
     fn lifecycle_rejects_existing_unsafe_entries_without_mutation() {
         use std::os::unix::fs::{symlink, PermissionsExt};
-        let fixture = tempfile::tempdir().unwrap();
+        let fixture = lifecycle_fixture();
         let home = fixture.path().join("home");
         protected_fixture_directory(&home);
         let uid = unsafe { libc::geteuid() };
+        protected_parent(&home, uid).unwrap();
         let root = home.join(".matrix-play-lifecycle");
         let target = fixture.path().join("precious");
         fs::write(&target, b"keep").unwrap();

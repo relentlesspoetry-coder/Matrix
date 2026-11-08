@@ -1,6 +1,6 @@
 //! Heavy synchronous backend operations run on the blocking pool, not GTK's
 //! main thread or the async executor. Keep their public IPC names unchanged.
-use super::{emulators, Bootstrap, Game};
+use super::{artwork, emulators, Bootstrap, Game};
 
 async fn blocking<T: Send + 'static>(
     operation: impl FnOnce() -> Result<T, String> + Send + 'static,
@@ -32,12 +32,12 @@ pub(crate) async fn list_flatpaks() -> Result<Vec<emulators::FlatpakApp>, String
 
 #[tauri::command]
 pub(crate) async fn get_cover(kind: String, uid: String) -> Result<Option<String>, String> {
-    blocking(move || super::get_cover(kind, uid)).await
+    blocking(move || artwork::run_cover_operation(|| super::get_cover(kind, uid))).await
 }
 
 #[tauri::command]
 pub(crate) async fn save_cover(kind: String, uid: String, bytes: Vec<u8>) -> Result<(), String> {
-    blocking(move || super::save_cover(kind, uid, bytes)).await
+    blocking(move || artwork::run_cover_operation(|| super::save_cover(kind, uid, bytes))).await
 }
 
 #[tauri::command]
