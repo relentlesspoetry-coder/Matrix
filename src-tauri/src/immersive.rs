@@ -306,6 +306,11 @@ fn shad_launcher(mut args: Vec<String>) -> Vec<String> {
             args.push("{game}".into());
         }
     }
+    // A trailing game option relies on Matrix's automatic operand append.
+    // Resolve it here, before the launcher/core delimiter is introduced.
+    if args.last().is_some_and(|arg| arg == "-g" || arg == "--game") {
+        args.push("{game}".into());
+    }
     args.push("--".into());
     let mut core = core.into_iter().skip(1);
     while let Some(arg) = core.next() {
@@ -555,6 +560,35 @@ mod tests {
             ["--fullscreen", "true", "{game}"]
         );
     }
+    #[test]
+    fn qtlauncher_automatic_game_operand_precedes_core_arguments() {
+        let game = Path::new("/library/Title with spaces/eboot.bin");
+        for option in ["-g", "--game"] {
+            for with_core in [false, true] {
+                let mut args = vec!["-d", option];
+                if with_core {
+                    args.extend(["--", "--fullscreen", "false", "--log"]);
+                }
+                let p = profile("/apps/shadPS4-qtlauncher.AppImage", &args);
+                let actual = console_launch_args(&p, "ps4", game).unwrap();
+                let mut expected = vec!["-d", option, game.to_str().unwrap(), "--"];
+                if with_core {
+                    expected.push("--log");
+                }
+                expected.extend(["--fullscreen", "true"]);
+                assert_eq!(actual, expected);
+                assert_eq!(
+                    actual.iter().filter(|arg| arg.as_str() == game.to_str().unwrap()).count(),
+                    1
+                );
+            }
+        }
+        // A supplied placeholder remains a single game operand.
+        let p = profile("/apps/shadPS4-qtlauncher.AppImage", &["-g", "{game}"]);
+        assert_eq!(console_launch_args(&p, "ps4", game).unwrap(),
+            ["-d", "-g", game.to_str().unwrap(), "--", "--fullscreen", "true"]);
+    }
+
     #[test]
     fn dolphin_user_folder_validation_does_not_guess_existing_save_paths() {
         for args in [

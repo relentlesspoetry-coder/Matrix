@@ -17,10 +17,85 @@ fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 pub fn directory() -> Result<PathBuf, String> {
-    // Do not trust TMPDIR/XDG variables to partition the same user's instances.
-    let root = PathBuf::from(format!("/tmp/matrix-play-lifecycle-{}", unsafe {
-        libc::geteuid()
-    }));
+    // Fixed account locations keep all instances together regardless of HOME,
+    // TMPDIR or XDG overrides. Never reserve a public /tmp name: another user
+    // can squat on it and prevent the victim from starting the application.
+    let uid = unsafe { libc::geteuid() };
+    lifecycle_directory(&account_home(uid)?, uid)
+}
+
+fn account_home(uid: u32) -> Result<PathBuf, String> {
+    use std::{ffi::CStr, os::unix::ffi::OsStrExt};
+    // getpwuid_r avoids both environment-dependent homes and libc's shared
+    // passwd buffer. Retry ERANGE, but never allocate without a bound.
+    let mut size = 4096;
+    loop {
+        let mut buffer = vec![0u8; size];
+        let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
+        let mut result = std::ptr::null_mut();
+        let status = unsafe {
+            libc::getpwuid_r(
+                uid,
+                entry.as_mut_ptr(),
+                buffer.as_mut_ptr().cast(),
+                buffer.len(),
+                &mut result,
+            )
+        };
+        if status == libc::ERANGE && size < 1024 * 1024 {
+            size *= 2;
+            continue;
+        }
+        if status != 0 || result.is_null() {
+            return Err("Cannot locate the account home for Matrix lifecycle coordination".into());
+        }
+        let entry = unsafe { entry.assume_init() };
+        if entry.pw_dir.is_null() {
+            return Err("The account has no home directory".into());
+        }
+        let bytes = unsafe { CStr::from_ptr(entry.pw_dir) }.to_bytes();
+        let home = PathBuf::from(std::ffi::OsStr::from_bytes(bytes));
+        if !home.is_absolute() {
+            return Err("The account home must be an absolute directory".into());
+        }
+        return Ok(home);
+    }
+}
+
+fn protected_parent(path: &Path, uid: u32) -> Result<(), String> {
+    if !path.is_absolute() {
+        return Err("Matrix lifecycle parent must be an absolute directory".into());
+    }
+    for (index, ancestor) in path.ancestors().enumerate() {
+        let meta = fs::symlink_metadata(ancestor).map_err(err)?;
+        // Reject symlinks as well as writable ancestors. A root-owned sticky
+        // directory is safe above an already validated owned child (e.g. a
+        // temporary home used by tests); it is never an acceptable parent itself.
+        let protected = meta.mode() & 0o022 == 0
+            || (index > 0 && meta.uid() == 0 && meta.mode() & 0o1000 != 0);
+        if !meta.is_dir()
+            || (meta.uid() != 0 && meta.uid() != uid)
+            || !protected
+            || (index == 0 && meta.uid() != uid)
+        {
+            return Err("Unsafe Matrix lifecycle parent; startup stopped without modifying it".into());
+        }
+    }
+    Ok(())
+}
+
+fn lifecycle_directory(home: &Path, uid: u32) -> Result<PathBuf, String> {
+    // Do not switch to /run/user when a graphical login appears: a process
+    // started before that login must share the same gate with later instances.
+    if !home.is_absolute() {
+        return Err("The account home must be an absolute directory".into());
+    }
+    // NSS is the trusted source of the home, and systems such as Silverblue
+    // intentionally symlink /home to /var/home. Validate its resolved location
+    // and every ancestor; never resolve the private lifecycle entry itself.
+    let home = home.canonicalize().map_err(err)?;
+    protected_parent(&home, uid)?;
+    let root = home.join(".matrix-play-lifecycle");
     private_directory(&root)?;
     Ok(root)
 }
@@ -1536,6 +1611,124 @@ mod tests {
         // The child has not been reaped yet; a zombie is no longer executing.
         assert!(child.wait().unwrap().success());
     }
+    fn protected_fixture_directory(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::create_dir(path).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+
+    #[test]
+    fn account_home_does_not_follow_environment_overrides() {
+        const EXPECTED: &str = "MATRIX_ACCOUNT_HOME_FIXTURE";
+        let uid = unsafe { libc::geteuid() };
+        if let Some(expected) = std::env::var_os(EXPECTED) {
+            assert_eq!(account_home(uid).unwrap(), PathBuf::from(expected));
+            return;
+        }
+        // Change process-global environment only in a disposable test process.
+        let home = account_home(uid).unwrap();
+        let (_, module) = module_path!().split_once("::").unwrap();
+        let name = format!("{module}::account_home_does_not_follow_environment_overrides");
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &name])
+            .env(EXPECTED, &home)
+            .env("HOME", "/not-the-account-home")
+            .env("TMPDIR", "/not-the-account-home")
+            .env("XDG_RUNTIME_DIR", "/not-the-account-home")
+            .env("XDG_DATA_HOME", "/not-the-account-home")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{stdout}\n{stderr}");
+        assert!(
+            stdout.contains("test result: ok. 1 passed; 0 failed;"),
+            "Expected exactly one passing child test, got: {stdout}\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn lifecycle_location_is_shared_and_does_not_use_public_tmp_names() {
+        let fixture = tempfile::tempdir().unwrap();
+        let home = fixture.path().join("account-home");
+        protected_fixture_directory(&home);
+        let uid = unsafe { libc::geteuid() };
+        let first = lifecycle_directory(&home, uid).unwrap();
+        let second = lifecycle_directory(&home, uid).unwrap();
+        assert_eq!(first, home.join(".matrix-play-lifecycle"));
+        assert_eq!(first, second);
+        let held = gate(&first, true).unwrap();
+        assert!(gate(&second, false).is_err());
+        drop(held);
+        assert!(gate(&second, false).is_ok());
+    }
+
+    #[test]
+    fn lifecycle_requires_a_protected_account_home() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = tempfile::tempdir().unwrap();
+        let home = fixture.path().join("account-home");
+        protected_fixture_directory(&home);
+        let uid = unsafe { libc::geteuid() };
+        // A normal readable home is fine, but other users must not write it.
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(lifecycle_directory(&home, uid).is_ok());
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(lifecycle_directory(&home, uid).is_err());
+        assert_eq!(fs::metadata(&home).unwrap().mode() & 0o777, 0o777);
+        assert!(lifecycle_directory(Path::new("relative"), uid).is_err());
+        assert!(lifecycle_directory(&fixture.path().join("absent"), uid).is_err());
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(protected_parent(&home, uid.wrapping_add(1)).is_err());
+    }
+
+    #[test]
+    fn lifecycle_resolves_account_home_links_but_rejects_writable_ancestors() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let fixture = tempfile::tempdir().unwrap();
+        let parent = fixture.path().join("parent");
+        protected_fixture_directory(&parent);
+        let home = parent.join("home");
+        protected_fixture_directory(&home);
+        let link = fixture.path().join("linked-parent");
+        symlink(&parent, &link).unwrap();
+        let uid = unsafe { libc::geteuid() };
+        let expected = home.join(".matrix-play-lifecycle");
+        assert_eq!(
+            lifecycle_directory(&link.join("home"), uid).unwrap(),
+            expected
+        );
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        let direct_link = fixture.path().join("home-link");
+        symlink(&home, &direct_link).unwrap();
+        assert_eq!(lifecycle_directory(&direct_link, uid).unwrap(), expected);
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(lifecycle_directory(&home, uid).is_err());
+        assert!(lifecycle_directory(&direct_link, uid).is_err());
+        assert_eq!(fs::metadata(&parent).unwrap().mode() & 0o777, 0o777);
+    }
+
+    #[test]
+    fn lifecycle_rejects_existing_unsafe_entries_without_mutation() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let fixture = tempfile::tempdir().unwrap();
+        let home = fixture.path().join("home");
+        protected_fixture_directory(&home);
+        let uid = unsafe { libc::geteuid() };
+        let root = home.join(".matrix-play-lifecycle");
+        let target = fixture.path().join("precious");
+        fs::write(&target, b"keep").unwrap();
+        symlink(&target, &root).unwrap();
+        assert!(lifecycle_directory(&home, uid).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"keep");
+        assert!(fs::symlink_metadata(&root).unwrap().file_type().is_symlink());
+        fs::remove_file(&root).unwrap();
+        protected_fixture_directory(&root);
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(lifecycle_directory(&home, uid).is_err());
+        assert_eq!(fs::metadata(&root).unwrap().mode() & 0o777, 0o755);
+    }
+
     #[test]
     fn symlink_and_public_directory_are_rejected_without_touching_target() {
         let root = tempfile::tempdir().unwrap();

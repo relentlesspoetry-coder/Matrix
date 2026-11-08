@@ -7,6 +7,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import pwd
 import subprocess
 import sys
 import time
@@ -98,7 +99,9 @@ def exercise(binary, env, home, invoke, js, wait_for, coordinator_tests=None):
 
 
 def _exercise(binary, env, home, invoke, js, wait_for, coordinator_tests):
-    registry = Path(f'/tmp/matrix-play-lifecycle-{os.geteuid()}')
+    # Match the backend's fixed account identity, not this fixture's HOME/XDG
+    # overrides. All windows and coordinator helpers must share one registry.
+    registry = Path(pwd.getpwuid(os.geteuid()).pw_dir).resolve()/'.matrix-play-lifecycle'
     appimage = binary.name.endswith('.AppImage')
 
     def live_pids():

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.17
+
+- Keep working automatically detected emulator selections when a bounded AppImage scan omits them or Flatpak inventory fails. Replace a saved installation only after confirming it is unavailable; preserve manual selections and uncertain filesystem states.
+- Place the automatic game operand before shadPS4 QtLauncher's core delimiter when a custom argument list ends with `-g` or `--game`.
+- Run library bootstrap/scans, Flatpak inventory/profile validation, and cover reads/writes on background blocking workers so slow storage or external inventory cannot freeze the native UI thread. Keep existing IPC names and library data unchanged.
+- Move lifecycle coordination out of predictable shared `/tmp` names into a validated private directory under the account database's canonical home. Ignore environment overrides, support legitimate home symlinks, preserve cross-instance leases, and leave unsafe existing entries untouched. Close older Matrix copies before upgrading and do not launch them during installation.
+- Add regression coverage for incomplete discovery, launch argument placement, protected lifecycle locations and native responsiveness during deliberately delayed Flatpak inventory. No gameplay compatibility or new emulator support is claimed.
+
 ## 0.5.16
 
 - Discover fixed local `sce_sys/icon0.png` artwork for extracted PS5 eboot titles in their own game folders. Imported covers, same-stem images and folder covers retain priority. No PS5 online provider, metadata URL lookup, decryption or gameplay support is added.

@@ -128,6 +128,10 @@ pub(crate) struct Report {
     pub linked: Vec<String>,
     pub ambiguous: Vec<String>,
     pub notices: Vec<String>,
+    // None means listing failed or no complete inventory was supplied. Absence
+    // from the bounded candidate scan must never imply an uninstall.
+    #[serde(skip)]
+    pub(crate) flatpak_inventory: Option<Vec<FlatpakApp>>,
 }
 fn engine_for_name(name: &str) -> Option<&'static Engine> {
     let lower = name.to_ascii_lowercase();
@@ -305,6 +309,26 @@ fn desktop_paths(text: &str) -> Vec<PathBuf> {
     }
     result
 }
+fn confirmed_unavailable(profile: &EmulatorProfile, report: &Report) -> bool {
+    if profile.launcher == Launcher::Flatpak {
+        return report.flatpak_inventory.as_ref().is_some_and(|apps| {
+            !apps.iter().any(|app| {
+                app.app_id == profile.flatpak_id
+                    && app.installation == profile.flatpak_installation
+            })
+        });
+    }
+    // A scan limit, inaccessible directory, or transient I/O error is not
+    // evidence that the selected installation has been removed.
+    match fs::metadata(&profile.emulator_path) {
+        Ok(metadata) => {
+            use std::os::unix::fs::PermissionsExt;
+            !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0
+        }
+        Err(error) => matches!(error.kind(), std::io::ErrorKind::NotFound),
+    }
+}
+
 pub(crate) fn auto_link(settings: &mut Settings, report: &mut Report) {
     for spec in SPECS {
         // Experimental successor platforms require an explicit manual choice.
@@ -327,6 +351,7 @@ pub(crate) fn auto_link(settings: &mut Settings, report: &mut Report) {
                     .candidates
                     .iter()
                     .any(|c| c.ready && c.id == identity)
+                || !confirmed_unavailable(profile, report)
             {
                 continue;
             }
@@ -402,7 +427,10 @@ pub(crate) fn discover() -> Result<Report, String> {
     let mut report = Report::default();
     let mut map = BTreeMap::new();
     match emulators::list_flatpaks() {
-        Ok(apps) => add_flatpaks(&mut map, &apps),
+        Ok(apps) => {
+            add_flatpaks(&mut map, &apps);
+            report.flatpak_inventory = Some(apps);
+        }
         Err(_) => report.notices.push(
             "Flatpak discovery unavailable; AppImage and executable detection still work.".into(),
         ),
@@ -483,6 +511,82 @@ mod tests {
         fs::write(path, b"#!/bin/sh\nexit 0\n").unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
     }
+    #[test]
+    fn incomplete_scan_preserves_existing_executable_and_uncertain_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let selected = root.path().join("pcsx2-selected");
+        let replacement = root.path().join("pcsx2-replacement");
+        executable_fixture(&selected);
+        executable_fixture(&replacement);
+        let mut candidates = BTreeMap::new();
+        add_native(&mut candidates, spec("ps2").unwrap(), replacement.clone());
+        let mut report = Report {
+            candidates: candidates.into_values().collect(),
+            ..Default::default()
+        };
+        let mut settings = Settings::default();
+        settings.profiles.insert("ps2".into(), EmulatorProfile {
+            emulator_path: selected.to_string_lossy().into_owned(),
+            auto_detected: true,
+            ..Default::default()
+        });
+        auto_link(&mut settings, &mut report);
+        assert_eq!(settings.profiles["ps2"].emulator_path, selected.to_string_lossy());
+        assert!(report.linked.is_empty());
+
+        // An I/O error (here, a symlink loop) is uncertainty, not removal.
+        fs::remove_file(&selected).unwrap();
+        std::os::unix::fs::symlink(&selected, &selected).unwrap();
+        auto_link(&mut settings, &mut report);
+        assert_eq!(settings.profiles["ps2"].emulator_path, selected.to_string_lossy());
+        assert!(report.linked.is_empty());
+
+        // A confirmed missing target can still recover automatically.
+        fs::remove_file(&selected).unwrap();
+        auto_link(&mut settings, &mut report);
+        assert_eq!(settings.profiles["ps2"].emulator_path, replacement.to_string_lossy());
+        assert_eq!(report.linked, ["ps2"]);
+    }
+
+    #[test]
+    fn flatpak_replacement_requires_successful_inventory_confirming_removal() {
+        let selected = FlatpakApp {
+            app_id: "net.pcsx2.PCSX2".into(),
+            name: "PCSX2".into(),
+            installation: "user".into(),
+        };
+        let replacement = FlatpakApp {
+            installation: "system".into(),
+            ..selected.clone()
+        };
+        let mut map = BTreeMap::new();
+        add_flatpaks(&mut map, &[replacement.clone()]);
+        let mut report = Report {
+            candidates: map.into_values().collect(),
+            ..Default::default()
+        };
+        let mut settings = Settings::default();
+        settings.profiles.insert("ps2".into(), EmulatorProfile {
+            launcher: Launcher::Flatpak,
+            flatpak_id: selected.app_id.clone(),
+            flatpak_installation: selected.installation.clone(),
+            auto_detected: true,
+            ..Default::default()
+        });
+        // Failed listing, then a successful inventory that includes the selection.
+        for inventory in [None, Some(vec![selected, replacement.clone()])] {
+            report.flatpak_inventory = inventory;
+            auto_link(&mut settings, &mut report);
+            assert_eq!(settings.profiles["ps2"].flatpak_installation, "user");
+            assert!(report.linked.is_empty());
+        }
+        report.flatpak_inventory = Some(vec![replacement]);
+        auto_link(&mut settings, &mut report);
+        assert_eq!(settings.profiles["ps2"].flatpak_installation, "system");
+        assert_eq!(report.linked, ["ps2"]);
+        assert!(serde_json::to_value(&report).unwrap().get("flatpakInventory").is_none());
+    }
+
     #[test]
     fn experimental_custom_profiles_are_never_automatically_linked_or_replaced() {
         let mut report = Report::default();
@@ -761,6 +865,7 @@ mod tests {
         add_flatpaks(&mut map, &apps);
         let mut report = Report {
             candidates: map.into_values().collect(),
+            flatpak_inventory: Some(apps.to_vec()),
             ..Default::default()
         };
         let mut settings = Settings::default();

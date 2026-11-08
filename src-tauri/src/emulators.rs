@@ -49,7 +49,6 @@ fn parse_flatpaks(text: &str) -> Vec<FlatpakApp> {
     }
     apps.into_values().collect()
 }
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn list_flatpaks() -> Result<Vec<FlatpakApp>, String> {
     let output = launch_command("flatpak").args(["list","--app","--columns=application,name,installation"]).env("LC_ALL","C").output().map_err(|_|"Flatpak was not found. Install your emulator through Software first, or choose an AppImage / executable.")?;
     if !output.status.success() {

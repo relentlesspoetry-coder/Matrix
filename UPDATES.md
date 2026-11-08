@@ -1,5 +1,13 @@
 # Matrix Play updates
 
+Lifecycle coordination uses the account database's canonical home directory and
+a private `.matrix-play-lifecycle` child, independent of HOME, TMPDIR and XDG
+overrides. Matrix validates ownership and protected ancestors before creating it.
+It never repairs, removes or trusts an unrelated user's old `/tmp` entry. This
+prevents a different local account from reserving a public temporary name and
+blocking application startup. Close older Matrix versions before first starting
+this version so every running instance uses the same coordination location.
+
 The app checks published releases in the public `relentlesspoetry-coder/Matrix` GitHub repository, including testing/prerelease versions. It selects the highest valid semantic version among the 100 most recent releases, compares it with its compiled version, and rejects downgrades. Successful checks are cached for 60 seconds. Failed checks, downloads and installations, including cancellation, clear that cache so Check again can retry immediately. It does not run a background updater or install without a click.
 
 A release contains `update-manifest.json`, a raw detached 64-byte Ed25519 `update-manifest.sig`, DEB and AppImage packages, source ZIP and `SHA256SUMS`. The pinned public key is `update-core/update-public-key.bin`; its SHA-256 fingerprint is `b657a26878bcfa579481379f1cc650d9322b27a0d99bf65f3a30e07de4c3aaff`. Key rotation requires distributing an app with the new public key. Back up the private key securely; never add it to the source repository.

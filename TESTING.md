@@ -1,5 +1,22 @@
 # Test Matrix Play on Linux
 
+## Version 0.5.17 deep-review repairs
+
+The candidate repairs incomplete-discovery profile replacement, QtLauncher game
+operand placement, main-thread blocking IPC, and cross-user lifecycle-directory
+name reservation. Local validation passes all 134 JavaScript fixtures, managed
+folder checks, eleven CI-account tests, five native-fixture tests, four DEB-helper
+checks and release/signing tests. Python and JavaScript syntax and patch whitespace
+checks pass. Release tests use disposable repositories and keys, never publication.
+
+Rust/Cargo are absent in this review executor. The launch-log fixture is skipped
+without its compiler, and Chromium fails before page load because its local IPC
+socket is unavailable, including after the supported escalation. New Rust and
+native slow-inventory regressions must pass in exact-candidate CI before release.
+No user computer, real emulator, proprietary game or host package installation
+was used by the review. Native tests use disposable Flatpak/launcher shims; they
+do not certify actual game or emulator compatibility.
+
 ## Version 0.5.16 Switch product-code and PS5 local artwork
 
 Local validation passes 25 ordinary cover-core tests (four live checks excluded),

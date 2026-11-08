@@ -1,0 +1,71 @@
+//! Heavy synchronous backend operations run on the blocking pool, not GTK's
+//! main thread or the async executor. Keep their public IPC names unchanged.
+use super::{emulators, Bootstrap, Game};
+
+async fn blocking<T: Send + 'static>(
+    operation: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn bootstrap() -> Result<Bootstrap, String> {
+    blocking(super::bootstrap).await
+}
+
+#[tauri::command]
+pub(crate) async fn scan_console(id: String) -> Result<Vec<Game>, String> {
+    blocking(move || super::scan_console(id)).await
+}
+
+#[tauri::command]
+pub(crate) async fn scan_steam() -> Result<Vec<Game>, String> {
+    blocking(super::scan_steam).await
+}
+
+#[tauri::command]
+pub(crate) async fn list_flatpaks() -> Result<Vec<emulators::FlatpakApp>, String> {
+    blocking(emulators::list_flatpaks).await
+}
+
+#[tauri::command]
+pub(crate) async fn get_cover(kind: String, uid: String) -> Result<Option<String>, String> {
+    blocking(move || super::get_cover(kind, uid)).await
+}
+
+#[tauri::command]
+pub(crate) async fn save_cover(kind: String, uid: String, bytes: Vec<u8>) -> Result<(), String> {
+    blocking(move || super::save_cover(kind, uid, bytes)).await
+}
+
+#[tauri::command]
+pub(crate) async fn save_emulator(
+    id: String,
+    emulator_name: String,
+    emulator_path: String,
+    launch_args: Vec<String>,
+    launcher: Option<String>,
+    flatpak_id: Option<String>,
+    flatpak_installation: Option<String>,
+    allow_execute: Option<bool>,
+    extract_appimage: Option<bool>,
+    flatpak_runtime_fonts: Option<bool>,
+) -> Result<(), String> {
+    blocking(move || {
+        super::save_emulator(
+            id,
+            emulator_name,
+            emulator_path,
+            launch_args,
+            launcher,
+            flatpak_id,
+            flatpak_installation,
+            allow_execute,
+            extract_appimage,
+            flatpak_runtime_fonts,
+        )
+    })
+    .await
+}

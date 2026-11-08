@@ -6,6 +6,8 @@
 mod appimage_environment;
 mod artwork;
 mod bounded_io;
+#[cfg(feature = "desktop")]
+mod desktop_commands;
 #[cfg(test)]
 mod console_library_tests;
 mod discovery;
@@ -427,7 +429,6 @@ fn update_settings<T>(
     settings::update(&config_file()?, change)
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 fn bootstrap() -> Result<Bootstrap, String> {
     create_layout()?;
     // Discovery may be slow. Merge its candidates into the latest settings only
@@ -684,7 +685,6 @@ fn scan_console_with_customizations(
     Ok(games)
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 fn scan_console(id: String) -> Result<Vec<Game>, String> {
     scan_console_impl(&id)
 }
@@ -884,7 +884,6 @@ fn scan_steam_in(home: &Path, registered: &[steam_libraries::RegisteredLibrary])
     });
     results
 }
-#[cfg_attr(feature = "desktop", tauri::command)]
 fn scan_steam() -> Result<Vec<Game>, String> {
     Ok(scan_steam_in(&home()?, &load_settings()?.steam_libraries)
         .into_iter()
@@ -921,7 +920,6 @@ async fn discover_emulators() -> Result<discovery::Report, String> {
         .map_err(|error| error.to_string())?
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 fn save_emulator(
     id: String,
     emulator_name: String,
@@ -1407,7 +1405,6 @@ fn open_cover_project() -> Result<(), String> {
         .map_err(|e| format!("Cannot open TheCoverProject: {e}"))
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 fn get_cover(kind: String, uid: String) -> Result<Option<String>, String> {
     let game = validate_game(&kind, &uid)?;
     let Some(bytes) = read_cover_bytes(&kind, &uid, &game)? else {
@@ -1419,7 +1416,6 @@ fn get_cover(kind: String, uid: String) -> Result<Option<String>, String> {
     Ok(Some(format!("data:{mime};base64,{}", BASE64.encode(bytes))))
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 fn save_cover(kind: String, uid: String, bytes: Vec<u8>) -> Result<(), String> {
     let _ = validate_game(&kind, &uid)?;
     if bytes.is_empty() || bytes.len() > MAX_COVER_BYTES {
@@ -1600,7 +1596,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            bootstrap,
+            desktop_commands::bootstrap,
             updates::update_status,
             updates::check_updates,
             updates::download_update,
@@ -1610,18 +1606,18 @@ fn main() {
             updates::open_update_releases,
             graphics_diagnostics,
             report_startup,
-            scan_console,
+            desktop_commands::scan_console,
             libraries::list_library_folders,
             libraries::add_library_folder,
             libraries::remove_library_folder,
             libraries::browse_library_folder,
-            scan_steam,
+            desktop_commands::scan_steam,
             steam_libraries::list_steam_libraries,
             steam_libraries::add_steam_library,
             steam_libraries::remove_steam_library,
-            save_emulator,
+            desktop_commands::save_emulator,
             discover_emulators,
-            emulators::list_flatpaks,
+            desktop_commands::list_flatpaks,
             emulators::browse_emulator,
             favorites::set_favorite,
             favorites::import_favorites,
@@ -1634,8 +1630,8 @@ fn main() {
             launches::get_launch_status,
             launch_steam_game,
             launch_windows_game,
-            get_cover,
-            save_cover,
+            desktop_commands::get_cover,
+            desktop_commands::save_cover,
             download_cover,
             save_artwork_settings,
             open_cover_project,

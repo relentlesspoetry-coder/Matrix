@@ -196,6 +196,45 @@ def main():
             discovered=invoke('bootstrap')
             assert discovered['profiles']['n64']['flatpakId']=='com.github.Rosalie241.RMG'
             assert discovered['profiles']['n64']['autoDetected'] is True
+            # A slow external inventory must not freeze native window commands.
+            # The bounded shim only waits on files inside this disposable HOME.
+            healthy_inventory=flatpak.read_text()
+            inventory_started=home/'inventory.started'
+            inventory_release=home/'inventory.release'
+            delayed_inventory=healthy_inventory.replace('if [ "$1" = "list" ]; then\n',
+                'if [ "$1" = "list" ]; then\n'
+                '  touch "$HOME/inventory.started"\n'
+                '  remaining=200\n'
+                '  while [ ! -e "$HOME/inventory.release" ] && [ "$remaining" -gt 0 ]; do\n'
+                '    sleep 0.05; remaining=$((remaining - 1))\n'
+                '  done\n')
+            background_commands=[('bootstrap',{}),('list_flatpaks',{}),('save_emulator',{
+                'id':'n64','emulatorName':'Missing fixture','emulatorPath':'',
+                'launchArgs':['{game}'],'launcher':'flatpak',
+                'flatpakId':'org.matrix.Missing','flatpakInstallation':'user'})]
+            try:
+                for command,arguments in background_commands:
+                    inventory_started.unlink(missing_ok=True)
+                    inventory_release.unlink(missing_ok=True)
+                    flatpak.write_text(delayed_inventory)
+                    started=time.monotonic()
+                    js('''window.__inventoryResult={done:false};
+                        window.__TAURI__.core.invoke(arguments[0],arguments[1])
+                        .then(value=>window.__inventoryResult={done:true,value})
+                        .catch(error=>window.__inventoryResult={done:true,error:String(error)});''',command,arguments)
+                    wait_for(lambda: inventory_started.exists(),timeout=5)
+                    assert time.monotonic()-started < 5, command+' blocked native dispatch'
+                    assert invoke('update_status')['phase']=='idle'
+                    assert time.monotonic()-started < 5, command+' blocked a separate native command'
+                    assert not js('return window.__inventoryResult.done'), 'Inventory must still be waiting'
+                    inventory_release.touch()
+                    wait_for(lambda: js('return window.__inventoryResult.done'))
+                    error=js('return window.__inventoryResult.error || null')
+                    assert bool(error)==(command=='save_emulator'), (command,error)
+            finally:
+                inventory_release.touch()
+                flatpak.write_text(healthy_inventory)
+            print('PASS: slow bootstrap, Flatpak listing and profile validation leave native IPC responsive')
             # Reproduce a shadPS4 AppImage moved after discovery, without executing it.
             old_ps4=home/'Downloads/shadPS4QtLauncher-linux-qt-build/shadPS4QtLauncher-qt.AppImage'
             old_ps4.parent.mkdir(parents=True)
