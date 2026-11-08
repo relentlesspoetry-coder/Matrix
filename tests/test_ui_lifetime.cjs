@@ -30,7 +30,8 @@ function fixture() {
       focus() { document.activeElement = this; }, querySelectorAll() { return []; } };
   }
   const node = selector => { if (!nodes.has(selector)) nodes.set(selector, makeNode()); return nodes.get(selector); };
-  for (const selector of ['#screen', '#breadcrumbs', '#nav-consoles', '#nav-steam', '#nav-windows', '#nav-settings', '#game-results', '#overlay-root', '.app-shell', '#auto-covers', '#cover-style']) node(selector);
+  for (const selector of ['#screen', '#breadcrumbs', '#nav-consoles', '#nav-steam', '#nav-windows', '#nav-settings', '#game-results', '#overlay-root', '.app-shell', '#auto-covers', '#auto-title-covers', '#cover-style']) node(selector);
+  node('#auto-title-covers').checked=false;
   const root = node('#overlay-root');
   let html = '';
   Object.defineProperty(root, 'innerHTML', { get: () => html, set(value) {
@@ -138,6 +139,25 @@ test('failed artwork preference save does not replace the newly active page', as
 });
 
 for (const outcome of ['resolve', 'reject']) {
+  test(`title-provider opt-in restores replacement controls after ${outcome}`, async () => {
+    const f=fixture(), saving=deferred();
+    f.responders.save_artwork_settings=()=>saving.promise;
+    f.goSettings(); f.node('#auto-covers').checked=true;
+    f.node('#auto-title-covers').checked=true; f.node('#cover-style').value='default';
+    // Exercise the real change-event route, not only a direct save call.
+    f.listeners.change[0]({target:{id:'auto-title-covers'}});
+    assert.equal(f.calls[0].name,'save_artwork_settings');
+    assert.equal(f.calls[0].args.titleEnabled,true);
+    assert.equal(f.node('#auto-title-covers').disabled,true);
+    const old=f.node('#auto-title-covers');
+    old.replaceWith({...old,checked:false});
+    saving[outcome](outcome==='resolve' ? {enabled:true,style:'default',titleEnabled:true} : 'disk full');
+    await tick();
+    assert.equal(f.state.artwork.titleEnabled,outcome==='resolve');
+    assert.equal(f.node('#auto-title-covers').checked,outcome==='resolve');
+    assert.equal(f.node('#auto-title-covers').disabled,false);
+  });
+
   test(`artwork preferences restore current Settings controls after ${outcome}`, async () => {
     const f = fixture(), saving = deferred();
     f.responders.save_artwork_settings = () => saving.promise;

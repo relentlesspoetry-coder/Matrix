@@ -1,7 +1,8 @@
 /* Matrix Play v0.5.14 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
-const AUTO_COVER_KINDS = ['ps1','ps2','gamecube','wii'];
+const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
+const AUTO_COVER_KINDS = ['ps1','ps2','gamecube','wii',...TITLE_COVER_KINDS];
 const byId = Object.fromEntries(consoles.map(consoleInfo => [consoleInfo.id, consoleInfo]));
 const state = {
   page: 'home', consoleId: null, vendor: 'All', query: '',
@@ -12,7 +13,7 @@ const state = {
   steam: [], windows: [],
   discovery:{candidates:[],linked:[],ambiguous:[],notices:[]}, launches:{},launchBusy:{},launchGeneration:{},
   missingArt: new Set(), pendingArt: new Map(),
-  artwork: {enabled:true, style:"default"}, artworkSaving: false, coverStatus: new Map(), coverGeneration: 0, artRevision: 0,
+  artwork: {enabled:true, style:"default", titleEnabled:false}, artworkSaving: false, coverStatus: new Map(), coverGeneration: 0, artRevision: 0,
 };
 const $ = selector => document.querySelector(selector);
 const nativeInvoke = (name, args = {}) => window.__TAURI__.core.invoke(name, args);
@@ -365,10 +366,12 @@ function renderSettings() {
     <div class="notice" style="margin:0 0 25px">${glyph('info')}<span>${state.native ? 'Choose Set up for a console, then select AppImage, Flatpak, or another executable. Browse for an AppImage anywhere, or choose an already-installed Flatpak from the list.' : 'Browser preview settings are not connected to your filesystem. Native folder creation and launching require the Matrix Play Linux application.'}</span></div>
     ${state.native ? discoverySummary() : ''}
     <section class="artwork-settings"><h2>Cover artwork</h2>
-    <p>PS1/PS2 covers from xlenore and GameCube/Wii covers from GameTDB, matched by exact console and disc identity. Unknown or conflicting IDs need your review. Local covers take priority.</p>
+    <p>PS1/PS2 covers use exact xlenore serials; GameCube/Wii use exact GameTDB disc IDs. Eleven more libraries use exact Libretro catalog titles, including region and edition. Local covers take priority. Catalogs are incomplete, especially Vita.</p>
     <label><input type="checkbox" id="auto-covers" ${state.artwork.enabled ? 'checked' : ''} ${state.native && !state.artworkSaving ? '' : 'disabled'}> Download missing covers for supported consoles after library scans</label>
+    <label><input type="checkbox" id="auto-title-covers" ${state.artwork.titleEnabled ? 'checked' : ''} ${state.native && !state.artworkSaving ? '' : 'disabled'}> Enable automatic title-based covers: send filename-based game titles to Libretro</label>
     <label for="cover-style">Cover style</label><select id="cover-style" ${state.native && !state.artworkSaving ? '' : 'disabled'}><option value="default" ${state.artwork.style==='default'?'selected':''}>Default</option><option value="3d" ${state.artwork.style==='3d'?'selected':''}>3D</option></select>
-    <p>Downloaded covers stay on this computer for offline use. Requests send the serial or disc ID, region and style to GitHub or GameTDB; your game files and full paths are not uploaded.</p>
+    <p>Downloaded covers stay on this computer for offline use. Requests send the game serial, disc ID or filename-based catalog title, console and style to GitHub, GameTDB or Libretro; your game files and full paths are not uploaded. Libretro supplies flat box covers even when 3D is selected.</p>
+    <p>Switch, PS5 and Switch 2 still need local covers while a reliable provider is verified. Game Boy and Game Boy Color use separate catalogs selected by .gb/.gbc extensions; ambiguous archives need a local cover.</p>
     <p>TheCoverProject: manual only. Automated access permission has not been established. Download in your browser, then use Choose cover in game details.</p>
     <button type="button" class="button button-ghost" data-action="cover-project">Open TheCoverProject</button><p id="cover-scan-status" role="status"></p></section>
     <div class="section-toolbar"><h2 class="section-title">Console profiles</h2><span class="status">${configuredCount()} / ${consoles.length} saved</span></div>
@@ -681,7 +684,7 @@ function openGame(id, uid) {
     <p class="detail-description">${consoleInfo.libraryOnly || consoleInfo.customEmulator ? escapeHtml(consoleInfo.supportNote) : state.native ? 'The Play button starts this file fullscreen with the recognized emulator’s game-only launch options. Custom launchers need their own fullscreen arguments.' : `The native application will launch this game using ${escapeHtml(state.configs[id]?.emulatorName || consoleInfo.emulator)}. This browser preview cannot execute games.`}</p>
     ${consoleInfo.libraryOnly ? '' : `<button type="button" class="button button-primary launch-button" data-action="play-console">${glyph('play')} Play game</button>`}
     <div class="detail-actions"><button type="button" class="button button-ghost" data-action="pick-cover">${glyph('image')} Choose cover</button><button type="button" class="button button-ghost" data-action="favorite" data-id="${id}" data-uid="${escapeHtml(uid)}" aria-pressed="${liked}">${glyph('heart')} ${liked ? 'Unfavorite' : 'Favorite'}</button></div>
-    ${state.native ? `<section class="cover-tools"><h3>Cover artwork</h3><p class="cover-result" role="status">${escapeHtml(coverMessage(id,uid))}</p>${AUTO_COVER_KINDS.includes(id) ? `<label for="cover-serial">${['gamecube','wii'].includes(id) ? 'Confirm disc ID' : 'Confirm game serial'}</label><input id="cover-serial" placeholder="${id==='gamecube' ? 'GMSE01' : id==='wii' ? 'RMGE01' : 'SLUS-20312'}" value="${escapeHtml(state.coverStatus.get(artKey(id,uid))?.serial || '')}" maxlength="16"><small>Use the identity for this exact game, region and disc. Compressed images may need an ID entered here.</small><button type="button" class="button button-ghost" data-action="download-cover">Find exact cover</button>` : '<p>Automatic artwork is available for PS1, PS2, GameCube and Wii. Choose a local image for this console.</p>'}<button type="button" class="button button-ghost" data-action="cover-project">Open TheCoverProject</button></section>` : ''}
+    ${state.native ? `<section class="cover-tools"><h3>Cover artwork</h3><p class="cover-result" role="status">${escapeHtml(coverMessage(id,uid))}</p>${AUTO_COVER_KINDS.includes(id) ? `<label for="cover-serial">${TITLE_COVER_KINDS.includes(id) ? 'Confirm exact catalog title' : ['gamecube','wii'].includes(id) ? 'Confirm disc ID' : 'Confirm game serial'}</label><input id="cover-serial" placeholder="${TITLE_COVER_KINDS.includes(id) ? 'Exact title (USA) (Rev 1)' : id==='gamecube' ? 'GMSE01' : id==='wii' ? 'RMGE01' : 'SLUS-20312'}" value="${escapeHtml(state.coverStatus.get(artKey(id,uid))?.serial || '')}" maxlength="${TITLE_COVER_KINDS.includes(id) ? 240 : 16}"><small>${TITLE_COVER_KINDS.includes(id) ? 'Match the Libretro title exactly, including region, language and edition. No fuzzy matching or region guessing. Only flat covers are available.' : 'Use the identity for this exact game, region and disc. Compressed images may need an ID entered here.'}</small><button type="button" class="button button-ghost" data-action="download-cover">Find exact cover</button>` : '<p>No verified automatic provider for this console yet. Choose a local image; existing covers are kept.</p>'}<button type="button" class="button button-ghost" data-action="cover-project">Open TheCoverProject</button></section>` : ''}
     <p class="detail-hint">${consoleInfo.libraryOnly ? 'Collection files can have local covers and favorites. Launching is unavailable for this system.' : state.native ? 'The configured emulator is required to launch this title. Cover artwork is stored under ~/.local/share/matrix/covers.' : 'Preview only. Play does not execute an emulator. Custom artwork is saved in this browser.'}</p>
   </aside></div>`;
   $('.detail-panel .close').focus();
@@ -793,8 +796,9 @@ async function loadCover(file) {
 }
 function coverMessage(kind,uid) {
   const status = state.coverStatus.get(artKey(kind,uid));
+  if (!status && TITLE_COVER_KINDS.includes(kind) && !state.artwork.titleEnabled) return 'Enable title-based covers in Settings, or confirm an exact title here.';
   if (!status) return AUTO_COVER_KINDS.includes(kind) ? (state.artwork.enabled ? 'Waiting for automatic artwork scan.' : 'Automatic artwork is off.') : 'Choose a local cover for this console.';
-  return [status.message, status.serial, status.source ? `Identity: ${status.source}` : '', status.url ? (['gamecube','wii'].includes(kind) ? 'Provider: GameTDB' : 'Provider: xlenore on GitHub') : ''].filter(Boolean).join(' · ');
+  return [status.message, status.serial, status.source ? `Identity: ${status.source}` : '', status.url ? (TITLE_COVER_KINDS.includes(kind) ? 'Provider: Libretro' : ['gamecube','wii'].includes(kind) ? 'Provider: GameTDB' : 'Provider: xlenore on GitHub') : ''].filter(Boolean).join(' · ');
 }
 function updateCoverStatus(kind,uid) {
   if (state.selectedGame?.id === kind && state.selectedGame?.uid === uid) {
@@ -821,7 +825,7 @@ async function scanArtwork() {
   const generation=++state.coverGeneration;
   if (!state.native || !state.artwork.enabled) return;
   let complete=0;
-  const games=AUTO_COVER_KINDS.flatMap(kind => (state.imported[kind] || []).map(g=>({kind,uid:g.uid})));
+  const games=AUTO_COVER_KINDS.filter(kind => !TITLE_COVER_KINDS.includes(kind) || state.artwork.titleEnabled).flatMap(kind => (state.imported[kind] || []).map(g=>({kind,uid:g.uid})));
   for (const {kind,uid} of games) {
     if (generation!==state.coverGeneration || !state.artwork.enabled) return;
     try { await fetchArtwork(kind,uid,null,generation); }
@@ -837,13 +841,15 @@ async function scanArtwork() {
 async function saveArtworkOptions() {
   if (!state.native || state.artworkSaving) return;
   const controls=[$('#auto-covers'),$('#cover-style')];
+  const titleControl=$('#auto-title-covers');
+  if (titleControl) controls.push(titleControl);
   if (controls.some(node=>!node)) return;
   ++state.coverGeneration;
   state.artworkSaving=true;
-  const enabled=controls[0].checked, style=controls[1].value;
+  const enabled=controls[0].checked, style=controls[1].value, titleEnabled=titleControl ? titleControl.checked : Boolean(state.artwork.titleEnabled);
   controls.forEach(node => node.disabled=true);
   try {
-    state.artwork=await nativeInvoke('save_artwork_settings',{enabled,style});
+    state.artwork=await nativeInvoke('save_artwork_settings',{enabled,style,titleEnabled});
     state.artRevision++;clearCoverCache();state.missingArt.clear();state.coverStatus.clear();
     hydrateNativeCovers();
     toast('Artwork preferences saved.');void scanArtwork();
@@ -856,6 +862,8 @@ async function saveArtworkOptions() {
       const enabledControl=$('#auto-covers'), styleControl=$('#cover-style');
       if (enabledControl) {enabledControl.checked=state.artwork.enabled;enabledControl.disabled=false;}
       if (styleControl) {styleControl.value=state.artwork.style;styleControl.disabled=false;}
+      const titleControl=$('#auto-title-covers');
+      if (titleControl) {titleControl.checked=Boolean(state.artwork.titleEnabled);titleControl.disabled=false;}
     }
   }
 }
@@ -1055,7 +1063,7 @@ async function handleAction(button) {
   else if (action === 'download-cover') {
     const selected = {...state.selectedGame};
     const serial = $('#cover-serial')?.value.trim();
-    if (!serial) {toast('Enter the exact game serial or disc ID first.');return;}
+    if (!serial) {toast('Enter the exact catalog title, game serial or disc ID first.');return;}
     button.disabled=true;
     try {const outcome=await fetchArtwork(selected.id,selected.uid,serial);toast(outcome?.message || 'Artwork scan complete.');}
     catch(error) {toast(`Cover lookup failed: ${error}`);}
@@ -1073,7 +1081,7 @@ function setupEvents() {
     if (event.target.id==='flatpak-app') $('#runtime-fonts').checked=event.target.value.startsWith('net.pcsx2.PCSX2|');
     if (event.target.id==='emulator-launcher') updateLauncherFields();
     if (event.target.id==='flatpak-app' && event.target.selectedOptions[0]?.dataset.name) $('#emulator-name').value=event.target.selectedOptions[0].dataset.name;
-    if (['auto-covers','cover-style'].includes(event.target.id)) void saveArtworkOptions();
+    if (['auto-covers','auto-title-covers','cover-style'].includes(event.target.id)) void saveArtworkOptions();
   });
   document.addEventListener('click', event => {
     const button = event.target.closest('button[data-action]');

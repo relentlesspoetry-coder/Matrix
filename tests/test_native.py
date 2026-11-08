@@ -599,14 +599,27 @@ def main():
             invoke('remove_windows_game', {'uid':registered['uid']})
             invoke('save_artwork_settings', {'enabled':False,'style':'3d'})
             boot=invoke('bootstrap')
-            assert boot['artwork'] == {'enabled':False,'style':'3d'}
+            assert boot['artwork'] == {'enabled':False,'style':'3d','titleEnabled':False}
             assert boot['profiles']['ps2']['emulatorPath'].endswith('TestEmulator.AppImage')
             assert len(boot['windows']) == 2
             assert legacy in boot['windows']
             assert boot['favorites']['ps2']==[str(ps2game)]
             apps=invoke('list_flatpaks')
             assert {a['installation'] for a in apps}=={'user','system'}
+            # Sync the real bootstrap response before exercising the Settings
+            # controls. Automatic scans stay off, so these fixtures send no titles.
+            js('state.artwork='+json.dumps(boot['artwork']))
             click('[data-action="settings"]')
+            assert not js('return document.querySelector("#auto-title-covers").checked')
+            click('#auto-title-covers')
+            wait_for(lambda: js('return state.artwork.titleEnabled === true && !state.artworkSaving'))
+            assert invoke('bootstrap')['artwork']=={'enabled':False,'style':'3d','titleEnabled':True}
+            assert invoke('save_artwork_settings', {'enabled':False,'style':'3d'})['titleEnabled']
+            click('#auto-title-covers')
+            wait_for(lambda: js('return state.artwork.titleEnabled === false && !state.artworkSaving'))
+            assert not invoke('bootstrap')['artwork']['titleEnabled']
+            screenshot('matrix-linux-cover-provider-settings.png')
+            print('PASS: legacy title-provider opt-out, real Settings opt-in/out and optional-argument persistence; no title requests sent')
             click('[data-action="configure"][data-id="ps2"]')
             js('document.querySelector("#emulator-launcher").value="flatpak";document.querySelector("#emulator-launcher").dispatchEvent(new Event("change",{bubbles:true}))')
             wait_for(lambda: js('return document.querySelector("#flatpak-app").options.length === 4'))
@@ -744,6 +757,11 @@ def main():
                 game = game_root/'Nested Game'/('Fixture.'+extension)
                 game.parent.mkdir(parents=True)
                 game.write_text('Synthetic fixture')
+                invoke('save_cover', {'kind':console,'uid':str(game),'bytes':list(fixture_cover.read_bytes())})
+                retained=invoke('get_cover', {'kind':console,'uid':str(game)})
+                assert invoke('download_cover', {'kind':console,'uid':str(game),'serial':'Another Title (USA)'})['status']=='local'
+                assert invoke('get_cover', {'kind':console,'uid':str(game)})==retained
+                assert game.read_text()=='Synthetic fixture'
                 invoke('save_emulator',{'id':console,'emulatorName':'Fixture','emulatorPath':'','launcher':'flatpak','flatpakId':engine,'flatpakInstallation':'user','launchArgs':['{game}']})
                 invoke('launch_console_game',{'id':console,'uid':str(game)})
                 argv = log.read_text().splitlines()

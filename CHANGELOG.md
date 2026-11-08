@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — expanded cover catalogs
+
+- Add exact-title Libretro box-cover lookup for PS3, PS4, PSP, Vita, N64, Dreamcast, Wii U, Game Boy/Game Boy Color, GBA, DS and 3DS. Keep existing PS1/PS2 and GameCube/Wii ID providers and custom-cover priority.
+- Require an explicit title-provider opt-in before automatic scans send filename-based game titles to Libretro. Individual exact-title confirmation remains available without automatic downloading. Existing settings migrate without enabling new data sharing.
+- Keep region/language/revision names, per-console cache separation, safe fixed URLs, image validation and offline caching. Game Boy and Game Boy Color select separate catalogs by extension. Explain the flat-cover fallback when 3D is selected.
+- Switch, PS5 and Switch 2 remain manual-only pending verified providers. Catalog support does not promise every game has artwork; Vita's catalog is especially limited. This is a partial implementation of the all-console request, not a complete release.
+
 ## 0.5.14
 
 - Recognize NUP collection files in Switch 2 libraries and preview imports, including uppercase extensions. Keep NSP/XCI entries, original Switch separation, favorites, covers and literal launch arguments unchanged. Listing is extension-based and does not validate contents or emulator compatibility.

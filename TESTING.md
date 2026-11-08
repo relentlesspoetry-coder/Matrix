@@ -1,5 +1,29 @@
 # Test Matrix Play on Linux
 
+## Unreleased cover-catalog extension — November 8, 2026
+
+Local validation passes 137 headless backend tests, 132 JavaScript tests, 31
+updater-core tests and 22 ordinary cover-core tests (three opt-in live-provider tests excluded).
+The new regressions check every explicit provider mapping, exact region/edition
+names, Unicode and punctuation encoding, unsafe-input rejection, GB/GBC
+separation, flat-style cache reuse, user-confirmed-title persistence/invalidation,
+no speculative fallbacks, old settings migration, title-provider opt-in and local
+cover priority across all twelve new platform variants. Existing PS1/PS2 and
+GameCube/Wii behavior remains covered. These are synthetic fixtures, not game
+content, visual QA or complete provider-catalog validation.
+
+The explicit Libretro live smoke test was attempted and failed before the first
+image arrived, with a production transport error after five seconds. No TLS
+weakening or access workaround was used. GTK/WebKit development dependencies
+are absent (`pkg-config` cannot find them), so native-window and packaged-app
+tests have not run on this candidate. The Chromium mock-UI attempt also stopped
+before loading the page because Playwright's browser executable is not installed.
+Managed-folder, release/signing, four DEB-helper, five native-fixture, six
+CI-account and three launch-log-lifetime tests pass, as do formatting, syntax
+and whitespace checks. Release tests publish only to disposable local fixtures. CI must validate the exact final commit
+before publication. The all-console request remains incomplete: Switch, PS5
+and Switch 2 automatic providers are not implemented.
+
 ## Version 0.5.14 moved-emulator selection and Switch 2 listing repair
 
 Local validation passes 136 headless backend tests, 125 JavaScript tests, 31

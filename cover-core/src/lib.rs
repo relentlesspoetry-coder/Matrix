@@ -1,4 +1,5 @@
 pub mod identity;
+pub mod title;
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -65,10 +66,16 @@ fn stamp(path: &Path) -> Result<String, String> {
 }
 
 pub fn supports(kind: &str) -> bool {
-    matches!(kind, "ps1" | "ps2" | "gamecube" | "wii")
+    matches!(kind, "ps1" | "ps2" | "gamecube" | "wii") || title::system(kind).is_some()
 }
 
 pub fn url(kind: &str, serial: &str, style: &str) -> Result<String, String> {
+    if !matches!(style, "default" | "3d") {
+        return Err("Unsupported cover style".into());
+    }
+    if title::system(kind).is_some() {
+        return title::url(kind, serial);
+    }
     let serial = identity::normalize_for(kind, serial)?;
     if matches!(kind, "gamecube" | "wii") {
         let folder = match style {
@@ -248,6 +255,8 @@ fn valid_identity<'a>(index: &'a Index, kind: &str, path: &Path) -> Option<&'a I
 }
 /// Lookup only: never performs networking, even while online artwork is disabled.
 pub fn cached_cover(root: &Path, kind: &str, path: &Path, style: &str) -> Option<PathBuf> {
+    let kind = title::platform(kind, path).ok()?;
+    let style = effective_style(kind, style);
     let index = load(root).ok()?;
     let i = valid_identity(&index, kind, path)?;
     url(kind, &i.serial, style).ok()?;
@@ -265,6 +274,14 @@ pub fn cached_cover(root: &Path, kind: &str, path: &Path, style: &str) -> Option
     }
 }
 
+fn effective_style<'a>(kind: &str, style: &'a str) -> &'a str {
+    if title::system(kind).is_some() && style == "3d" {
+        "default"
+    } else {
+        style
+    }
+}
+
 pub fn fetch(
     root: &Path,
     kind: &str,
@@ -277,6 +294,18 @@ pub fn fetch(
     if !supports(kind) || !matches!(style, "default" | "3d") {
         return Err("Unsupported cover console or style".into());
     }
+    let kind = match title::platform(kind, path) {
+        Ok(kind) => kind,
+        Err(message) => {
+            return Ok(Outcome {
+                status: "needs-title".into(),
+                message,
+                ..Default::default()
+            })
+        }
+    };
+    let flat_fallback = title::system(kind).is_some() && style == "3d";
+    let style = effective_style(kind, style);
     fs::create_dir_all(root).map_err(|e| e.to_string())?;
     let lock = OpenOptions::new()
         .create(true)
@@ -302,7 +331,12 @@ pub fn fetch(
             Ok(i) => i,
             Err(message) => {
                 return Ok(Outcome {
-                    status: "needs-serial".into(),
+                    status: if title::system(kind).is_some() {
+                        "needs-title"
+                    } else {
+                        "needs-serial"
+                    }
+                    .into(),
                     message,
                     ..Default::default()
                 })
@@ -326,7 +360,12 @@ pub fn fetch(
             {
                 let outcome = Outcome {
                     status: "cached".into(),
-                    message: "Saved cover available offline".into(),
+                    message: if flat_fallback {
+                        "Saved flat cover available offline; this provider has no 3D style"
+                    } else {
+                        "Saved cover available offline"
+                    }
+                    .into(),
                     source: Some(source),
                     ..cached.outcome.clone()
                 };
@@ -344,7 +383,12 @@ pub fn fetch(
     }
     let mut outcome = Outcome {
         status: "downloaded".into(),
-        message: "Cover saved for offline use".into(),
+        message: if flat_fallback {
+            "Flat cover saved for offline use; this provider has no 3D style"
+        } else {
+            "Cover saved for offline use"
+        }
+        .into(),
         serial: Some(serial),
         source: Some(source),
         url: Some(source_url.clone()),
@@ -384,7 +428,11 @@ pub fn fetch(
             }
             .into();
             outcome.message = if reply.status == 404 {
-                "No cover for this exact console, serial and style. Choose a local cover or another style.".into()
+                if title::system(kind).is_some() {
+                    "No cover for this exact console and catalog title. Check the title, region and edition in game details, or choose a local cover.".into()
+                } else {
+                    "No cover for this exact console, serial and style. Choose a local cover or another style.".into()
+                }
             } else {
                 format!(
                     "Provider returned HTTP {}; try later or choose a local cover",
@@ -454,6 +502,191 @@ mod tests {
         index.next_request = 0;
         save(root, &index).unwrap();
     }
+    #[test]
+    fn title_catalogs_are_explicit_and_separate() {
+        for (kind, system) in [
+            ("ps3", "Sony%20-%20PlayStation%203"),
+            ("ps4", "Sony%20-%20PlayStation%204"),
+            ("psp", "Sony%20-%20PlayStation%20Portable"),
+            ("vita", "Sony%20-%20PlayStation%20Vita"),
+            ("n64", "Nintendo%20-%20Nintendo%2064"),
+            ("dreamcast", "Sega%20-%20Dreamcast"),
+            ("wiiu", "Nintendo%20-%20Wii%20U"),
+            ("gb", "Nintendo%20-%20Game%20Boy"),
+            ("gbc", "Nintendo%20-%20Game%20Boy%20Color"),
+            ("gba", "Nintendo%20-%20Game%20Boy%20Advance"),
+            ("nds", "Nintendo%20-%20Nintendo%20DS"),
+            ("3ds", "Nintendo%20-%20Nintendo%203DS"),
+        ] {
+            assert!(supports(kind));
+            assert_eq!(url(kind, "Title (Europe) (Rev 1)", "default").unwrap(), format!("https://thumbnails.libretro.com/{system}/Named_Boxarts/Title%20%28Europe%29%20%28Rev%201%29.png"));
+            assert_eq!(url(kind, "Title", "default"), url(kind, "Title", "3d"));
+            assert!(url(kind, "Title", "../default").is_err());
+        }
+        for kind in ["ps5", "switch", "switch2", "steam", "windows"] {
+            assert!(!supports(kind));
+            assert!(url(kind, "Title", "default").is_err());
+        }
+    }
+
+    #[test]
+    fn title_cache_preserves_exact_names_style_and_platform_boundaries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("covers");
+        let path = game(tmp.path(), "Title (USA) (En,Fr) (Rev 1).gba");
+        let mut http = fake(200);
+        let result = fetch(&root, "gba", &path, "3d", None, &mut http).unwrap();
+        assert_eq!(result.status, "downloaded");
+        assert_eq!(
+            result.serial.as_deref(),
+            Some("Title (USA) (En,Fr) (Rev 1)")
+        );
+        assert_eq!(result.source.as_deref(), Some("filename-title"));
+        assert!(result.message.contains("Flat cover"));
+        assert_eq!(http.urls.len(), 1);
+        let cached = cached_cover(&root, "gba", &path, "3d").unwrap();
+        assert_eq!(Some(cached), cached_cover(&root, "gba", &path, "default"));
+        assert!(cached_cover(&root, "nds", &path, "default").is_none());
+        let mut absent = Fake {
+            reply: None,
+            urls: vec![],
+        };
+        assert_eq!(
+            fetch(&root, "gba", &path, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "cached"
+        );
+        fs::write(&path, b"changed fixture length").unwrap();
+        assert!(cached_cover(&root, "gba", &path, "default").is_none());
+    }
+
+    #[test]
+    fn combined_game_boy_library_selects_only_the_correct_catalog() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("covers");
+        for (name, expected) in [
+            ("Title (USA).gb", "Game%20Boy/"),
+            ("Title (USA).GBC", "Game%20Boy%20Color/"),
+        ] {
+            let path = game(tmp.path(), name);
+            let mut http = fake(200);
+            fetch(&root, "gb", &path, "default", None, &mut http).unwrap();
+            assert_eq!(http.urls.len(), 1);
+            assert!(http.urls[0].contains(expected));
+            assert!(cached_cover(&root, "gb", &path, "3d").is_some());
+            release_cooldown(&root);
+        }
+        let archive = game(tmp.path(), "Title (USA).zip");
+        let mut absent = Fake {
+            reply: None,
+            urls: vec![],
+        };
+        assert_eq!(
+            fetch(
+                &root,
+                "gb",
+                &archive,
+                "default",
+                Some("Title (USA)"),
+                &mut absent
+            )
+            .unwrap()
+            .status,
+            "needs-title"
+        );
+        assert!(absent.urls.is_empty());
+    }
+
+    #[test]
+    fn confirmed_titles_are_persistent_and_missing_titles_do_not_guess() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("covers");
+        let path = game(tmp.path(), "eboot.bin");
+        let mut absent = Fake {
+            reply: None,
+            urls: vec![],
+        };
+        assert_eq!(
+            fetch(&root, "ps4", &path, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "needs-title"
+        );
+        for value in [
+            "../Title",
+            "Title/../USA",
+            "https://evil/image",
+            "Title\nUSA",
+        ] {
+            assert!(fetch(&root, "ps4", &path, "default", Some(value), &mut absent).is_err());
+        }
+        let mut http = fake(404);
+        let outcome = fetch(
+            &root,
+            "ps4",
+            &path,
+            "default",
+            Some("Title (Europe)"),
+            &mut http,
+        )
+        .unwrap();
+        assert_eq!(outcome.status, "not-found");
+        assert_eq!(outcome.source.as_deref(), Some("user-confirmed"));
+        assert_eq!(
+            fetch(&root, "ps4", &path, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "not-found"
+        );
+        assert_eq!(
+            http.urls.len(),
+            1,
+            "No cross-region, alternate-title or cross-console fallback"
+        );
+        release_cooldown(&root);
+        let mut valid = fake(200);
+        fetch(
+            &root,
+            "ps4",
+            &path,
+            "default",
+            Some("Correct Title (Europe)"),
+            &mut valid,
+        )
+        .unwrap();
+        assert_eq!(
+            fetch(&root, "ps4", &path, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "cached"
+        );
+        fs::write(&path, b"replacement eboot fixture").unwrap();
+        assert!(cached_cover(&root, "ps4", &path, "default").is_none());
+        assert_eq!(
+            fetch(&root, "ps4", &path, "default", None, &mut absent)
+                .unwrap()
+                .status,
+            "needs-title"
+        );
+    }
+
+    #[test]
+    #[ignore = "Explicit live Libretro smoke test; downloads two temporary covers"]
+    fn live_libretro_templates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("covers");
+        for (kind, name, ext) in [
+            ("vita", "Persona 4 Golden (USA)", "vpk"),
+            ("wiiu", "Bayonetta 2 (USA)", "wua"),
+        ] {
+            let path = game(tmp.path(), &format!("{name}.{ext}"));
+            let outcome = fetch(&root, kind, &path, "default", None, &mut Http).unwrap();
+            assert_eq!(outcome.status, "downloaded", "{kind}: {}", outcome.message);
+            assert!(cached_cover(&root, kind, &path, "default").is_some());
+        }
+    }
+
     #[test]
     fn exact_templates_console_and_style_boundaries() {
         assert_eq!(url("ps1","SLUS-00664","default").unwrap(),"https://raw.githubusercontent.com/xlenore/psx-covers/main/covers/default/SLUS-00664.jpg");

@@ -193,12 +193,16 @@ struct WindowsGame {
 struct ArtworkSettings {
     enabled: bool,
     style: String,
+    // Unlike ID providers, title lookups disclose a game filename stem.
+    // Existing installations opt in before automatic scans expand scope.
+    title_enabled: bool,
 }
 impl Default for ArtworkSettings {
     fn default() -> Self {
         Self {
             enabled: true,
             style: "default".into(),
+            title_enabled: false,
         }
     }
 }
@@ -1336,12 +1340,20 @@ fn read_cover_bytes(kind: &str, uid: &str, game: &Game) -> Result<Option<Vec<u8>
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
-fn save_artwork_settings(enabled: bool, style: String) -> Result<ArtworkSettings, String> {
+fn save_artwork_settings(
+    enabled: bool,
+    style: String,
+    title_enabled: Option<bool>,
+) -> Result<ArtworkSettings, String> {
     if !["default", "3d"].contains(&style.as_str()) {
         return Err("Unsupported cover style".into());
     }
     update_settings(|settings| {
-        settings.artwork = ArtworkSettings { enabled, style };
+        settings.artwork = ArtworkSettings {
+            enabled,
+            style,
+            title_enabled: title_enabled.unwrap_or(settings.artwork.title_enabled),
+        };
         Ok(settings.artwork.clone())
     })
 }
@@ -1352,7 +1364,9 @@ fn download_cover_impl(
     serial: Option<String>,
 ) -> Result<matrix_cover_core::Outcome, String> {
     if !matrix_cover_core::supports(&kind) {
-        return Err("Automatic artwork supports PS1, PS2, GameCube and Wii".into());
+        return Err(
+            "No verified automatic artwork provider for this console; choose a local cover".into(),
+        );
     }
     let game = validate_game(&kind, &uid)?;
     let settings = load_settings()?;
@@ -1367,6 +1381,16 @@ fn download_cover_impl(
         return Ok(matrix_cover_core::Outcome {
             status: "local".into(),
             message: "Using your local cover".into(),
+            ..Default::default()
+        });
+    }
+    if matrix_cover_core::title::system(&kind).is_some()
+        && !settings.artwork.title_enabled
+        && serial.is_none()
+    {
+        return Ok(matrix_cover_core::Outcome {
+            status: "disabled".into(),
+            message: "Enable title-based covers in Settings, or confirm an exact title here".into(),
             ..Default::default()
         });
     }
@@ -2009,6 +2033,22 @@ mod tests {
         assert_eq!(prettify("Super_Game_(USA)"), "Super Game");
     }
     #[test]
+    fn artwork_migration_requires_opt_in_for_title_providers() {
+        let previous: ArtworkSettings =
+            serde_json::from_str(r#"{"enabled":true,"style":"3d"}"#).unwrap();
+        assert!(previous.enabled);
+        assert!(!previous.title_enabled);
+        assert_eq!(previous.style, "3d");
+        let explicit: ArtworkSettings =
+            serde_json::from_str(r#"{"enabled":true,"style":"default","titleEnabled":true}"#)
+                .unwrap();
+        assert!(explicit.title_enabled);
+        assert!(serde_json::to_string(&explicit)
+            .unwrap()
+            .contains("\"titleEnabled\":true"));
+    }
+
+    #[test]
     fn actual_backend_artwork_lifecycle_in_isolated_home() {
         let temp = tempfile::tempdir().unwrap();
         let names = ["HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"];
@@ -2192,7 +2232,7 @@ mod tests {
             1
         );
         assert_eq!(bootstrap().unwrap().favorites["ps2"], vec![uid.clone()]);
-        save_artwork_settings(false, "3d".into()).unwrap();
+        save_artwork_settings(false, "3d".into(), None).unwrap();
         assert_eq!(
             load_settings().unwrap().profiles["ps2"].emulator_name,
             "Keep profile"
@@ -2203,7 +2243,7 @@ mod tests {
                 .status,
             "disabled"
         );
-        assert!(save_artwork_settings(true, "bad-style".into()).is_err());
+        assert!(save_artwork_settings(true, "bad-style".into(), None).is_err());
         let bytes = include_bytes!("../../tests/fixtures/demo-cover.png").to_vec();
         // A generic image in the shared library must not label every game.
         fs::write(root.join("cover.png"), &bytes).unwrap();
@@ -2234,7 +2274,7 @@ mod tests {
             .starts_with("data:image/png;base64,"));
         assert!(save_cover("ps2".into(), uid.clone(), b"fake PNG".to_vec()).is_err());
         save_cover("ps2".into(), uid.clone(), bytes).unwrap();
-        save_artwork_settings(true, "default".into()).unwrap();
+        save_artwork_settings(true, "default".into(), None).unwrap();
         assert_eq!(
             download_cover_impl("ps2".into(), uid.clone(), None)
                 .unwrap()
@@ -2242,5 +2282,62 @@ mod tests {
             "local"
         );
         assert!(get_cover("ps2".into(), uid).unwrap().is_some());
+        // Every newly supported catalog keeps explicit user artwork ahead of
+        // network lookup, even when the caller confirms a different title.
+        for (kind, extension) in [
+            ("ps3", "iso"),
+            ("ps4", "elf"),
+            ("psp", "chd"),
+            ("vita", "vpk"),
+            ("n64", "z64"),
+            ("dreamcast", "chd"),
+            ("wiiu", "wua"),
+            ("gb", "gb"),
+            ("gb", "gbc"),
+            ("gba", "gba"),
+            ("nds", "nds"),
+            ("3ds", "3ds"),
+        ] {
+            let file = games_dir(kind)
+                .unwrap()
+                .join(format!("Keep cover (USA).{extension}"));
+            fs::write(&file, b"unchanged synthetic game").unwrap();
+            let uid = file.canonicalize().unwrap().to_string_lossy().into_owned();
+            assert_eq!(
+                download_cover_impl(kind.into(), uid.clone(), None)
+                    .unwrap()
+                    .status,
+                "disabled"
+            );
+            let png = include_bytes!("../../tests/fixtures/demo-cover.png").to_vec();
+            save_cover(kind.into(), uid.clone(), png.clone()).unwrap();
+            save_artwork_settings(true, "3d".into(), None).unwrap();
+            for confirmed in [None, Some("Different Title (USA)".into())] {
+                assert_eq!(
+                    download_cover_impl(kind.into(), uid.clone(), confirmed)
+                        .unwrap()
+                        .status,
+                    "local"
+                );
+            }
+            let game = validate_game(kind, &uid).unwrap();
+            assert_eq!(read_cover_bytes(kind, &uid, &game).unwrap(), Some(png));
+            assert_eq!(fs::read(&file).unwrap(), b"unchanged synthetic game");
+        }
+        assert!(
+            save_artwork_settings(true, "3d".into(), Some(true))
+                .unwrap()
+                .title_enabled
+        );
+        assert!(
+            save_artwork_settings(false, "default".into(), None)
+                .unwrap()
+                .title_enabled
+        );
+        assert!(
+            !save_artwork_settings(true, "default".into(), Some(false))
+                .unwrap()
+                .title_enabled
+        );
     }
 }

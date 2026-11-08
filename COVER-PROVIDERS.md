@@ -1,5 +1,61 @@
 # Matrix Play cover providers — reviewed November 5, 2026
 
+## Unreleased extension — Libretro, reviewed November 8, 2026
+
+This adds a title-based provider for eleven more Matrix libraries: PS3, PS4,
+PSP, Vita, N64, Dreamcast, Wii U, Game Boy/Game Boy Color, GBA, DS and 3DS.
+Together with the four existing ID-based libraries, fifteen of the eighteen
+libraries have an automatic provider. **Switch, PS5 and Switch 2 still need
+local artwork.** No complete all-console coverage claim is made.
+
+The first-party [repository README](https://github.com/libretro-thumbnails/libretro-thumbnails)
+documents the directory/name convention and download use. The current
+[thumbnail server index](https://thumbnails.libretro.com/) lists the mapped
+catalogs. Requests use HTTPS and the fixed template
+`https://thumbnails.libretro.com/{encoded system}/Named_Boxarts/{encoded title}.png`.
+The static mapping lives in `cover-core/src/title.rs`; GB and GBC are distinct
+provider directories within Matrix's combined Game Boy library. No directory
+scraping, fuzzy search or bulk catalog download is implemented.
+
+- Automatic title-provider scans require a separate explicit Settings opt-in,
+  including for existing installations whose earlier automatic covers were on.
+  This is necessary because the new requests disclose a filename stem, rather
+  than only a constrained serial. An individual Find exact cover action sends
+  the explicitly entered title without enabling future scans.
+- Names preserve region, language, edition and revision tags. Only the provider's
+  documented punctuation substitutions are made; Unicode and URL metacharacters
+  are encoded as a single path component. No cleaned display title, guessed
+  region, PS4-to-PS5 fallback or Switch-to-Switch-2 fallback is used.
+- ID-only filenames and generic executable names such as eboot require manual
+  title confirmation. Installed-game display metadata is not treated as an
+  exact Libretro catalog name. Unknown titles return a cached miss; users can
+  enter a corrected catalog title or import an image.
+- Only `Named_Boxarts` is used. This provider has flat box covers, not 3D artwork.
+  Selecting 3D reuses its default-cover cache and clearly labels that fallback.
+- Imported/local covers remain first priority. New entries reuse the serialized
+  queue, bounded transport/decoding, negative caching and offline persistence.
+  Existing serial-provider cache keys do not change. User-confirmed title
+  bindings expire when the game file's size or modification time changes.
+- Catalog availability is not completeness. The inspected Vita boxart directory
+  contained nine images. Separate PS3 downloadable and 3DS digital directories
+  exist but are not silently queried as fallback catalogs in this implementation.
+- Public access and documented downloader use do not establish a blanket
+  copyright or redistribution license for commercial artwork. No downloaded
+  artwork or user game data is included in this source tree.
+
+Provider audit also found a GameTDB Switch catalog, but its five-character
+product IDs (for example AAACA) are not Switch's sixteen-digit title IDs.
+The exact image style/extension and safe ID mapping remain to be verified
+before implementation. No verified PS5 or Switch 2 template was established.
+
+Fixture tests pass for mappings, exact names, confirmation, cache boundaries,
+legacy settings, local-cover precedence and disabled-provider behavior. The
+new production Rust live test failed on its first request in this executor
+with a transport error after five seconds. HTTPS validation was not changed.
+Run `cargo test --locked --manifest-path cover-core/Cargo.toml live_libretro_templates -- --ignored`
+in the trusted CI/desktop environment before claiming production-network
+verification. Native desktop/installer verification is also still required.
+
 ## xlenore: implemented
 
 The [PS1 repository README](https://github.com/xlenore/psx-covers#duckstation-setup) and [PS2 repository README](https://github.com/xlenore/ps2-covers#pcsx2-setup) explicitly document emulator cover-downloader URLs. Both match the screenshots supplied with this request:

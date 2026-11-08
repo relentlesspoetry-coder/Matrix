@@ -43,6 +43,9 @@ pub fn normalize(text: &str) -> Result<String, String> {
 
 /// Strict platform-scoped identifiers prevent URL injection and cross-console requests.
 pub fn normalize_for(kind: &str, text: &str) -> Result<String, String> {
+    if crate::title::system(kind).is_some() {
+        return crate::title::normalize(text);
+    }
     match kind {
         "ps1" | "ps2" => normalize(text),
         "gamecube" | "wii" => {
@@ -243,6 +246,9 @@ fn disc_serial(path: &Path, kind: &str) -> BTreeSet<String> {
 }
 
 pub fn detect(path: &Path, kind: &str) -> Result<(String, String), String> {
+    if crate::title::system(kind).is_some() {
+        return crate::title::detect(path);
+    }
     if matches!(kind, "gamecube" | "wii") {
         return nintendo_detect(path, kind);
     }
