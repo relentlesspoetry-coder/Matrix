@@ -88,16 +88,20 @@ jobs:
           done
           curl --fail --location --retry 2 --proto '=https' --tlsv1.2 'https://github.com/relentlesspoetry-coder/Matrix/releases/download/v0.5.12/Matrix-Play_0.5.12_amd64.deb' --output "$fixtures/seed.deb"
           driver=$(python3 tests/signed_deb_integration.py --build-only --source-root "$PWD" --target-dir "$PWD/update-core/target" --output "$RUNNER_TEMP/matrix-deb-driver")
+          # Namespace root cannot override access through runner-owned private
+          # home directories. Keep the disposable roots under root-owned /var/tmp.
+          integration_root=$(sudo mktemp -d /var/tmp/matrix-deb-integration.XXXXXX)
+          trap 'sudo rm -rf -- "$integration_root"' EXIT
           # Only the test's disposable filesystem gets a package transaction.
           # sudo permits namespace creation on hardened Ubuntu runners without
           # weakening their AppArmor or unprivileged-user-namespace settings.
           for mask in 000 002 022 077; do
-            output="$RUNNER_TEMP/matrix-deb-valid-$mask"
+            output="$integration_root/valid-$mask"
             sudo env -i PATH=/usr/bin:/bin HOME=/root python3 tests/signed_deb_integration.py --helper "$driver" --release-dir "$fixtures" --seed-deb "$fixtures/seed.deb" --umask "$mask" --output "$output"
             sudo install -m 0644 "$output/report.json" "/home/matrix-test/artifacts/deb-valid-$mask.json"
           done
           for scenario in tamper downgrade; do
-            output="$RUNNER_TEMP/matrix-deb-$scenario"
+            output="$integration_root/$scenario"
             sudo env -i PATH=/usr/bin:/bin HOME=/root python3 tests/signed_deb_integration.py --helper "$driver" --release-dir "$fixtures" --case "$scenario" --output "$output"
             sudo install -m 0644 "$output/report.json" "/home/matrix-test/artifacts/deb-$scenario.json"
           done

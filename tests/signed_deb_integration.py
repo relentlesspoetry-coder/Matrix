@@ -50,7 +50,7 @@ current=data['version'] if a.case=='downgrade' else a.current
 (root/'fixture/request').write_bytes(wire)
 (root/'fixture/isolation-marker').write_text('matrix isolated test\n')
 if a.seed_deb: shutil.copyfile(a.seed_deb,root/'fixture/seed.deb')
-script='set -eu; mount --make-rprivate /; mount --bind /dev/null "$1/dev/null"; umask "$3"; if [ -f "$1/fixture/seed.deb" ]; then chroot "$1" /usr/bin/dpkg --install /fixture/seed.deb; fi; exec chroot "$1" /fixture/helper "$2" < "$1/fixture/request"'
+script='set -eu; test -r "$1/fixture/isolation-marker"; mount --make-rprivate /; mount --bind /dev/null "$1/dev/null"; umask "$3"; if [ -f "$1/fixture/seed.deb" ]; then chroot "$1" /usr/bin/dpkg --install /fixture/seed.deb; fi; exec chroot "$1" /fixture/helper "$2" < "$1/fixture/request"'
 cmd=['unshare','--user','--map-root-user','--mount','--net','/bin/sh','-c',script,'isolated-install',str(root),current,a.umask]
 host_status=pathlib.Path('/var/lib/dpkg/status')
 def host_status_hash():
