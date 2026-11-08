@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.18
+
+- Keep slow bootstrap/refresh responses from reverting newly saved emulator selections, artwork preferences or favorites; use the same guarded state loading for initialization and Find emulators.
+- Preserve initial game scanning when Find emulators supersedes a still-pending startup load. Reject superseded responses and recheck favorite changes after asynchronous migration without changing settings formats.
+- Add nine deterministic UI regressions for stale snapshots, successful/failed edits, overlapping requests, favorite toggles/migration and startup-versus-discovery ordering.
+
 ## 0.5.17
 
 - Create AppImage update staging with private 0700 permissions atomically, preventing another local group member from substituting verified payloads under a permissive umask. Preserve signature, hash, rollback and cleanup checks.

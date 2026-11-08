@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.17 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.18 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -281,7 +281,7 @@ const favoriteCount=id=>gamesFor(id).filter(game=>state.favorites.has(favoriteKe
 function applyNativeFavorites(entries) {
   state.favorites=new Set(Object.entries(entries || {}).flatMap(([id,uids])=>byId[id] && Array.isArray(uids) ? uids.map(uid=>favoriteKey(id,uid)) : []));
 }
-async function loadNativeFavorites(config) {
+async function loadNativeFavorites(config, canApply=()=>true) {
   let entries=config.favorites || {};
   if (!config.favoritesMigrated) {
     const legacy={};
@@ -291,7 +291,7 @@ async function loadNativeFavorites(config) {
     }
     entries=await nativeInvoke('import_favorites',{entries:legacy});
   }
-  applyNativeFavorites(entries);
+  if (canApply()) applyNativeFavorites(entries);
 }
 let favoriteQueue=Promise.resolve();
 function toggleFavorite(id,uid,button) {
@@ -303,6 +303,7 @@ function toggleFavorite(id,uid,button) {
       for (const old of state.favorites) if (old.startsWith(id+'|')) state.favorites.delete(old);
       for (const value of list) state.favorites.add(favoriteKey(id,value));
     } else if (favorite) state.favorites.add(key);else state.favorites.delete(key);
+    favoriteWriteRevision++;
     savePrefs();
     if (state.page==='console' && state.consoleId===id) renderConsole();
     if (state.overlay==='game' && state.selectedGame?.id===id && state.selectedGame?.uid===uid) {
@@ -557,8 +558,10 @@ async function findEmulators(button) {
   if (!state.native) {toast('Automatic discovery is available in the Linux app.');return;}
   button.disabled=true;
   try {
-    const config=await nativeInvoke('bootstrap');state.configs=config.profiles;state.discovery=config.emulatorDiscovery || {candidates:[],linked:[],ambiguous:[],notices:[]};state.folders=config.folders;
-    render();toast(`${state.discovery.linked.length} console profiles linked; ${state.discovery.candidates.length} emulator installations detected.`);
+    if (!await bootstrapNative()) return;
+    // This load may supersede initialization, so it must also populate games.
+    await refreshNative();
+    toast(`${state.discovery.linked.length} console profiles linked; ${state.discovery.candidates.length} emulator installations detected.`);
   } catch(error) {toast(String(error));}finally {button.disabled=false;}
 }
 
@@ -852,6 +855,7 @@ async function saveArtworkOptions() {
   controls.forEach(node => node.disabled=true);
   try {
     state.artwork=await nativeInvoke('save_artwork_settings',{enabled,style,titleEnabled});
+    artworkWriteRevision++;
     state.artRevision++;clearCoverCache();state.missingArt.clear();state.coverStatus.clear();
     hydrateNativeCovers();
     toast('Artwork preferences saved.');void scanArtwork();
@@ -888,20 +892,41 @@ async function refreshNative() {
     void scanArtwork();
   } catch (error) { if (generation===nativeRefreshGeneration) toast(`Library scan failed: ${error}`); }
 }
+// Bootstrap includes slow inventory/folder work. A returned snapshot must not
+// replace local writes that succeeded while it was in flight, or a newer load.
+let nativeBootstrapGeneration=0, artworkWriteRevision=0, favoriteWriteRevision=0;
+async function bootstrapNative() {
+  const generation=++nativeBootstrapGeneration;
+  const profileRevisions=new Map(emulatorSavedRequests);
+  const artworkRevision=artworkWriteRevision, favoritesRevision=favoriteWriteRevision;
+  const current=()=>generation===nativeBootstrapGeneration;
+  try {
+    const config=await nativeInvoke('bootstrap');
+    if (!current()) return null;
+    const profiles={...(config.profiles || {})};
+    for (const [id,profile] of Object.entries(state.configs)) {
+      if (emulatorSavedRequests.get(id)!==profileRevisions.get(id)) profiles[id]=profile;
+    }
+    state.configs=profiles;
+    state.root=config.root;state.folders=config.folders;
+    state.discovery=config.emulatorDiscovery || state.discovery;
+    if (artworkWriteRevision===artworkRevision) state.artwork=config.artwork || state.artwork;
+    await loadNativeFavorites(config,()=>current() && favoriteWriteRevision===favoritesRevision);
+    return current()?config:null;
+  } catch(error) {
+    if (current()) throw error;
+    return null;
+  }
+}
 async function initializeNative() {
   if (!state.native) return;
   $('#mode-indicator').textContent = 'NATIVE LINUX';
   $('#native-status').textContent = 'Native backend · folders managed automatically';
   try {
-    const config = await nativeInvoke('bootstrap');
-    state.root = config.root; state.folders = config.folders;
-    state.artwork = config.artwork || {enabled:true,style:'default'};
-    state.configs = config.profiles;
-    state.discovery=config.emulatorDiscovery || state.discovery;
-    await loadNativeFavorites(config);
-    await refreshNative();
+    if (await bootstrapNative()) await refreshNative();
   } catch(error) { toast(`Matrix Play initialization failed: ${error}`); }
 }
+
 function renderUpdater() {
   if (state.overlay !== 'updates') return;
   const info = state.update || {phase:'checking',message:'Checking GitHub…'};
@@ -1001,7 +1026,7 @@ async function handleAction(button) {
   else if (action === 'steam' || action === 'windows') goExternal(action);
   else if (action === 'refresh') {
     if (!state.native) { toast('Browser preview — no filesystem access.'); return; }
-    try { const config = await nativeInvoke('bootstrap'); state.configs = config.profiles; state.discovery=config.emulatorDiscovery || state.discovery; state.folders = config.folders; state.artwork = config.artwork || state.artwork; await loadNativeFavorites(config); await refreshNative(); }
+    try { if (await bootstrapNative()) await refreshNative(); }
     catch(error) { toast(String(error)); }
   }
   else if (action === 'library-folders') void openLibraryFolders(id || state.consoleId);

@@ -1,5 +1,15 @@
 # Test Matrix Play on Linux
 
+## Version 0.5.18 guarded bootstrap state
+
+All 145 JavaScript tests pass locally, including nine new deterministic cases
+against the actual app functions. They cover delayed bootstrap snapshots after
+newer profile/artwork/favorite saves, failed saves, overlapping responses,
+asynchronous favorite migration and Find emulators superseding initialization.
+The latter must still populate games. Syntax and patch-whitespace checks pass.
+These Node fixtures model async state and IPC ordering, not native browser
+layout or actual game execution. Full exact-version CI must pass before release.
+
 ## Version 0.5.17 deep-review repairs
 
 The candidate repairs incomplete-discovery profile replacement, QtLauncher game
@@ -39,9 +49,12 @@ Three backend ordering tests and two reopened-dialog JavaScript tests protect
 manual saves. A native IPC regression delays an older Flatpak validation while a
 newer executable save completes, then checks that the older save is rejected and
 the new profile remains. Request ordering is process-local; separate processes
-retain the existing settings transaction lock and last-commit behavior. All 136
-JavaScript tests pass locally. The expanded repair must pass exact-tree CI before
-publication.
+retain the existing settings transaction lock and last-commit behavior. All 136 JavaScript tests pass locally. The expanded repair passes exact-tree
+[CI run 42448489956](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42448489956)
+at `b1b1fd5fccacb0ae5a2d5e3f3b9cfc9713452611`: 151 backend tests in both
+configurations, 33 updater tests, all required provider, installer and repeated
+native/AppImage gates. The native overlapping-save regression passes twice.
+GitHub signed and published the 0.5.17 testing release after these gates.
 
 No user computer, real emulator, proprietary game or host package installation
 was used by the review. Native tests use disposable Flatpak/launcher shims; they
@@ -474,16 +487,16 @@ checks output after the launching process exits and log-write failure using
 synthetic subprocesses. Run the normal Rust suites and desktop tests as well;
 these checks do not replace a real emulator test or privileged DEB upgrade test.
 
-This is the native testing release, version 0.5.17. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
+This is the native testing release, version 0.5.18. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04
 
-1. Open the [v0.5.17 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.17) — the repository and installers are public.
-2. Download `Matrix-Play_0.5.17_amd64.deb`.
+1. Open the [v0.5.18 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.18) — the repository and installers are public.
+2. Download `Matrix-Play_0.5.18_amd64.deb`.
 3. Open a terminal in the download folder and run:
 
    ```bash
-   sudo apt install ./Matrix-Play_0.5.17_amd64.deb
+   sudo apt install ./Matrix-Play_0.5.18_amd64.deb
    ```
 
 4. Open **Matrix Play** from the application menu. You can also run `matrix-frontend` in a terminal to capture diagnostics.
@@ -492,24 +505,24 @@ APT installs the GTK/WebKit runtime dependencies if needed. Rust, Node, the sour
 
 ## Portable AppImage alternative
 
-Download `Matrix-Play_0.5.17_amd64.AppImage` from the same release. In its download folder run:
+Download `Matrix-Play_0.5.18_amd64.AppImage` from the same release. In its download folder run:
 
 ```bash
-chmod +x Matrix-Play_0.5.17_amd64.AppImage
-./Matrix-Play_0.5.17_amd64.AppImage
+chmod +x Matrix-Play_0.5.18_amd64.AppImage
+./Matrix-Play_0.5.18_amd64.AppImage
 ```
 
 If FUSE is unavailable, run it in extraction mode:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.17_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.18_amd64.AppImage
 ```
 
 The AppImage's actual native window, IPC, scanning, local covers, settings and launcher dispatch passed the same isolated desktop test in extraction mode. Other Linux distributions and native FUSE mounting have not been validated. The DEB is recommended on Zorin/Ubuntu.
 
 ## Upgrade from the blank-window build
 
-Close Matrix Play, then install the v0.5.17 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
+Close Matrix Play, then install the v0.5.18 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
 
 If a new startup problem occurs, attach `~/.local/share/matrix/startup.log` to the issue. This contains bounded startup stages and renderer/load errors, not game data. In this incident, graphics workarounds did not resolve the problem; a fresh cache directory did, which the affected user confirmed. The specific problematic shared cache file was not identified or deleted.
 

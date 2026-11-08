@@ -69,7 +69,7 @@ function fixture() {
   vm.runInContext(source.replace(startup, '') + `
     toast = onToast;
     globalThis.api = { state, loadCover, goConsole, goSettings, dismissOverlay, saveArtworkOptions,
-      loadDetectedEmulators, loadFlatpakChoices, refreshNative, fetchArtwork, renderUpdater, runUpdate, openUpdater, handleAction, toggleFavorite, visibleGames, renderConsole, setArtDb: db => { artDb=db; } };
+      bootstrapNative, initializeNative, findEmulators, loadDetectedEmulators, loadFlatpakChoices, refreshNative, fetchArtwork, renderUpdater, runUpdate, openUpdater, handleAction, toggleFavorite, visibleGames, renderConsole, setArtDb: db => { artDb=db; } };
     setupEvents();
   `, context);
   const api = context.api;
@@ -620,4 +620,98 @@ test('discovery retains a still-current explicit choice and escapes filenames',a
   await f.loadDetectedEmulators();
   assert.match(f.node('#detected-help').textContent,/No recognized installations/);
   assert.equal(f.node('#detected-emulator').value,'');
+});
+
+function bootstrapSnapshot(overrides={}) {
+  return {root:'/games',folders:{ps2:'/games/ps2',n64:'/games/n64'},
+    profiles:{ps2:{emulatorName:'snapshot',emulatorPath:'/test/snapshot'},n64:{emulatorName:'external',emulatorPath:'/test/external'}},
+    artwork:{enabled:false,style:'default',titleEnabled:false},favoritesMigrated:true,favorites:{},
+    emulatorDiscovery:{candidates:[],linked:[],ambiguous:[],notices:[]},...overrides};
+}
+function submitEmulatorFixture(f,name='saved') {
+  const form={id:'config-form',dataset:{id:'ps2'},values:{emulatorName:name,emulatorPath:'/test/'+name,folderPath:'/games',launcher:'executable'}};
+  f.nodes.set('#config-form',form);f.node('#config-error');f.state.overlay='configure';
+  f.listeners.submit[0]({target:form,submitter:{dataset:{}},preventDefault(){}});
+}
+for (const entry of ['initialize','refresh','find']) test(`${entry} bootstrap preserves successful edits made while its snapshot was pending`, async()=>{
+  const f=fixture(),loading=deferred();f.responders.bootstrap=()=>loading.promise;
+  f.node('#mode-indicator');f.node('#native-status');
+  const pending=entry==='initialize'?f.initializeNative():entry==='refresh'?f.handleAction({dataset:{action:'refresh'}}):f.findEmulators({disabled:false});
+  f.responders.save_emulator=()=>Promise.resolve();submitEmulatorFixture(f);await tick();
+  f.node('#auto-covers').checked=false;f.node('#cover-style').value='3d';await f.saveArtworkOptions();
+  f.responders.set_favorite=()=>Promise.resolve(['test.iso']);f.toggleFavorite('ps2','test.iso',{disabled:false});await tick();
+  loading.resolve(bootstrapSnapshot());await pending;
+  assert.equal(f.state.configs.ps2.emulatorName,'saved');
+  assert.equal(f.state.configs.n64.emulatorName,'external','Unedited profiles still refresh');
+  assert.equal(f.state.artwork.style,'3d');assert.equal(f.state.favorites.has('ps2|test.iso'),true);
+  // The following toggle must remove the saved favorite, not add it again.
+  f.responders.set_favorite=args=>{assert.equal(args.favorite,false);return Promise.resolve([]);};
+  f.toggleFavorite('ps2','test.iso',{disabled:false});await tick();
+  assert.equal(f.state.favorites.has('ps2|test.iso'),false);
+});
+
+test('failed local saves do not prevent a pending bootstrap from applying fresh settings',async()=>{
+  const f=fixture(),loading=deferred();f.responders.bootstrap=()=>loading.promise;
+  const pending=f.bootstrapNative();
+  f.responders.save_emulator=()=>Promise.reject(Error('invalid profile'));submitEmulatorFixture(f);await tick();
+  f.responders.save_artwork_settings=()=>Promise.reject(Error('failed artwork save'));
+  f.node('#auto-covers').checked=false;f.node('#cover-style').value='3d';await f.saveArtworkOptions();
+  f.responders.set_favorite=()=>Promise.reject(Error('failed favorite save'));
+  f.toggleFavorite('ps2','test.iso',{disabled:false});await tick();
+  loading.resolve(bootstrapSnapshot({favorites:{ps2:['external.iso']}}));await pending;
+  assert.equal(f.state.configs.ps2.emulatorName,'snapshot');assert.equal(f.state.artwork.style,'default');
+  assert.equal(f.state.favorites.has('ps2|external.iso'),true);
+});
+
+for (const oldOutcome of ['resolve','reject']) test(`newest bootstrap wins when older request later ${oldOutcome}s`,async()=>{
+  const f=fixture(),old=deferred(),recent=deferred();let calls=0;
+  f.responders.bootstrap=()=>++calls===1?old.promise:recent.promise;
+  const first=f.bootstrapNative(),second=f.bootstrapNative();
+  recent.resolve(bootstrapSnapshot({root:'/new',profiles:{ps2:{emulatorName:'new'}},artwork:{enabled:false,style:'3d'},favorites:{ps2:['new.iso']}}));
+  await second;
+  if(oldOutcome==='resolve')old.resolve(bootstrapSnapshot());else old.reject(Error('stale bootstrap failure'));
+  assert.equal(await first,null);
+  assert.equal(f.state.root,'/new');assert.equal(f.state.configs.ps2.emulatorName,'new');
+  assert.equal(f.state.artwork.style,'3d');assert.equal(f.state.favorites.has('ps2|new.iso'),true);
+});
+
+test('favorite changes during asynchronous migration survive its older response',async()=>{
+  const f=fixture(),migration=deferred();
+  f.responders.bootstrap=()=>Promise.resolve(bootstrapSnapshot({favoritesMigrated:false}));
+  f.responders.import_favorites=()=>migration.promise;
+  const pending=f.bootstrapNative();await tick();
+  assert.equal(f.calls.filter(c=>c.name==='import_favorites').length,1);
+  f.responders.set_favorite=()=>Promise.resolve(['test.iso']);
+  f.toggleFavorite('ps2','test.iso',{disabled:false});await tick();
+  migration.resolve({});await pending;
+  assert.equal(f.state.favorites.has('ps2|test.iso'),true);
+});
+
+test('a migration response from a superseded bootstrap cannot replace newer favorites',async()=>{
+  const f=fixture(),migration=deferred();let calls=0;
+  f.responders.bootstrap=()=>Promise.resolve(bootstrapSnapshot(++calls===1?{favoritesMigrated:false}:{favorites:{ps2:['new.iso']}}));
+  f.responders.import_favorites=()=>migration.promise;
+  const old=f.bootstrapNative();await tick();
+  await f.bootstrapNative();migration.resolve({ps2:['old.iso']});
+  assert.equal(await old,null);
+  assert.equal(f.state.favorites.has('ps2|new.iso'),true);assert.equal(f.state.favorites.has('ps2|old.iso'),false);
+});
+
+
+test('Find emulators superseding initialization still performs the initial library scan',async()=>{
+  const f=fixture(),initial=deferred(),finding=deferred();let loads=0;
+  f.node('#mode-indicator');f.node('#native-status');f.state.imported.ps2=[];
+  f.responders.bootstrap=()=>++loads===1?initial.promise:finding.promise;
+  f.responders.scan_console=({id})=>Promise.resolve(id==='ps2'?[{uid:'/games/new.iso',title:'Discovered game'}]:[]);
+  const starting=f.initializeNative();
+  const button={disabled:false},searching=f.findEmulators(button);
+  finding.resolve(bootstrapSnapshot());await searching;
+  assert.equal(f.state.imported.ps2.length,1);
+  assert.equal(f.state.imported.ps2[0].title,'Discovered game');
+  assert.equal(f.state.imported.ps2[0].demo,false);
+  assert.equal(f.calls.filter(c=>c.name==='scan_console').length,2);
+  initial.resolve(bootstrapSnapshot({profiles:{}}));await starting;
+  assert.equal(f.state.imported.ps2[0].title,'Discovered game');
+  assert.equal(f.calls.filter(c=>c.name==='scan_console').length,2,'Superseded initialization must not rescan');
+  assert.equal(button.disabled,false);
 });
