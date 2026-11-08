@@ -42,6 +42,34 @@ jobs:
           sudo install -d -o matrix-test -g matrix-test -m 0755 /home/matrix-test/bin /home/matrix-test/work /home/matrix-test/artifacts
           sudo cp -R tests /home/matrix-test/work/tests
           sudo chown -R matrix-test:matrix-test /home/matrix-test/work/tests
+      - name: Verify isolated signed DEB upgrades
+        timeout-minutes: 5
+        run: |
+          # Fixed public, production-signed inputs. No signing secret is needed.
+          fixtures="$RUNNER_TEMP/matrix-signed-deb-fixtures"
+          mkdir -p "$fixtures"
+          for name in update-manifest.json update-manifest.sig Matrix-Play_0.5.13_amd64.deb; do
+            curl --fail --location --retry 2 --proto '=https' --tlsv1.2 "https://github.com/relentlesspoetry-coder/Matrix/releases/download/v0.5.13/$name" --output "$fixtures/$name"
+          done
+          curl --fail --location --retry 2 --proto '=https' --tlsv1.2 'https://github.com/relentlesspoetry-coder/Matrix/releases/download/v0.5.12/Matrix-Play_0.5.12_amd64.deb' --output "$fixtures/seed.deb"
+          driver=$(python3 tests/signed_deb_integration.py --build-only --source-root "$PWD" --target-dir "$PWD/update-core/target" --output "$RUNNER_TEMP/matrix-deb-driver")
+          # Namespace root cannot override access through runner-owned private
+          # home directories. Keep the disposable roots under root-owned /var/tmp.
+          integration_root=$(sudo mktemp -d /var/tmp/matrix-deb-integration.XXXXXX)
+          trap 'sudo rm -rf -- "$integration_root"' EXIT
+          # Only the test's disposable filesystem gets a package transaction.
+          # sudo permits namespace creation on hardened Ubuntu runners without
+          # weakening their AppArmor or unprivileged-user-namespace settings.
+          for mask in 000 002 022 077; do
+            output="$integration_root/valid-$mask"
+            sudo env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root python3 tests/signed_deb_integration.py --helper "$driver" --release-dir "$fixtures" --seed-deb "$fixtures/seed.deb" --umask "$mask" --output "$output"
+            sudo install -m 0644 "$output/report.json" "/home/matrix-test/artifacts/deb-valid-$mask.json"
+          done
+          for scenario in tamper downgrade; do
+            output="$integration_root/$scenario"
+            sudo env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root python3 tests/signed_deb_integration.py --helper "$driver" --release-dir "$fixtures" --case "$scenario" --output "$output"
+            sudo install -m 0644 "$output/report.json" "/home/matrix-test/artifacts/deb-$scenario.json"
+          done
       - name: Test Rust and managed folders
         run: |
           cargo test --locked --manifest-path update-core/Cargo.toml
@@ -77,34 +105,6 @@ jobs:
           trap 'sudo rm -rf -- "$staging_root"' EXIT
           sudo install -o root -g root -m 0755 "$staging_test" "$staging_root/staging-tests"
           sudo env -i PATH=/usr/bin:/bin HOME=/root TMPDIR="$staging_root" "$staging_root/staging-tests" --exact deb::tests::staging_creation_is_private_under_common_umasks --nocapture
-      - name: Verify isolated signed DEB upgrades
-        timeout-minutes: 5
-        run: |
-          # Fixed public, production-signed inputs. No signing secret is needed.
-          fixtures="$RUNNER_TEMP/matrix-signed-deb-fixtures"
-          mkdir -p "$fixtures"
-          for name in update-manifest.json update-manifest.sig Matrix-Play_0.5.13_amd64.deb; do
-            curl --fail --location --retry 2 --proto '=https' --tlsv1.2 "https://github.com/relentlesspoetry-coder/Matrix/releases/download/v0.5.13/$name" --output "$fixtures/$name"
-          done
-          curl --fail --location --retry 2 --proto '=https' --tlsv1.2 'https://github.com/relentlesspoetry-coder/Matrix/releases/download/v0.5.12/Matrix-Play_0.5.12_amd64.deb' --output "$fixtures/seed.deb"
-          driver=$(python3 tests/signed_deb_integration.py --build-only --source-root "$PWD" --target-dir "$PWD/update-core/target" --output "$RUNNER_TEMP/matrix-deb-driver")
-          # Namespace root cannot override access through runner-owned private
-          # home directories. Keep the disposable roots under root-owned /var/tmp.
-          integration_root=$(sudo mktemp -d /var/tmp/matrix-deb-integration.XXXXXX)
-          trap 'sudo rm -rf -- "$integration_root"' EXIT
-          # Only the test's disposable filesystem gets a package transaction.
-          # sudo permits namespace creation on hardened Ubuntu runners without
-          # weakening their AppArmor or unprivileged-user-namespace settings.
-          for mask in 000 002 022 077; do
-            output="$integration_root/valid-$mask"
-            sudo env -i PATH=/usr/bin:/bin HOME=/root python3 tests/signed_deb_integration.py --helper "$driver" --release-dir "$fixtures" --seed-deb "$fixtures/seed.deb" --umask "$mask" --output "$output"
-            sudo install -m 0644 "$output/report.json" "/home/matrix-test/artifacts/deb-valid-$mask.json"
-          done
-          for scenario in tamper downgrade; do
-            output="$integration_root/$scenario"
-            sudo env -i PATH=/usr/bin:/bin HOME=/root python3 tests/signed_deb_integration.py --helper "$driver" --release-dir "$fixtures" --case "$scenario" --output "$output"
-            sudo install -m 0644 "$output/report.json" "/home/matrix-test/artifacts/deb-$scenario.json"
-          done
       - name: Check live artwork providers (informational)
         continue-on-error: true
         timeout-minutes: 3

@@ -129,7 +129,7 @@ class ProcessAccountTests(unittest.TestCase):
         self.assertIn('sudo mktemp -d /var/tmp/matrix-deb-integration.XXXXXX', step)
         self.assertIn('output="$integration_root/valid-$mask"', step)
         self.assertIn("trap 'sudo rm -rf --", step)
-        self.assertIn('sudo env -i PATH=/usr/bin:/bin HOME=/root', step)
+        self.assertIn('sudo env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root', step)
         self.assertNotIn('continue-on-error', step)
         self.assertNotIn('||', step)
         harness = (ROOT/'tests/signed_deb_integration.py').read_text()
