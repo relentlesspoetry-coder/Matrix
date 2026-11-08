@@ -156,5 +156,14 @@ class ProcessAccountTests(unittest.TestCase):
         self.assertLess(workflow.index('- name: Verify live Switch GameTDB cover template'), workflow.index('- name: Build Linux installers'))
 
 
+    def test_native_cover_downloads_are_exercised_online(self):
+        workflow = (ROOT/'.github/workflows/linux.yml').read_text()
+        step = workflow.split('- name: Test actual desktop window\n', 1)[1].split('\n      - ', 1)[0]
+        self.assertIn('tests/test_native.py /home/matrix-test/bin/matrix-frontend --online --coordinator-tests', step)
+        self.assertIn('for iteration in 1 2', step)
+        self.assertNotIn('continue-on-error', step)
+        self.assertNotIn('||', step)
+
+
 if __name__ == '__main__':
     unittest.main()

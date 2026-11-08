@@ -2,9 +2,13 @@
 
 ## 0.5.16
 
+- Discover fixed local `sce_sys/icon0.png` artwork for extracted PS5 eboot titles in their own game folders. Imported covers, same-stem images and folder covers retain priority. No PS5 online provider, metadata URL lookup, decryption or gameplay support is added.
+- Count extracted PS5 boot targets consistently when deciding whether folder-wide artwork is safe; multiple boot targets and shared library roots never inherit a generic image. Reject icon symlinks, symlinked ancestors, nonregular files, corrupt images and files larger than 4 MiB, with bounded reads and image decoding.
+- Add synthetic backend and native IPC fixtures for local-artwork discovery, precedence and preserved identities/favorites/game bytes. Preserve prior non-PS5 folder-cover rules, including valid and invalid PS1 playlist cases.
+
 - Add original Switch GameTDB downloads using exact five-character product codes and explicit artwork regions, such as AAACA-US or a filename containing [HAC-P-AAACA-USA]. Ordinary 16-digit title IDs cannot be converted safely and need product-code/region confirmation in game details.
 - Keep custom covers first, preserve offline caches and region/console boundaries, and disclose the flat-cover fallback when 3D is selected. Never reuse original Switch artwork for Switch 2 or guess a missing region.
-- Add identity/cache/privacy regressions, a required live Switch-provider CI gate and native automatic-download/custom-cover-preservation checks. Automatic providers now cover 16 of 18 libraries with incomplete catalogs; PS5 and Switch 2 remain manual-only while a suitable provider is verified.
+- Add identity/cache/privacy regressions, a required live Switch-provider CI gate and native automatic-download/custom-cover-preservation checks. Automatic providers now cover 16 of 18 libraries with incomplete catalogs; PS5 and Switch 2 remain local-art only while a suitable online provider is verified.
 
 ## 0.5.15
 

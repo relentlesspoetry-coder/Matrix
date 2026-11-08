@@ -135,7 +135,7 @@ jobs:
           cargo install tauri-driver --version 2.1.0 --locked
           sudo install -o matrix-test -g matrix-test -m 0755 "$(command -v tauri-driver)" /home/matrix-test/bin/tauri-driver
           for iteration in 1 2; do
-            scripts/run-ci-as-test-user.sh dbus-run-session -- xvfb-run -a python3 /home/matrix-test/work/tests/test_native.py /home/matrix-test/bin/matrix-frontend --coordinator-tests /home/matrix-test/bin/backend-tests --screenshots "/home/matrix-test/artifacts/native-$iteration"
+            scripts/run-ci-as-test-user.sh dbus-run-session -- xvfb-run -a python3 /home/matrix-test/work/tests/test_native.py /home/matrix-test/bin/matrix-frontend --online --coordinator-tests /home/matrix-test/bin/backend-tests --screenshots "/home/matrix-test/artifacts/native-$iteration"
           done
       - name: Test extracted AppImage shutdown
         env:

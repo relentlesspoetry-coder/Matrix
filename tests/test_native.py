@@ -247,6 +247,21 @@ def main():
                 stored=library/relative
                 stored.parent.mkdir(parents=True, exist_ok=True)
                 stored.write_text('Synthetic fixture, not a playable game')
+                if id == 'ps5':
+                    icon = stored.parent/'sce_sys/icon0.png'
+                    icon.parent.mkdir()
+                    local_png = (Path(__file__).parent/'fixtures/demo-cover.png').read_bytes()
+                    icon.write_bytes(local_png)
+                    expected_icon = 'data:image/png;base64,' + base64.b64encode(local_png).decode()
+                    assert invoke('get_cover', {'kind':id,'uid':str(stored)}) == expected_icon
+                    sidecar = stored.with_suffix('.png')
+                    sidecar_bytes = local_png + b'synthetic sidecar priority'
+                    sidecar.write_bytes(sidecar_bytes)
+                    assert invoke('get_cover', {'kind':id,'uid':str(stored)}) == 'data:image/png;base64,' + base64.b64encode(sidecar_bytes).decode()
+                    sidecar.unlink()
+                    invoke('save_cover', {'kind':id,'uid':str(stored),'bytes':list(sidecar_bytes)})
+                    assert invoke('get_cover', {'kind':id,'uid':str(stored)}) == 'data:image/png;base64,' + base64.b64encode(sidecar_bytes).decode()
+                    assert stored.read_text() == 'Synthetic fixture, not a playable game'
                 try:
                     invoke('open_emulator', {'id':id})
                     raise AssertionError('Unconfigured console accepted launch')

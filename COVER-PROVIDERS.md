@@ -1,10 +1,23 @@
 # Matrix Play cover providers — reviewed November 5, 2026
 
+## Version 0.5.16: extracted PS5 local icons
+
+PS5 remains without an online cover provider. A validated extracted `eboot.bin`
+entry in a dedicated folder can use `sce_sys/icon0.png`, after imported covers,
+same-stem PNG/JPEG/WebP images and generic `cover.*` images. The folder must be
+inside a registered library, not the library root, and contain exactly one
+recognized boot target. Additional ELF/ZAR targets suppress folder-wide art
+without hiding any games. Other consoles and non-eboot PS5 files do not use this
+icon path. Files are decoded and capped at 4 MiB, including the read itself;
+symlinks in the icon path, nonregular files and corrupt/oversized images are
+ignored. `param.json` is not interpreted. This adds no network requests, arbitrary
+metadata paths, encrypted-content extraction or gameplay compatibility claim.
+
 ## Version 0.5.16 — original Switch product-code covers, reviewed November 8, 2026
 
 Switch now has a bounded GameTDB provider. This makes **16 of 18 libraries**
 provider-capable, not sixteen complete catalogs. **PS5 and Switch 2 still require
-local artwork.** Most Switch files named only with a sixteen-digit title ID need
+local artwork; extracted PS5 icons can now be discovered automatically.** Most Switch files named only with a sixteen-digit title ID need
 one explicit product-code/region confirmation; this release does not map those
 IDs automatically or read encrypted game content.
 

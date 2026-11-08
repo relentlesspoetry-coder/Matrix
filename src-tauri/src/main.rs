@@ -16,6 +16,7 @@ mod installed_titles;
 mod launch_log;
 mod launches;
 mod libraries;
+mod local_artwork;
 mod settings;
 mod steam_libraries;
 mod update_lifecycle;
@@ -1263,28 +1264,7 @@ fn candidate_cover_paths(game: &Game) -> Vec<PathBuf> {
         candidates.push(parent.join(format!("{stem}.{extension}")));
     }
     // A game in its own folder can have cover.png / cover.jpg / cover.webp.
-    let unique_game_folder =
-        spec(&game.kind).ok().is_some_and(|s| {
-            let roots = libraries::roots(&game.kind).unwrap_or_default();
-            let parent_path = parent.canonicalize().ok();
-            !roots.is_empty()
-                && parent_path
-                    .as_ref()
-                    .is_some_and(|parent| !roots.contains(parent))
-                && fs::read_dir(parent).ok().is_some_and(|entries| {
-                    entries
-                        .flatten()
-                        .filter(|e| {
-                            e.path().is_file()
-                                && e.path().extension().and_then(|x| x.to_str()).is_some_and(
-                                    |ext| s.extensions.contains(&ext.to_ascii_lowercase().as_str()),
-                                )
-                        })
-                        .take(2)
-                        .count()
-                        == 1
-                })
-        });
+    let unique_game_folder = local_artwork::unique_game_folder(game);
     if unique_game_folder {
         for extension in ["png", "jpg", "webp"] {
             candidates.push(parent.join(format!("cover.{extension}")));
@@ -1313,7 +1293,7 @@ fn read_local_cover_bytes(kind: &str, uid: &str, game: &Game) -> Result<Option<V
             return Ok(Some(bytes));
         }
     }
-    Ok(None)
+    Ok(local_artwork::ps5_icon(game))
 }
 
 fn read_cover_bytes(kind: &str, uid: &str, game: &Game) -> Result<Option<Vec<u8>>, String> {

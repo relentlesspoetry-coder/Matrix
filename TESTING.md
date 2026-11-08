@@ -1,13 +1,15 @@
 # Test Matrix Play on Linux
 
-## Version 0.5.16 Switch product-code artwork
+## Version 0.5.16 Switch product-code and PS5 local artwork
 
 Local validation passes 25 ordinary cover-core tests (four live checks excluded),
-137 backend tests, 32 updater-core tests, 133 JavaScript tests, managed-folder,
-release/signing, ten CI-account, five native-fixture, four DEB-helper and three
+139 backend tests, 32 updater-core tests, 134 JavaScript tests, managed-folder,
+release/signing, eleven CI-account, five native-fixture, four DEB-helper and three
 launch-log-lifetime checks. Formatting, syntax and whitespace checks pass.
-Independent review found no blocking issues; corrected the Switch 404 guidance
-so it does not suggest a style change that would query the same flat image.
+Independent review corrected the Switch 404 guidance so it does not suggest an
+ineffective style retry. Review also caught a PS1 playlist cover-preservation
+regression in the first PS5 candidate; the fix retains prior non-PS5 folder rules
+and adds valid/invalid playlist fixtures.
 
 The actual GameTDB Switch sample returned HTTP 200 and decoded as a 352×570 JPEG
 through the executor's ordinary HTTPS stack. The production Rust smoke test
@@ -15,10 +17,27 @@ returned a transport error locally, also seen in earlier provider tests; TLS
 validation was not weakened. GTK/WebKit development dependencies are absent
 locally. The new required production Rust live gate, full desktop/native window,
 installer and isolated signed-DEB upgrade checks must pass in CI before release.
+The combined CI runs the native suite with --online twice, enforced by a regression.
 Native fixtures now exercise an automatic Switch download, product-code/region
 controls and custom-cover preservation using synthetic game files. These checks
 do not establish title-ID mapping, complete catalogs or real gameplay. PS5 and
-Switch 2 remain manual-only.
+Switch 2 remain local-art only, without online providers.
+
+The isolated PS5 local-artwork candidate passes all 139 headless backend tests, including
+isolated-home synthetic fixtures for imported/sidecar/folder/icon precedence,
+missing/corrupt/empty images, exact 4 MiB bounds, file and ancestor symlinks,
+directories/FIFOs, platform/format isolation, multiple boot targets and shared
+roots. Additional PS1 valid/invalid playlist fixtures reproduce the initial
+folder-cover regression and pass after scoping boot-target counting to PS5.
+Rescanning preserves UIDs, favorites and original boot bytes. Tests do not
+read proprietary game data or contact a PS5 provider. Native IPC fixtures now
+check PS5 icon discovery and sidecar/imported priority; actual desktop execution
+and installers remain for the combined exact-tree CI candidate. Local GTK/WebKit
+development libraries are absent; the Chromium check could not start because
+its browser executable is not installed. The individual Python CI fixture suites
+pass (10 account, 5 native-lifecycle, 4 DEB-helper, 3 launch-log tests, plus managed
+folders and release/signing). Four live cover tests were deliberately not run in
+this no-network local-artwork pass. PS5 and Switch 2 still lack online providers.
 
 ## Version 0.5.15 private updater staging and cover catalogs
 

@@ -108,3 +108,13 @@ test('Switch controls require exact product and artwork region, not title-ID gue
   assert.match(html,/no Switch 2 fallback/);
   assert.doesNotMatch(html,/Confirm exact catalog title/);
 });
+
+test('PS5 describes existing local icons without claiming an online provider',()=>{
+  const f=fixture();
+  f.openGame('ps5','ps5-game');
+  const html=f.node('#overlay-root').innerHTML;
+  assert.match(html,/existing sce_sys\/icon0.png/);
+  assert.match(html,/Imported and sidecar covers take priority/);
+  assert.doesNotMatch(html,/data-action="download-cover"/);
+  assert.match(f.coverMessage('ps5','ps5-game'),/Online downloads are unavailable/);
+});
