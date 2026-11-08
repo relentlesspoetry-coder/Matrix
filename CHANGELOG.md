@@ -1,11 +1,14 @@
 # Changelog
 
-## Unreleased — expanded cover catalogs
+## 0.5.15
 
+- Fix DEB updates rejected with “Installer requires protected root-owned staging”. Create the temporary installer directory privately at creation time, independent of common system umasks, while retaining ownership, signature, hash and downgrade checks.
+- Add private-permission, signed-byte staging and cleanup regressions under four umasks, plus an isolated real signed-DEB APT upgrade gate with tamper and version-rejection checks.
+- Affected DEB installations need one manual installation of the official 0.5.15 DEB after saving work and closing Matrix Play. The existing installed helper cannot update itself before this repair is installed.
 - Add exact-title Libretro box-cover lookup for PS3, PS4, PSP, Vita, N64, Dreamcast, Wii U, Game Boy/Game Boy Color, GBA, DS and 3DS. Keep existing PS1/PS2 and GameCube/Wii ID providers and custom-cover priority.
 - Require an explicit title-provider opt-in before automatic scans send filename-based game titles to Libretro. Individual exact-title confirmation remains available without automatic downloading. Existing settings migrate without enabling new data sharing.
 - Keep region/language/revision names, per-console cache separation, safe fixed URLs, image validation and offline caching. Game Boy and Game Boy Color select separate catalogs by extension. Explain the flat-cover fallback when 3D is selected.
-- Switch, PS5 and Switch 2 remain manual-only pending verified providers. Catalog support does not promise every game has artwork; Vita's catalog is especially limited. This is a partial implementation of the all-console request, not a complete release.
+- Switch, PS5 and Switch 2 remain manual-only pending verified providers. Catalog support does not promise every game has artwork; Vita's catalog is especially limited. Automatic cover catalogs now support 15 of 18 console libraries, not every game.
 
 ## 0.5.14
 

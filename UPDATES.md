@@ -8,6 +8,30 @@ The signed manifest binds schema, repository, version, tag, Linux architecture/p
 
 DEB installations at `/usr/bin/matrix-frontend` use `pkexec /usr/lib/matrix-play/matrix-install-update`; Linux handles authorization, and Matrix Play never reads a password. The DEB packages this compiled helper as a root-owned executable and declares `pkexec` as a required dependency. The app sends the original signed manifest, signature and bounded package bytes through stdin. The helper accepts no command-line arguments, hashes or caller-selected file paths. It independently verifies the pinned signing key, repository, version, architecture and DEB identity, then copies the package into a new root-owned 0700 directory under `/var/cache` (never a caller-supplied TMPDIR). It checks the exact staged file against the authenticated size, hash and package header before invoking absolute `/usr/bin/apt-get` with a cleared environment. That private staging directory remains alive through APT completion and is then removed. Replacing or modifying the user-writable download after verification cannot alter the installed bytes. Existing installations without the helper must install this security update manually; there is no fallback to privileged installation of a mutable user path. AppImage mode requires the running Matrix Play executable to be inside its declared mounted/extracted APPDIR, preventing an inherited APPIMAGE from targeting another program. AppImage installation stages and verifies a new image in the same directory, preserves the existing file as `.previous`, then atomically replaces it. The folder must be writable. A development binary gives manual-installation guidance instead of starting an uncoordinated installer. Game folders, settings and covers are not updated by this process.
 
+## DEB updater staging repair in v0.5.15
+
+Affected DEB helpers created their temporary directory with the filesystem's
+ordinary default permissions (usually 0755), then correctly rejected it because
+installer staging must be private (0700). The error was “Installer requires
+protected root-owned staging”, sometimes accompanied by Broken pipe because the
+helper rejected the request before reading package bytes. No installation was
+started, and the coordinator reopened Matrix Play to show the failure.
+
+Version 0.5.15 requests 0700 atomically when creating staging, without weakening
+root ownership, protected-parent, signed-manifest, package hash or downgrade
+checks and without changing the caller's umask. Existing affected DEB installations
+need one manual installation of the official 0.5.15 DEB after saving work and
+closing Matrix Play. Downloading a new package through the broken helper cannot
+replace that helper before it runs. Games, saves, settings and artwork are retained.
+The AppImage installer does not use this DEB staging path.
+
+For a reproducible real package transaction, use `tests/signed_deb_integration.py`
+with the official v0.5.13 signed manifest, signature and DEB. It runs the current
+production-key verification and APT/dpkg in a disposable user/mount/network-isolated
+chroot and checks installed files, rejection and cleanup. Its dependency records
+are synthetic so it does not certify GUI startup, desktop libraries or the pkexec
+authorization prompt. The host package database is not exposed to the chroot.
+
 ## Save, close and coordinate before installation
 
 Starting with v0.5.11, the built-in updater requires an explicit prompt confirmation:

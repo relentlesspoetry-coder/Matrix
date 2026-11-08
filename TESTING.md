@@ -1,28 +1,32 @@
 # Test Matrix Play on Linux
 
-## Unreleased cover-catalog extension — November 8, 2026
+## Version 0.5.15 private updater staging and cover catalogs
 
-Local validation passes 137 headless backend tests, 132 JavaScript tests, 31
-updater-core tests and 22 ordinary cover-core tests (three opt-in live-provider tests excluded).
-The new regressions check every explicit provider mapping, exact region/edition
-names, Unicode and punctuation encoding, unsafe-input rejection, GB/GBC
-separation, flat-style cache reuse, user-confirmed-title persistence/invalidation,
-no speculative fallbacks, old settings migration, title-provider opt-in and local
-cover priority across all twelve new platform variants. Existing PS1/PS2 and
-GameCube/Wii behavior remains covered. These are synthetic fixtures, not game
-content, visual QA or complete provider-catalog validation.
+Combined local validation passes 137 headless backend tests, 132 JavaScript
+tests, 32 updater-core tests and 22 ordinary cover-core tests (three opt-in
+live-provider tests excluded). Managed-folder, release/signing, nine CI-account,
+five native-fixture, four DEB-helper and three launch-log-lifetime tests pass.
+Both standalone update helpers build; Rust formatting, JavaScript syntax and
+patch-whitespace checks pass. The old staging code fails the new mode assertion
+(0755 instead of 0700). The repair passes under umasks 000, 002, 022 and 077.
 
-The explicit Libretro live smoke test was attempted and failed before the first
-image arrived, with a production transport error after five seconds. No TLS
-weakening or access workaround was used. GTK/WebKit development dependencies
-are absent (`pkg-config` cannot find them), so native-window and packaged-app
-tests have not run on this candidate. The Chromium mock-UI attempt also stopped
-before loading the page because Playwright's browser executable is not installed.
-Managed-folder, release/signing, four DEB-helper, five native-fixture, six
-CI-account and three launch-log-lifetime tests pass, as do formatting, syntax
-and whitespace checks. Release tests publish only to disposable local fixtures. CI must validate the exact final commit
-before publication. The all-console request remains incomplete: Switch, PS5
-and Switch 2 automatic providers are not implemented.
+The production-key installer also completed an actual official v0.5.12 to
+v0.5.13 APT/dpkg upgrade inside a disposable user/mount/network-isolated chroot,
+with the correct version configured, installed helper/app present, and staging
+cleaned. The original staging code reproduced the protected-directory rejection.
+Altered bytes and same-version requests were rejected before package installation.
+The integration harness keeps host package state outside the chroot and compares
+its hash before/after. Desktop-library dependency records are synthetic; the
+privileged authorization prompt and GUI runtime are outside this test's scope.
+
+The cover candidate separately passed required live Libretro downloads, existing
+live providers, both installer builds, actual painted desktop startup, native
+Settings opt-in/out and custom-cover preservation, and native/AppImage lifecycle
+checks twice in [CI run 42436367853](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42436367853).
+The combined versioned candidate must repeat all CI gates before publication.
+GTK/WebKit development libraries remain absent locally. These tests do not
+certify real emulator/game compatibility or complete artwork catalog coverage.
+Switch, PS5 and Switch 2 automatic artwork providers remain unimplemented.
 
 ## Version 0.5.14 moved-emulator selection and Switch 2 listing repair
 
@@ -384,16 +388,16 @@ checks output after the launching process exits and log-write failure using
 synthetic subprocesses. Run the normal Rust suites and desktop tests as well;
 these checks do not replace a real emulator test or privileged DEB upgrade test.
 
-This is the native testing release, version 0.5.14. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
+This is the native testing release, version 0.5.15. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04
 
-1. Open the [v0.5.14 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.14) — the repository and installers are public.
-2. Download `Matrix-Play_0.5.14_amd64.deb`.
+1. Open the [v0.5.15 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.15) — the repository and installers are public.
+2. Download `Matrix-Play_0.5.15_amd64.deb`.
 3. Open a terminal in the download folder and run:
 
    ```bash
-   sudo apt install ./Matrix-Play_0.5.14_amd64.deb
+   sudo apt install ./Matrix-Play_0.5.15_amd64.deb
    ```
 
 4. Open **Matrix Play** from the application menu. You can also run `matrix-frontend` in a terminal to capture diagnostics.
@@ -402,24 +406,24 @@ APT installs the GTK/WebKit runtime dependencies if needed. Rust, Node, the sour
 
 ## Portable AppImage alternative
 
-Download `Matrix-Play_0.5.14_amd64.AppImage` from the same release. In its download folder run:
+Download `Matrix-Play_0.5.15_amd64.AppImage` from the same release. In its download folder run:
 
 ```bash
-chmod +x Matrix-Play_0.5.14_amd64.AppImage
-./Matrix-Play_0.5.14_amd64.AppImage
+chmod +x Matrix-Play_0.5.15_amd64.AppImage
+./Matrix-Play_0.5.15_amd64.AppImage
 ```
 
 If FUSE is unavailable, run it in extraction mode:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.14_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.5.15_amd64.AppImage
 ```
 
 The AppImage's actual native window, IPC, scanning, local covers, settings and launcher dispatch passed the same isolated desktop test in extraction mode. Other Linux distributions and native FUSE mounting have not been validated. The DEB is recommended on Zorin/Ubuntu.
 
 ## Upgrade from the blank-window build
 
-Close Matrix Play, then install the v0.5.14 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
+Close Matrix Play, then install the v0.5.15 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
 
 If a new startup problem occurs, attach `~/.local/share/matrix/startup.log` to the issue. This contains bounded startup stages and renderer/load errors, not game data. In this incident, graphics workarounds did not resolve the problem; a fresh cache directory did, which the affected user confirmed. The specific problematic shared cache file was not identified or deleted.
 

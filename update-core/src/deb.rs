@@ -92,6 +92,19 @@ fn require_root_directory(path: &Path, private: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(unix)]
+fn staging_directory(parent: &Path) -> Result<tempfile::TempDir, String> {
+    use std::os::unix::fs::PermissionsExt;
+    // TempDir defaults to 0777 masked by umask, usually 0755. The root guard
+    // correctly rejects that. Request 0700 at mkdir time, before any package
+    // bytes exist, rather than weakening validation or changing process umask.
+    tempfile::Builder::new()
+        .prefix("matrix-update-")
+        .permissions(std::fs::Permissions::from_mode(0o700))
+        .tempdir_in(parent)
+        .map_err(|e| e.to_string())
+}
+
 /// Called only by the installed, root-owned helper through pkexec. No paths,
 /// commands, digests, keys, versions or APT options are accepted as arguments.
 #[cfg(unix)]
@@ -101,10 +114,7 @@ pub fn install_from_stdin(input: &mut impl Read, current: &str) -> Result<(), St
     for parent in ["/", "/var", "/var/cache"] {
         require_root_directory(Path::new(parent), false)?;
     }
-    let staging = tempfile::Builder::new()
-        .prefix("matrix-update-")
-        .tempdir_in("/var/cache")
-        .map_err(|e| e.to_string())?;
+    let staging = staging_directory(Path::new("/var/cache"))?;
     require_root_directory(staging.path(), true)?;
     let path = stage_package(input, &release, staging.path())?;
     // The validated bytes remain inside a root-owned 0700 directory until APT
@@ -222,6 +232,67 @@ mod tests {
             let protected = tempfile::tempdir().unwrap();
             assert!(stage_package(&mut Cursor::new(modified), &release, protected.path()).is_err());
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn staging_creation_is_private_under_common_umasks() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        if std::env::var_os("MATRIX_STAGING_UMASK_FIXTURE").is_none() {
+            // umask is process-global. Set it only in disposable subprocesses,
+            // never in the parallel test runner or the real user's session.
+            for mask in ["000", "002", "022", "077"] {
+                let output = Command::new("/bin/sh")
+                    .args([
+                        "-c",
+                        "umask \"$1\"; shift; exec \"$@\"",
+                        "staging-fixture",
+                        mask,
+                    ])
+                    .arg(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "deb::tests::staging_creation_is_private_under_common_umasks",
+                        "--nocapture",
+                    ])
+                    .env("MATRIX_STAGING_UMASK_FIXTURE", "1")
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "umask {mask}: {}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            return;
+        }
+        let root = tempfile::Builder::new()
+            .permissions(std::fs::Permissions::from_mode(0o700))
+            .tempdir()
+            .unwrap();
+        let staging = staging_directory(root.path()).unwrap();
+        let meta = std::fs::symlink_metadata(staging.path()).unwrap();
+        assert!(meta.is_dir());
+        assert_eq!(meta.permissions().mode() & 0o777, 0o700);
+        assert_eq!(meta.uid(), root.path().metadata().unwrap().uid());
+        // CI can run this exact fixture as root, but it never invokes pkexec or
+        // APT. Ordinary-user tests must still be rejected by the root guard.
+        if meta.uid() == 0 {
+            require_root_directory(staging.path(), true).unwrap();
+        } else {
+            assert!(require_root_directory(staging.path(), true).is_err());
+        }
+        let data = b"!<arch>\nprivate staging fixture";
+        let (bytes, key) = request(data);
+        let mut input = Cursor::new(bytes);
+        let release = read_metadata(&mut input, "0.5.6", &key.verifying_key().to_bytes()).unwrap();
+        let package = stage_package(&mut input, &release, staging.path()).unwrap();
+        assert_eq!(std::fs::read(&package).unwrap(), data);
+        crate::validate_file(&package, &release.asset, "deb").unwrap();
+        let path = staging.path().to_owned();
+        drop(staging);
+        assert!(!path.exists(), "staging and its package must be cleaned up");
     }
 
     #[test]

@@ -97,6 +97,18 @@ class ProcessAccountTests(unittest.TestCase):
         self.assertIn('cargo test --locked --manifest-path src-tauri/Cargo.toml '
                       '--no-default-features --lib -- --test-threads=1', native_script)
 
+    def test_root_staging_gate_runs_only_the_disposable_exact_fixture(self):
+        workflow = (ROOT/'.github/workflows/linux.yml').read_text()
+        step = workflow.split('- name: Verify private root-owned update staging\n', 1)[1].split('\n      - ', 1)[0]
+        self.assertIn('lib update-core/src/lib.rs', step)
+        self.assertIn('sudo mktemp -d /var/tmp/matrix-staging-regression.XXXXXX', step)
+        self.assertIn('sudo install -o root -g root -m 0755', step)
+        self.assertIn('sudo env -i PATH=/usr/bin:/bin HOME=/root TMPDIR=', step)
+        self.assertIn('--exact deb::tests::staging_creation_is_private_under_common_umasks --nocapture', step)
+        self.assertIn('trap ', step)
+        self.assertNotIn('continue-on-error', step)
+        self.assertNotIn('||', step)
+
     def test_native_lifecycle_checks_require_two_passes_with_distinct_diagnostics(self):
         workflow = (ROOT/'.github/workflows/linux.yml').read_text()
         for name, folder in [('Test actual desktop window', 'native-$iteration'),
@@ -106,6 +118,22 @@ class ProcessAccountTests(unittest.TestCase):
             self.assertIn(f'--screenshots "/home/matrix-test/artifacts/{folder}"', step)
             self.assertNotIn('continue-on-error', step)
             self.assertNotIn('||', step)
+
+    def test_signed_deb_gate_is_isolated_and_required(self):
+        workflow = (ROOT/'.github/workflows/linux.yml').read_text()
+        step = workflow.split('- name: Verify isolated signed DEB upgrades\n', 1)[1].split('\n      - ', 1)[0]
+        self.assertIn('--build-only --source-root', step)
+        self.assertIn('for mask in 000 002 022 077', step)
+        self.assertIn('for scenario in tamper downgrade', step)
+        self.assertIn('--seed-deb', step)
+        self.assertIn('sudo env -i PATH=/usr/bin:/bin HOME=/root', step)
+        self.assertNotIn('continue-on-error', step)
+        self.assertNotIn('||', step)
+        harness = (ROOT/'tests/signed_deb_integration.py').read_text()
+        self.assertIn("['unshare','--user','--map-root-user','--mount','--net'", harness)
+        self.assertIn('Host package database changed', harness)
+        self.assertIn('matrix_update_core::deb::install_from_stdin', harness)
+        self.assertIn('Staging leaked after installer exit', harness)
 
     def test_new_cover_provider_has_a_required_live_gate(self):
         workflow = (ROOT/'.github/workflows/linux.yml').read_text()

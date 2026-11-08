@@ -1,6 +1,6 @@
 # Matrix Play cover providers — reviewed November 5, 2026
 
-## Unreleased extension — Libretro, reviewed November 8, 2026
+## Version 0.5.15 extension — Libretro, reviewed November 8, 2026
 
 This adds a title-based provider for eleven more Matrix libraries: PS3, PS4,
 PSP, Vita, N64, Dreamcast, Wii U, Game Boy/Game Boy Color, GBA, DS and 3DS.
@@ -50,11 +50,12 @@ before implementation. No verified PS5 or Switch 2 template was established.
 
 Fixture tests pass for mappings, exact names, confirmation, cache boundaries,
 legacy settings, local-cover precedence and disabled-provider behavior. The
-new production Rust live test failed on its first request in this executor
-with a transport error after five seconds. HTTPS validation was not changed.
-Run `cargo test --locked --manifest-path cover-core/Cargo.toml live_libretro_templates -- --ignored`
-in the trusted CI/desktop environment before claiming production-network
-verification. Native desktop/installer verification is also still required.
+initial local production Rust live check failed with a transport error; HTTPS
+validation was not changed. The cover candidate then passed required live
+Libretro downloads, existing live providers, native Settings opt-in/out and
+custom-cover preservation, both installer builds and repeated native/AppImage
+checks in [CI run 42436367853](https://github.com/relentlesspoetry-coder/Matrix/actions/runs/42436367853).
+The combined versioned release must repeat these gates before publication.
 
 ## xlenore: implemented
 
