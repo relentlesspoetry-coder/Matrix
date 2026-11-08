@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.19 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.20 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -92,35 +92,56 @@ function gamesFor(id) {
 function findGame(id, uid) {
   return gamesFor(id).find(game => game.uid === uid);
 }
+const preferenceMap = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+function storedPrefs() {
+  const stored = localStorage.getItem('matrix-ui-v03') || localStorage.getItem('console-hub-v02');
+  if (stored) {
+    // Invalid fields are isolated so valid neighboring preferences survive.
+    let raw;
+    try { raw = JSON.parse(stored); } catch { /* Try legacy recovery below. */ }
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return {
+      configs: preferenceMap(raw.configs), imported: preferenceMap(raw.imported),
+      favorites: Array.isArray(raw.favorites) ? raw.favorites.filter(x => typeof x === 'string') : [],
+    };
+  }
+  let previous;
+  try { previous = preferenceMap(JSON.parse(localStorage.getItem('console-hub-ui-v1') || '{}')); } catch { previous = {}; }
+  return {
+    configs: preferenceMap(previous.configs), imported: {},
+    favorites: Array.isArray(previous.favorites) ? previous.favorites.filter(key => typeof key === 'string').map(key => {
+      const [consoleId, index] = key.split(':');
+      return favoriteKey(consoleId, `demo-${index}`);
+    }) : [],
+  };
+}
 function readPrefs() {
   try {
-    const stored = localStorage.getItem('matrix-ui-v03') || localStorage.getItem('console-hub-v02');
-    const raw = stored ? JSON.parse(stored) : null;
-    if (raw && typeof raw === 'object') {
-      if (raw.configs && typeof raw.configs === 'object') state.configs = raw.configs;
-      if (raw.imported && typeof raw.imported === 'object') state.imported = raw.imported;
-      if (Array.isArray(raw.favorites)) state.favorites = new Set(raw.favorites.filter(x => typeof x === 'string'));
-      return;
-    }
+    const saved = storedPrefs();
+    state.configs = saved.configs;
+    state.imported = saved.imported;
+    state.favorites = new Set(saved.favorites);
   } catch { /* Browser storage can be disabled for local files. */ }
-  // Migrate compatible emulator fields and favorites from the v0.1 preview.
-  try {
-    const previous = JSON.parse(localStorage.getItem('console-hub-ui-v1') || '{}');
-    if (previous.configs) state.configs = previous.configs;
-    if (Array.isArray(previous.favorites)) {
-      state.favorites = new Set(previous.favorites.map(key => {
-        const [consoleId, index] = key.split(':');
-        return favoriteKey(consoleId, `demo-${index}`);
-      }));
-    }
-  } catch { /* Optional migration only. */ }
 }
-function savePrefs() {
+function savePrefs(change) {
   try {
-    localStorage.setItem('matrix-ui-v03', JSON.stringify({
-      configs: state.configs, imported: state.imported, favorites: [...state.favorites],
-    }));
-  } catch { toast('The browser could not persist these UI preview settings.'); }
+    // Persist only this action, never the rest of this tab's possibly stale state.
+    const saved = storedPrefs();
+    if (change.type === 'favorite') {
+      const favorites = new Set(saved.favorites);
+      if (change.favorite) favorites.add(change.key); else favorites.delete(change.key);
+      saved.favorites = [...favorites];
+    } else if (change.type === 'profile') {
+      saved.configs[change.id] = change.value;
+    } else if (change.type === 'import') {
+      if (change.value === undefined) delete saved.imported[change.id];
+      else saved.imported[change.id] = change.value;
+    } else throw new Error('Unknown preference change');
+    localStorage.setItem('matrix-ui-v03', JSON.stringify(saved));
+    return true;
+  } catch {
+    toast('The browser could not persist these UI preview settings.');
+    return false;
+  }
 }
 function evictCover(key) {
   const uri = state.art.get(key);
@@ -304,14 +325,14 @@ function toggleFavorite(id,uid,button) {
       for (const value of list) state.favorites.add(favoriteKey(id,value));
     } else if (favorite) state.favorites.add(key);else state.favorites.delete(key);
     favoriteWriteRevision++;
-    savePrefs();
+    const persisted = state.native || savePrefs({type:'favorite',key,favorite});
     if (state.page==='console' && state.consoleId===id) renderConsole();
     if (state.overlay==='game' && state.selectedGame?.id===id && state.selectedGame?.uid===uid) {
       // Keep the live details form, draft serial and focus intact.
       const control=$('#overlay-root [data-action="favorite"]');
       if (control) { control.innerHTML=`${glyph('heart')} ${favorite ? 'Unfavorite' : 'Favorite'}`;control.setAttribute('aria-pressed',String(favorite)); }
     }
-    toast(favorite ? `Added to ${byId[id].name} favorites.` : `Removed from ${byId[id].name} favorites.`);
+    if (persisted) toast(favorite ? `Added to ${byId[id].name} favorites.` : `Removed from ${byId[id].name} favorites.`);
   }).catch(error=>toast(`Could not save favorite: ${error}`)).finally(()=>{button.disabled=false;});
 }
 
@@ -335,7 +356,50 @@ function visibleGames(id) {
   if (state.sort === 'recent') result.sort((a,b) => releaseYear(b) - releaseYear(a));
   return result;
 }
+// Keep keyboard/controller position when a library render replaces its controls.
+// Disabling an async favorite button may blur it before the render begins.
+let lastLibraryFocus = null, lastFocusRender = null;
+document.addEventListener?.('focusin', event => {
+  if ($('#screen')?.contains?.(event.target)) lastLibraryFocus = event.target;
+});
+function captureLibraryFocus(scope, page = null) {
+  // A matching page name alone is insufficient after visiting Home: the old
+  // screen must still be the one rendered here, not a different screen's UI.
+  if (page && (lastFocusRender?.page !== page || lastFocusRender.first !== scope?.firstElementChild)) return {page};
+  const describe = node => scope?.contains?.(node) ? {
+    id: node.id, action: node.dataset?.action, consoleId: node.dataset?.id,
+    uid: node.dataset?.uid, kind: node.dataset?.kind, value: node.dataset?.value,
+    start: node.selectionStart, end: node.selectionEnd, direction: node.selectionDirection,
+  } : null;
+  let active = document.activeElement;
+  if (active === document.body && lastLibraryFocus?.disabled && lastLibraryFocus.isConnected) active = lastLibraryFocus;
+  return { page, active: describe(active), opener: describe(state.lastFocus) };
+}
+function restoreLibraryFocus(saved) {
+  const screen = $('#screen');
+  if (saved.page) lastFocusRender = {page:saved.page, first:screen?.firstElementChild};
+  const resolve = key => {
+    if (!key) return null;
+    const controls = [...(screen?.querySelectorAll('button,input,select,textarea,a[href],[tabindex]') || [])];
+    return controls.find(node => !node.disabled && (key.id ? node.id === key.id : key.action
+      && node.dataset?.action === key.action && node.dataset?.id === key.consoleId
+      && node.dataset?.uid === key.uid && node.dataset?.kind === key.kind && node.dataset?.value === key.value))
+      || controls.find(node => node.dataset?.action === 'filter-games' && node.dataset?.value === state.gameFilter)
+      || (state.page === 'settings' ? controls.find(node => !node.disabled && node.dataset?.action === 'configure' && node.dataset?.id === key.consoleId)
+        || controls.find(node => !node.disabled && node.dataset?.action === 'configure') : null)
+      || $('#external-search') || $('#game-search');
+  };
+  if (saved.opener) state.lastFocus = resolve(saved.opener);
+  if (saved.active && !state.overlay) {
+    const target = resolve(saved.active);
+    target?.focus();
+    if (target?.id === saved.active.id && typeof saved.active.start === 'number' && target.setSelectionRange) {
+      target.setSelectionRange(saved.active.start, saved.active.end, saved.active.direction);
+    }
+  }
+}
 function renderGameResults() {
+  const focus = captureLibraryFocus($('#game-results'));
   const consoleInfo = byId[state.consoleId];
   const games = visibleGames(consoleInfo.id);
   const sortControl=$('#sort-games');if (sortControl) sortControl.value=state.sort;
@@ -343,8 +407,10 @@ function renderGameResults() {
     ? `<div class="${state.view === 'grid' ? 'game-grid' : 'game-list'}">${games.map((game,index) => gameCard(consoleInfo,game,index)).join('')}</div>`
     : state.gameFilter === 'Favorites' ? `<div class="empty empty-library"><strong>${favoriteCount(consoleInfo.id) ? 'No favorites match this search' : `No ${escapeHtml(consoleInfo.name)} favorites yet`}</strong><p>${favoriteCount(consoleInfo.id) ? 'Try another search, or switch to All games.' : 'Select the heart on a game in All games to add it to this console’s favorites list.'}</p><button type="button" class="button button-ghost" data-action="filter-games" data-value="All">Browse all games</button></div>` : `<div class="empty empty-library"><strong>${state.native && !importedFor(consoleInfo.id).length ? 'No games detected yet' : 'No matching games'}</strong><p>${state.native && !importedFor(consoleInfo.id).length ? 'Place your game files in this console’s Games folder and click Refresh.' : 'Try another search or switch to All games.'}</p></div>`;
   hydrateNativeCovers();
+  restoreLibraryFocus(focus);
 }
 function renderConsole() {
+  const focus = captureLibraryFocus($('#screen'), 'console:'+state.consoleId);
   const consoleInfo = byId[state.consoleId];
   normalizeGameSort(consoleInfo.id);
   const yearSorting=hasReleaseYears(consoleInfo.id);
@@ -361,8 +427,10 @@ function renderConsole() {
     </div><p id="sort-year-hint" class="muted">${yearSorting ? 'Release-year sorting places titles with unknown years last.' : 'Release-year sorting is unavailable: these titles have no release-year metadata.'}</p><div id="game-results"></div>
     <div class="notice">${glyph('info')}<span>${state.native ? 'Your ROM files are not moved or modified. Launch requires a configured emulator path; launch arguments vary by emulator.' : hasImported ? 'Only filenames and relative paths were read. Nothing was uploaded. Folder preview entries cannot launch games until the native app is implemented.' : 'This is a browser preview. The native app will create and scan console folders on first run.'}</span></div>`;
   renderGameResults();renderLaunchStatus();
+  restoreLibraryFocus(focus);
 }
 function renderSettings() {
+  const focus = captureLibraryFocus($('#screen'), 'settings');
   $('#screen').innerHTML = `<div class="settings-header"><div class="eyebrow">YOUR SETUP</div><h1 class="page-title">Emulators &amp; folders.</h1><p class="page-subtitle">Keep managed folders and add existing libraries from other drives.</p>${state.native ? `<div class="root-path">${glyph('folder')} Managed folder <strong>${escapeHtml(state.root)}</strong></div>` : ''}</div>
     <div class="notice" style="margin:0 0 25px">${glyph('info')}<span>${state.native ? 'Choose Set up for a console, then select AppImage, Flatpak, or another executable. Browse for an AppImage anywhere, or choose an already-installed Flatpak from the list.' : 'Browser preview settings are not connected to your filesystem. Native folder creation and launching require the Matrix Play Linux application.'}</span></div>
     ${state.native ? discoverySummary() : ''}
@@ -377,6 +445,7 @@ function renderSettings() {
     <button type="button" class="button button-ghost" data-action="cover-project">Open TheCoverProject</button><p id="cover-scan-status" role="status"></p></section>
     <div class="section-toolbar"><h2 class="section-title">Console profiles</h2><span class="status">${configuredCount()} / ${consoles.length} saved</span></div>
     <div class="settings-list">${consoles.map(consoleInfo => `<div class="settings-row"><div class="settings-row__left"><div class="settings-glyph" style="--tint:${consoleTone(consoleInfo)}">${deviceArt(consoleInfo.id)}</div><div class="settings-name"><strong>${escapeHtml(consoleInfo.name)}</strong><small>Suggested: ${escapeHtml(consoleInfo.emulator)}${state.native ? ` · ${escapeHtml(state.folders[consoleInfo.id] || '')}` : state.configs[consoleInfo.id]?.folderPath ? ` · ${escapeHtml(state.configs[consoleInfo.id].folderPath)}` : ''}</small></div></div><div class="settings-row__right">${state.native ? `<button type="button" class="button button-ghost" data-action="library-folders" data-id="${consoleInfo.id}" aria-label="Manage ${escapeHtml(consoleInfo.name)} folders">Folders</button>` : ''}<span class="status ${isConfigured(consoleInfo.id) ? 'ready' : ''}">${consoleInfo.libraryOnly ? 'Library only' : isConfigured(consoleInfo.id) ? 'Profile saved' : 'Not set up'}</span><button type="button" class="button button-ghost" data-action="configure" data-id="${consoleInfo.id}" ${consoleInfo.libraryOnly ? 'disabled' : ''}>${consoleInfo.libraryOnly ? 'Library only' : isConfigured(consoleInfo.id) ? 'Edit' : 'Set up'}</button></div></div>`).join('')}</div>`;
+  restoreLibraryFocus(focus);
 }
 function render() {
   renderNav();
@@ -403,6 +472,7 @@ function goExternal(page) {
 function externalList(page) { return page === 'steam' ? state.steam : state.windows; }
 function windowsShortcutSupported(game) { return game?.runner === 'desktop' && /\.desktop$/i.test(game.target || ''); }
 function renderExternal(page) {
+  const focus = captureLibraryFocus($('#screen'), page);
   const steam = page === 'steam';
   const title = steam ? 'Steam Games' : 'Windows Games';
   const games = externalList(page).filter(g => g.title.toLowerCase().includes(state.query.toLowerCase()));
@@ -419,6 +489,7 @@ function renderExternal(page) {
     <div class="notice">${glyph('info')}<span>${state.native ? steam ? 'Steam titles are discovered from appmanifest files and launched through Steam.' : 'Matrix Play opens .desktop shortcuts only. It does not run .exe files or supply a Windows compatibility runtime. Shortcuts must already work outside Matrix Play.' : 'Browser preview only. Native discovery and launching are available in the Matrix Play Linux build.'}</span></div>`;
   renderLaunchStatus();
   hydrateNativeCovers();
+  restoreLibraryFocus(focus);
 }
 function openExternalGame(kind, uid) {
   const game = externalList(kind).find(g => g.uid === uid); if (!game) return;
@@ -725,8 +796,8 @@ function importFolder(files) {
     return;
   }
   state.imported[id] = imported; state.query = ''; state.gameFilter = 'All';
-  savePrefs(); render();
-  toast(`Previewed ${imported.length} ${byId[id].name} filename${imported.length === 1 ? '' : 's'}. No game files were copied or uploaded.`);
+  const persisted = savePrefs({type:'import',id,value:imported}); render();
+  if (persisted) toast(`Previewed ${imported.length} ${byId[id].name} filename${imported.length === 1 ? '' : 's'}. No game files were copied or uploaded.`);
 }
 function refreshCoverUI(selected) {
   // Update matching images in place. A pending import must never reopen details
@@ -1085,7 +1156,8 @@ async function handleAction(button) {
   else if (action === 'preview-folder') { $('#folder-input').value = ''; $('#folder-input').click(); }
   else if (action === 'clear-preview') {
     delete state.imported[state.consoleId]; state.query = ''; state.gameFilter = 'All';
-    savePrefs(); render(); toast('Folder preview cleared. Your game files were not changed.');
+    const persisted = savePrefs({type:'import',id:state.consoleId}); render();
+    if (persisted) toast('Folder preview cleared. Your game files were not changed.');
   }
   else if (action === 'download-cover') {
     const selected = {...state.selectedGame};
@@ -1170,7 +1242,7 @@ function setupEvents() {
       }).catch(error => {if ($('#config-form')===owner) $('#config-error').textContent=String(error);else toast(String(error));})
         .finally(()=>{submit.disabled=false;delete owner.dataset.saving;});
     } else {
-      state.configs[id]={...profile,folderPath};savePrefs();dismissOverlay();render();toast('Browser preview settings saved.');
+      state.configs[id]={...profile,folderPath};const persisted=savePrefs({type:'profile',id,value:state.configs[id]});dismissOverlay();render();if (persisted) toast('Browser preview settings saved.');
     }
   });
   document.addEventListener('keydown', event => {

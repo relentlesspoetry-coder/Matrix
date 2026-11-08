@@ -581,6 +581,31 @@ def main():
             wait_for(lambda: js('return document.querySelectorAll(".console-card").length === 18 && document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"'))
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
+            # Bounded actual-WebKit focus continuity checks using synthetic games.
+            js('document.querySelector(".game-info").focus()')
+            key('\ue007')  # Enter opens details from the focused card control.
+            js('document.querySelector("#overlay-root [data-action=favorite]").focus()')
+            key('\ue007')
+            wait_for(lambda: js('return document.querySelector("#overlay-root [data-action=favorite]")?.getAttribute("aria-pressed") === "false"'))
+            key('\ue00c')  # Escape returns to the replacement details opener.
+            assert focused('.game-info')
+            js('document.querySelector(".favorite").focus()')
+            key('\ue007')
+            wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
+            assert focused('.favorite')
+            for action, value in [('filter-games', 'Favorites'), ('view', 'list'), ('view', 'grid')]:
+                selector = f'[data-action="{action}"][data-value="{value}"]'
+                js('document.querySelector(arguments[0]).focus()', selector)
+                key('\ue007')
+                assert focused(selector)
+            js('document.querySelector(".favorite").focus()')
+            key('\ue007')
+            wait_for(lambda: js('return document.querySelectorAll(".game-item").length === 0'))
+            assert focused('[data-action="filter-games"][data-value="Favorites"]')
+            click('[data-action="filter-games"][data-value="All"]')
+            click('.favorite')
+            wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
+            print('PASS: WebKit details return focus, filter/layout focus and last-favorite fallback')
             screenshot('matrix-linux-ps2.png')
             click('.game-card')
             wait_for(log.exists)

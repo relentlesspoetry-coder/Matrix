@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.20
+
+- Preserve keyboard/controller focus when console libraries, Settings, Steam or Windows lists rerender. Keep open-dialog focus intact, return to the replacement opener after closing, and use a sensible filter/search fallback when a game disappears. Do not carry focus across unrelated navigation.
+- Save only the changed browser-preview preference against the latest stored document, preventing sequential stale tabs from overwriting unrelated profiles, imports or favorites. Reject array-shaped preference maps, retain compatible legacy recovery, and preserve clear storage-failure messages. Native favorites no longer depend on browser storage.
+- Recognize Switch 2 product-code markers only at token boundaries, so ordinary original-Switch titles such as “MLB-The Show” are not rejected for containing “LB-”. Keep explicit BEE/LB markers and Switch 2 title IDs excluded from original-Switch artwork lookup.
+- Add 24 deterministic UI regressions, a pure product-code regression and actual-WebKit keyboard checks. Preview storage remains localStorage, not a cross-tab transactional database; no gameplay or new platform support is claimed.
+
 ## 0.5.19
 
 - Reject or skip Linux paths containing non-UTF-8 bytes instead of converting them into a different actionable filename. Preserve existing valid UTF-8 game IDs, favorites/artwork keys and file contents.

@@ -40,10 +40,12 @@ pub fn url(input: &str) -> Result<String, String> {
 
 pub fn detect(path: &Path) -> Result<(String, String), String> {
     let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    let upper = name.to_ascii_uppercase();
     // Product codes are reused between Switch generations. Never map BEE/LB to HAC.
-    if upper.contains("BEE-P-")
-        || upper.contains("LB-")
+    // Match a product-code token, not a suffix inside an ordinary title such as
+    // "MLB-The Show". Spaces, brackets and filename separators remain boundaries.
+    if Regex::new(r"(?i)(?:^|[^a-z0-9])(?:BEE-P-|LB-)")
+        .unwrap()
+        .is_match(name)
         || Regex::new(r"(?i)(?:^|[^a-z0-9])0400[0-9a-f]{12}(?:$|[^a-z0-9])")
             .unwrap()
             .is_match(name)
@@ -137,6 +139,26 @@ mod tests {
             "Game [AAACA-US] [ABAAA-US].nsp",
             "Game [BEE-P-AAACA-USA] [AAACA-US].nsp",
             "Game [040074A01BF12000] [AAACA-US].nsp",
+        ] {
+            assert!(detect(Path::new(name)).is_err(), "{name}");
+        }
+    }
+
+    #[test]
+    fn successor_markers_must_start_a_product_code_token() {
+        for name in [
+            "MLB-The Show [HAC-P-AAACA-USA].nsp",
+            "MLB-Game (AAACA-US).xci",
+            "Freebee-P-Game [AAACA-US].nsp",
+        ] {
+            assert_eq!(detect(Path::new(name)).unwrap().0, "AAACA-US", "{name}");
+        }
+        for name in [
+            "LB-AAACA-USA [AAACA-US].nsp",
+            "Game_LB-AAACA-USA [AAACA-US].nsp",
+            "Game [LB-AAACA-USA] [AAACA-US].nsp",
+            "Game (BEE-P-AAACA-USA) [AAACA-US].nsp",
+            "Game [bee-p-aaaca-usa] [AAACA-US].nsp",
         ] {
             assert!(detect(Path::new(name)).is_err(), "{name}");
         }
