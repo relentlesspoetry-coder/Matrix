@@ -45,6 +45,7 @@ fn library_fixture() {
         ("gamecube", "dolphin-emu", "ciso"),
         ("wii", "dolphin-emu", "GCZ"),
         ("wii", "dolphin-emu", "ciso"),
+        ("switch2", "custom-switch2-fixture", "NUP"),
     ] {
         let folder = root.join(format!("External {id} {extension}"));
         fs::create_dir(&folder).unwrap();
@@ -57,6 +58,9 @@ fn library_fixture() {
             .find(|g| Path::new(&g.path) == path)
             .unwrap();
         assert_eq!(validate_game(id, &game.uid).unwrap().title, game.title);
+        if id == "switch2" {
+            assert!(validate_game("switch", &game.uid).is_err());
+        }
         favorites::set_favorite(id.into(), game.uid.clone(), true).unwrap();
         save_cover(
             id.into(),
@@ -105,7 +109,9 @@ fn library_fixture() {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         let args = fs::read_to_string(&log).unwrap();
-        let expected = if id == "psp" {
+        let expected = if id == "switch2" {
+            vec![path.to_str().unwrap()]
+        } else if id == "psp" {
             vec!["--fullscreen", path.to_str().unwrap()]
         } else {
             vec![

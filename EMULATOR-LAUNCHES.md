@@ -63,7 +63,9 @@ against installed emulator binaries or real games:
 
 The projects describe their support as experimental and may change between
 builds. File extensions and successful process startup do not establish game
-compatibility. The PS5 scanner recognizes exact `eboot.bin` filenames and uses
+compatibility. Switch 2 lists `.nup`, `.nsp` and `.xci` collection files by extension, including
+uppercase extensions. Listing does not verify the file format, contents or
+playability. The PS5 scanner recognizes exact `eboot.bin` filenames and uses
 the containing folder's display name; arbitrary `.bin` files are not scanned.
 Existing library folders, canonical file identities, covers, favorites and saved
 profiles are retained. Custom Flatpaks retain read-only library access and must

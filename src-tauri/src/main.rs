@@ -150,7 +150,8 @@ const SPECS: &[ConsoleSpec] = &[
         id: "switch2",
         dir: "Switch 2",
         games: "Switch 2 Games",
-        extensions: &["nsp", "xci"],
+        // Collection recognition only; a custom emulator decides what it can load.
+        extensions: &["nsp", "xci", "nup"],
     },
 ];
 
@@ -1930,6 +1931,46 @@ mod tests {
         assert!(scan_console_in("switch2", &[root.path().into()])
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn switch2_nup_scan_is_case_insensitive_and_console_scoped() {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().unwrap();
+        let games = root.path().join("Switch 2 Games");
+        let nested = games.join("Nested Title");
+        fs::create_dir_all(&nested).unwrap();
+        let payload = b"synthetic collection entry, not a verified game format";
+        for name in [
+            "Lower.nup",
+            "Upper.NUP",
+            "Mixed.NuP",
+            "Existing.nsp",
+            "Existing.xci",
+        ] {
+            fs::write(nested.join(name), payload).unwrap();
+        }
+        fs::write(nested.join("Not a package.nup.txt"), payload).unwrap();
+        fs::write(nested.join(".Hidden.nup"), payload).unwrap();
+        fs::create_dir(games.join("Directory.nup")).unwrap();
+        let outside = root.path().join("Outside.nup");
+        fs::write(&outside, payload).unwrap();
+        symlink(&outside, games.join("Linked.nup")).unwrap();
+        let rows = scan_console_in("switch2", &[games.clone(), nested.clone()]).unwrap();
+        assert_eq!(rows.len(), 5, "nested roots must not duplicate entries");
+        for row in &rows {
+            assert_eq!(row.kind, "switch2");
+            assert!(Path::new(&row.path).starts_with(&nested));
+            assert_eq!(row.uid, row.path);
+            assert_eq!(fs::read(&row.path).unwrap(), payload);
+        }
+        assert_eq!(scan_console_in("switch", &[games]).unwrap().len(), 2);
+        for id in SPECS.iter().map(|s| s.id).filter(|id| *id != "switch2") {
+            assert!(!supported_console_file(
+                spec(id).unwrap(),
+                &nested.join("Upper.NUP")
+            ));
+        }
     }
 
     #[test]

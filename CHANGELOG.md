@@ -2,6 +2,8 @@
 
 ## 0.5.14
 
+- Recognize NUP collection files in Switch 2 libraries and preview imports, including uppercase extensions. Keep NSP/XCI entries, original Switch separation, favorites, covers and literal launch arguments unchanged. Listing is extension-based and does not validate contents or emulator compatibility.
+
 - Refresh detected emulator installations whenever setup opens and provide Refresh detected inside the dialog, so moved AppImages no longer leave only stale choices. Discovery runs off the UI thread and never silently changes saved profiles or unsaved launch settings.
 - Explain missing and inaccessible emulator paths with the exact selected location and Browse/refresh recovery steps. Keep executable/header validation and permission consent unchanged.
 - Add moved-shadPS4-AppImage, draft/race-preservation and native setup/IPC recovery regressions. These fixtures do not execute a real emulator or certify game compatibility.

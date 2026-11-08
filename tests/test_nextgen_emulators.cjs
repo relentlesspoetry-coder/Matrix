@@ -48,6 +48,25 @@ test('PS5 folder preview matches exact eboot scanning and uses the title folder'
   assert.deepEqual(Array.from(f.state.imported.ps5,g=>g.title),['An Extracted Title','Archive','Legacy']);
   assert.equal(f.state.imported.ps5[0].uid,'file:PS5/An.Extracted_Title/EBOOT.BIN');
 });
+test('Switch 2 preview recognizes NUP case variants without adding them to Switch', () => {
+  const f=fixture();f.state.consoleId='switch2';f.state.native=false;
+  const files=[
+    {name:'Lower.nup',webkitRelativePath:'Switch 2/Nested/Lower.nup'},
+    {name:'Upper.NUP',webkitRelativePath:'Switch 2/Nested/Upper.NUP'},
+    {name:'Mixed.NuP',webkitRelativePath:'Switch 2/Nested/Mixed.NuP'},
+    {name:'Existing.nsp',webkitRelativePath:'Switch 2/Existing.nsp'},
+    {name:'Existing.xci',webkitRelativePath:'Switch 2/Existing.xci'},
+    {name:'Not a package.nup.txt',webkitRelativePath:'Switch 2/Not a package.nup.txt'},
+  ];
+  f.importFolder(files);
+  assert.deepEqual(Array.from(f.state.imported.switch2,g=>g.title),['Lower','Upper','Mixed','Existing','Existing']);
+  assert.equal(f.state.imported.switch2[1].uid,'file:Switch 2/Nested/Upper.NUP');
+  assert.match(f.byId.switch2.supportNote,/NUP\/NSP\/XCI/);
+  assert.match(f.byId.switch2.supportNote,/does not verify their contents or playability/);
+  f.state.consoleId='switch';f.importFolder(files);
+  assert.deepEqual(Array.from(f.state.imported.switch,g=>g.title),['Existing','Existing']);
+});
+
 for (const id of ['ps5', 'switch2']) {
   test(`${id} exposes custom setup and saves literal launch arguments`, async () => {
     const f = fixture();

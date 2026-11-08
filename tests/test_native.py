@@ -213,6 +213,7 @@ def main():
             wait_for(lambda: js('return document.querySelector("#config-error").textContent.includes("no longer available")'))
             assert str(old_ps4) in js('return document.querySelector("#config-error").textContent')
             assert settings_file.read_bytes()==settings_before
+            js('document.querySelector("#config-error").scrollIntoView({block:"center"})')
             screenshot('matrix-linux-moved-emulator-warning.png')
             js('document.querySelector("#launch-args").value="--draft\\n{game}"')
             click('#refresh-detected')
@@ -238,7 +239,7 @@ def main():
             # Real IPC with harmless custom scripts, not PS5/Switch 2 gameplay.
             for id, relative, argv in [
                 ('ps5', 'PS5/PS5 Games/An Extracted Title/eboot.bin', ['--game', '{gameDir}']),
-                ('switch2', 'Switch 2/Switch 2 Games/A Title; literal.xci', ['-f', '-g', '{game}']),
+                ('switch2', 'Switch 2/Switch 2 Games/A Title; literal.NUP', ['-f', '-g', '{game}']),
             ]:
                 stored=library/relative
                 stored.parent.mkdir(parents=True, exist_ok=True)
@@ -269,6 +270,14 @@ def main():
                 folder=library/('PS5/PS5 Games' if id=='ps5' else 'Switch 2/Switch 2 Games')
                 wait_for(lambda: log.read_text().splitlines()==['run','--user',f'--filesystem={folder}:ro','org.matrix.TestEmulator']+expected)
             log.unlink()
+            # A Refresh must show the NUP entry in the real Switch 2 library UI.
+            click('[data-action="refresh"]')
+            wait_for(lambda: js('return state.imported.switch2?.length === 1'))
+            click('[data-action="console"][data-id="switch2"]')
+            wait_for(lambda: js('return document.querySelector(".game-card")?.dataset.uid')==str(stored))
+            assert 'does not verify their contents or playability' in js('return document.querySelector(".platform-notice").textContent')
+            screenshot('matrix-linux-switch2-nup-library.png')
+            click('[data-action="home"]')
 
             image_candidates=[c for c in discovered['emulatorDiscovery']['candidates'] if c['profile'].get('emulatorPath')==str(appimage)]
             assert len(image_candidates)==1 and image_candidates[0]['ready'] is False

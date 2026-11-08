@@ -1,14 +1,23 @@
 # Test Matrix Play on Linux
 
-## Version 0.5.14 moved-emulator selection repair
+## Version 0.5.14 moved-emulator selection and Switch 2 listing repair
 
-Local validation passes 135 headless backend tests, 124 JavaScript tests, 31
+Local validation passes 136 headless backend tests, 125 JavaScript tests, 31
 updater-core tests and 16 cover-core tests (two opt-in live-provider checks are
 skipped). Managed-folder, release/signing, six CI-account, five native-fixture,
 four DEB-helper and three launch-log-lifetime checks pass. Formatting, syntax
 and patch-whitespace checks pass. The first backend run exhausted the small
 /tmp filesystem while copying a synthetic test binary; the complete serial
 rerun using a workspace temporary directory passes.
+
+Switch 2 NUP fixtures check case-insensitive extension recognition, nested roots,
+canonical deduplication, original Switch separation, excluded symlinks/directories,
+retained NSP/XCI entries, external-folder removal/re-registration, unchanged bytes,
+favorites/covers and exact argv to a harmless custom launcher. The native fixture
+also checks the NUP card after Refresh and saves its Switch 2 library screenshot.
+These files contain synthetic text, not game data. Listing does not verify a NUP
+file's contents, playability or an emulator's ability to load it, and this change
+does not fix an emulator's independent SIGSEGV failure.
 
 The new fixtures reproduce a detected shadPS4 QtLauncher AppImage moved from
 Downloads into the PS4 folder. They check rejection of the stale path, fresh
