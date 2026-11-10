@@ -29,5 +29,11 @@ PS4|PS4 Games
 PS5|PS5 Games
 PS Vita|PS Vita Games
 Switch 2|Switch 2 Games
+Sega Genesis|Sega Genesis Games
+Sega Saturn|Sega Saturn Games
+Super Nintendo|Super Nintendo Games
+Nintendo NES|Nintendo NES Games
+Xbox|Xbox Games
+Xbox 360|Xbox 360 Games
 LIBRARIES
 printf 'Matrix Play folders ready: %s\n' "$root"

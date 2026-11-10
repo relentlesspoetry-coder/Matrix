@@ -214,5 +214,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
-          gh release create "v$VERSION" release-out/*.deb release-out/*.AppImage release-out/*-source.zip release-out/SHA256SUMS release-out/update-manifest.json release-out/update-manifest.sig --target "$GITHUB_SHA" --title "Matrix Play $VERSION" --notes-file release-out/release-notes.md --draft --prerelease
+          gh release create "v$VERSION" release-out/*.deb release-out/*.AppImage release-out/*-source.zip release-out/SHA256SUMS release-out/update-manifest.json release-out/update-manifest.sig --target "$GITHUB_SHA" --title "Matrix-Play $VERSION" --notes-file release-out/release-notes.md --draft --prerelease
           gh release edit "v$VERSION" --draft=false

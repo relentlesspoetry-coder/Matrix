@@ -159,6 +159,13 @@ const SPECS: &[ConsoleSpec] = &[
             "nsp", "xci", "nup", "nsz", "xcz", "nx", "nro", "nso", "nca", "kip",
         ],
     },
+    ConsoleSpec { id: "genesis", dir: "Sega Genesis", games: "Sega Genesis Games", extensions: &["md", "gen", "smd", "bin", "zip"] },
+    ConsoleSpec { id: "saturn", dir: "Sega Saturn", games: "Sega Saturn Games", extensions: &["cue", "ccd", "toc"] },
+    ConsoleSpec { id: "snes", dir: "Super Nintendo", games: "Super Nintendo Games", extensions: &["sfc", "smc", "zip"] },
+    ConsoleSpec { id: "nes", dir: "Nintendo NES", games: "Nintendo NES Games", extensions: &["nes", "unf", "unif", "fds", "zip"] },
+    ConsoleSpec { id: "xbox", dir: "Xbox", games: "Xbox Games", extensions: &["iso"] },
+    ConsoleSpec { id: "xbox360", dir: "Xbox 360", games: "Xbox 360 Games", extensions: &["iso"] },
+
 ];
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -302,7 +309,7 @@ fn games_dir(id: &str) -> Result<PathBuf, String> {
 }
 
 fn custom_emulator_only(id: &str) -> bool {
-    matches!(id, "ps5" | "switch2")
+    matches!(id, "ps5" | "switch2" | "xbox360")
 }
 fn guessed_emulator(id: &str) -> &'static str {
     match id {
@@ -321,6 +328,9 @@ fn guessed_emulator(id: &str) -> &'static str {
         "3ds" => "Azahar",
         "ps4" => "shadPS4",
         "vita" => "Vita3K",
+        "genesis" | "saturn" | "nes" | "snes" => "Mednafen",
+        "xbox" => "xemu",
+        "xbox360" => "Custom Xbox 360 emulator",
         _ => "Emulator",
     }
 }
@@ -391,6 +401,8 @@ fn detect_installed_emulators_in(id: &str, paths: &[PathBuf]) -> Vec<PathBuf> {
         "3ds" => &["azahar"],
         "ps4" => &["shadPS4QtLauncher", "shadPS4"],
         "vita" => &["Vita3K", "vita3k"],
+        "nes" | "snes" | "genesis" | "saturn" => &["mednafen"],
+        "xbox" => &["xemu"],
         _ => &[],
     };
     let mut candidates = Vec::new();
@@ -571,6 +583,9 @@ fn console_game_title(id: &str, path: &Path, roots: &[PathBuf]) -> String {
     if is_ps3_eboot(id, path) {
         return ps3_title(path);
     }
+    if id == "xbox360" && path.file_name().is_some_and(|n| n.eq_ignore_ascii_case("default.xex")) {
+        return prettify(path.parent().and_then(Path::file_name).and_then(|n| n.to_str()).unwrap_or("Xbox 360 Game"));
+    }
     if id == "switch2" {
         if let Some(title) = switch2_extracted_title(path) {
             return title;
@@ -595,6 +610,7 @@ fn supported_console_file(s: &ConsoleSpec, path: &Path) -> bool {
         || is_ps3_eboot(s.id, path)
         || is_ps4_eboot(s.id, path)
         || is_ps5_eboot(s.id, path)
+        || (s.id == "xbox360" && path.file_name().is_some_and(|n| n.eq_ignore_ascii_case("default.xex")))
         || (s.id == "switch2" && switch2_extracted_title(path).is_some())
         || libraries::is_playlist(s.id, path)
 }
@@ -1761,7 +1777,7 @@ mod tests {
             assert!(directories.insert(s.dir));
             assert!(s.games.ends_with(" Games"));
         }
-        assert_eq!(SPECS.len(), 18);
+        assert_eq!(SPECS.len(), 24);
     }
     #[test]
     fn steam_preserves_launcher_for_primary_and_external_libraries() {
@@ -2160,7 +2176,7 @@ mod tests {
         std::env::set_var("XDG_CONFIG_HOME", temp.path().join("config"));
         std::env::set_var("XDG_DATA_HOME", temp.path().join("data"));
         create_layout().unwrap();
-        assert_eq!(SPECS.len(), 18);
+        assert_eq!(SPECS.len(), 24);
         let root = games_dir("ps2").unwrap();
         let path = root.join("SLUS-20312.chd");
         fs::write(&path, b"synthetic fixture").unwrap();

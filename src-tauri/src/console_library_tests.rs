@@ -46,6 +46,12 @@ fn library_fixture() {
         ("wii", "dolphin-emu", "GCZ"),
         ("wii", "dolphin-emu", "ciso"),
         ("switch2", "custom-switch2-fixture", "NUP"),
+        ("nes", "mednafen", "nes"),
+        ("snes", "mednafen", "sfc"),
+        ("genesis", "mednafen", "md"),
+        ("saturn", "mednafen", "cue"),
+        ("xbox", "xemu", "iso"),
+        ("xbox360", "custom-xbox360-fixture", "iso"),
     ] {
         let folder = root.join(format!("External {id} {extension}"));
         fs::create_dir(&folder).unwrap();
@@ -109,7 +115,12 @@ fn library_fixture() {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         let args = fs::read_to_string(&log).unwrap();
-        let expected = if id == "switch2" {
+        let expected = if id == "xbox" {
+            vec!["-full-screen", "-dvd_path", path.to_str().unwrap()]
+        } else if matches!(id, "nes" | "snes" | "genesis" | "saturn") {
+            let module = match id { "nes" => "nes", "snes" => "snes_faust", "genesis" => "md", _ => "ss" };
+            vec!["-video.fs", "1", "-force_module", module, path.to_str().unwrap()]
+        } else if id == "switch2" || id == "xbox360" {
             vec![path.to_str().unwrap()]
         } else if id == "psp" {
             vec!["--fullscreen", path.to_str().unwrap()]
@@ -625,4 +636,56 @@ fn switch2_extracted_and_lichii_formats_are_scoped_and_preserve_exact_targets() 
         }
     }
     assert_eq!(scan_console_in("switch2", &[root]).unwrap().len(), 24);
+}
+
+
+#[test]
+fn added_console_formats_and_xbox_boot_files_stay_separate() {
+    let temp = tempfile::tempdir().unwrap();
+    for (id, files) in [
+        ("nes", vec!["Mario.NES", "Cart.unif", "Disk.fds", "Archive.zip"]),
+        ("snes", vec!["Mario.SFC", "Cart.smc", "Archive.zip"]),
+        ("genesis", vec!["Sonic.MD", "Cart.gen", "Cart.smd", "Cart.bin", "Archive.zip"]),
+        ("saturn", vec!["Disc.CUE", "Disc.ccd", "Disc.toc"]),
+        ("xbox", vec!["Game.ISO"]),
+        ("xbox360", vec!["Game.ISO", "Extracted Title/default.xex"]),
+    ] {
+        let root = temp.path().join(id);
+        fs::create_dir_all(&root).unwrap();
+        for name in &files {
+            let path = root.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"synthetic game fixture").unwrap();
+        }
+        fs::write(root.join("Metadata.txt"), b"not a game").unwrap();
+        fs::write(root.join("module.xex"), b"not a game boot file").unwrap();
+        let rows = scan_console_in(id, &[root.clone(), root.clone()]).unwrap();
+        assert_eq!(rows.len(), files.len(), "{id}");
+        assert!(rows.iter().all(|g| g.kind == id && g.uid == g.path));
+        if id == "xbox360" {
+            let boot = rows.iter().find(|g| g.path.ends_with("default.xex")).unwrap();
+            assert_eq!(boot.title, "Extracted Title");
+            assert!(!supported_console_file(spec("xbox").unwrap(), Path::new(&boot.path)));
+        }
+    }
+}
+
+#[test]
+fn new_emulator_adapters_require_the_correct_console_identity() {
+    let mednafen = EmulatorProfile { emulator_path:"/apps/mednafen".into(), ..Default::default() };
+    for (id,module) in [("nes","nes"),("snes","snes_faust"),("genesis","md"),("saturn","ss")] {
+        assert_eq!(discovery::identity(&mednafen,id),Some("Mednafen"));
+        assert_eq!(immersive::game_args(&mednafen,id),["-video.fs","1","-force_module",module,"{game}"]);
+    }
+    assert!(discovery::identity(&mednafen,"ps1").is_none());
+    let xemu=EmulatorProfile { emulator_path:"/apps/xemu".into(), ..Default::default() };
+    assert_eq!(immersive::game_args(&xemu,"xbox"),["-full-screen","-dvd_path","{game}"]);
+    assert_eq!(immersive::game_args(&xemu,"xbox360"),["{game}"]);
+    assert!(discovery::identity(&xemu,"xbox360").is_none());
+    let unknown=EmulatorProfile { emulator_path:"/apps/my-emulator".into(), launch_args:vec!["--custom".into(),"{game}".into()], ..Default::default() };
+    assert_eq!(immersive::game_args(&unknown,"nes"),["--custom","{game}"]);
+    let saved=EmulatorProfile { emulator_path:"/apps/xemu".into(),launch_args:vec!["-full-screen".into(),"-dvd_path".into(),"{game}".into()],..Default::default() };
+    assert!(immersive::setup_args(&saved,"xbox").is_empty());
+    let path=Path::new("/games/Title with spaces; literal.iso");
+    assert_eq!(console_launch_args(&saved,"xbox",path).unwrap(),["-full-screen","-dvd_path",path.to_str().unwrap()]);
 }

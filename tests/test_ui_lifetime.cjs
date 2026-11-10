@@ -341,7 +341,7 @@ test('collapsed navigation and topbar buttons have explicit accessible names', (
     const button=html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))[0];
     assert.match(button,/aria-label="[^\"]+"/);
   }
-  for (const action of ['refresh','configure-first']) assert.match(html.match(new RegExp(`<button[^>]*data-action="${action}"[^>]*>`))[0],/aria-label="[^\"]+"/);
+  for (const action of ['refresh']) assert.match(html.match(new RegExp(`<button[^>]*data-action="${action}"[^>]*>`))[0],/aria-label="[^\"]+"/);
 });
 
 test('duplicate emulator and Windows submits issue only one pending write per form', async()=>{
@@ -394,7 +394,7 @@ test('a slow earlier cover-file read cannot overwrite a later selection',async()
 test('newest release-year sort is unavailable without metadata and resets stale selection',()=>{
   const f=fixture();f.state.page='console';f.state.consoleId='ps2';f.state.sort='recent';f.renderConsole();
   assert.equal(f.state.sort,'default');const html=f.node('#screen').innerHTML;
-  assert.match(html,/<option value="recent"[^>]*disabled>Release year: newest first/);
+  assert.match(html,/<option value="recent"[^>]*disabled>Release year/);
   assert.match(html,/unavailable: these titles have no release-year metadata/);
 });
 test('release-year sort uses only positive integer years and keeps unknown titles last',()=>{
@@ -522,7 +522,7 @@ test('confirming closed work never overrides a busy backend activity guard', asy
 
 test('update prompt tells users to save progress and let installers finish', () => {
   const source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
-  assert.match(source,/Before updating, save your progress and close games, emulators and other apps launched through Matrix Play/);
+  assert.match(source,/Before updating, save your progress and close games, emulators and other apps launched through Matrix-Play/);
   assert.match(source,/Let installers and updates finish before closing them/);
 });
 
@@ -950,4 +950,16 @@ test('closed Flatpak inventory cannot clear a replacement dialog save wait notic
   loading.resolve(flatpakApps);await reloading;
   assert.equal(replacement.node('#config-save-status').textContent,waitMessage);
   assert.equal(f.nodes.get('#config-form'),replacement.form);assert.equal(f.state.overlay,'configure');
+});
+
+
+test('clean library keeps one Favorites filter and places secondary actions in a disclosure', () => {
+  const source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
+  const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
+  assert.doesNotMatch(html,/data-action="configure-first"/);
+  assert.doesNotMatch(html,/class="top-chip"|class="page-footer"/);
+  assert.match(source,/<details class="library-menu">/);
+  assert.match(source,/aria-label="Library options"/);
+  assert.doesNotMatch(source,/data-action="console-favorites"/);
+  assert.match(source,/data-action="filter-games"/);
 });

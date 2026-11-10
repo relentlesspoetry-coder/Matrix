@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- Redesign the library with compact navigation, smaller console cards and a clean game grid. Move emulator and folder actions into a single options menu; remove oversized banners, repeated notices and duplicate Favorites buttons.
+- Add Sega Genesis / Mega Drive, Sega Saturn, Nintendo NES, Super Nintendo, Xbox and Xbox 360 libraries, bringing the total to 24. Existing libraries, favorites, artwork and game folders are retained.
+- Add Mednafen launching for NES, SNES, Genesis and Saturn, xemu disc launching for Xbox, and manual Xbox 360 emulator setup with ISO and extracted default.xex detection.
+- Use Windows Games in the project description. Keep setup details and advanced options available on demand.
+
 ## 0.5.25
 
 - Detect extracted Switch 2 ExeFS games, including game/base/exefs/main and game/updates/<version>/exefs/main layouts. Show the game folder name and distinguish base/update versions while keeping each original launch path.

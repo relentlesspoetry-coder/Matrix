@@ -60,7 +60,12 @@ pub(crate) fn setup_args(profile: &EmulatorProfile, console: &str) -> Vec<String
         return Vec::new();
     }
     let engine = discovery::identity(profile, console).unwrap_or("");
+    // Mednafen is configured through its own files/hotkeys. Do not pass a game
+    // or module on an "Open emulator" request; xemu keeps its normal setup UI.
+
     let (flags, pairs): (&[&str], &[&str]) = match engine {
+        "Mednafen" => (&[], &["-force_module", "-video.fs"]),
+        "xemu" => (&["-full-screen"], &["-dvd_path"]),
         "PCSX2" => (
             &[
                 "-batch",
@@ -172,6 +177,28 @@ pub(crate) fn game_args(profile: &EmulatorProfile, console: &str) -> Vec<String>
     let Some(engine) = discovery::identity(profile, console) else {
         return args;
     };
+    if engine == "Mednafen" || engine == "xemu" {
+        let mut kept = Vec::new();
+        let mut values = args.into_iter();
+        while let Some(value) = values.next() {
+            if (engine == "Mednafen" && matches!(value.as_str(), "-force_module" | "-video.fs"))
+                || (engine == "xemu" && value == "-dvd_path") {
+                values.next();
+            } else if !(engine == "xemu" && value == "-full-screen") {
+                kept.push(value);
+            }
+        }
+        if engine == "Mednafen" {
+            let module = match console { "nes" => "nes", "snes" => "snes_faust", "genesis" => "md", "saturn" => "ss", _ => unreachable!() };
+            let mut result = vec!["-video.fs".into(), "1".into(), "-force_module".into(), module.into()];
+            result.extend(kept);
+            return result;
+        }
+        let index = kept.iter().position(|v| v == "{game}").unwrap_or(kept.len());
+        kept.insert(index, "-dvd_path".into());
+        kept.insert(0, "-full-screen".into());
+        return kept;
+    }
     let (flags, remove, pairs): (&[&str], &[&str], &[&str]) = match engine {
         "PCSX2" | "DuckStation" => (
             &["-nogui", "-fullscreen"],

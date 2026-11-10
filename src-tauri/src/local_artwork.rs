@@ -21,7 +21,7 @@ pub(crate) fn unique_game_folder(game: &Game) -> bool {
     let Ok(parent_path) = parent.canonicalize() else {
         return false;
     };
-    if !matches!(game.kind.as_str(), "ps5" | "switch2") {
+    if !matches!(game.kind.as_str(), "ps5" | "switch2" | "xbox360") {
         // Preserve established eligibility for other consoles exactly. PS1
         // playlists must not add a second target beside their referenced CHD.
         return !roots.is_empty()

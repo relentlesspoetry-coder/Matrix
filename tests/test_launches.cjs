@@ -55,7 +55,8 @@ test('a post-spawn Windows failure is polled, visible and safely escaped in deta
   f.state.overlay = 'external';
   await f.launchExternal('windows', '/games/Fixture.desktop');
   assert.equal(f.state.overlay, null);
-  assert.match(f.status.innerHTML, /Windows launcher process started/);
+  assert.equal(f.status.innerHTML, "");
+  assert.match(f.toasts.at(-1), /Windows launcher process started/);
   assert.equal(f.timers.length, 1);
   await f.timers.shift().fn();
   assert.equal(f.state.launches.windows.phase, 'error');
@@ -168,4 +169,12 @@ test('launch-details refresh preserves its controls and cannot roll back a newer
   f.state.launchGeneration.windows = 1; f.state.launches.windows = started;
   resolve(failed); await stale;
   assert.equal(f.state.launches.windows, started);
+});
+
+
+test('successful launches do not leave a persistent status panel',()=>{
+  const f=fixture(async()=>null);
+  f.state.page='windows';f.state.launches.windows={phase:'exited',message:'Game launcher completed.',logPath:'/tmp/fixture.log'};
+  f.renderLaunchStatus();
+  assert.equal(f.status.innerHTML,'');
 });

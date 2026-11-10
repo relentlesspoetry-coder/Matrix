@@ -249,3 +249,32 @@ Both separated and attached option forms are checked. Saved profiles and all fil
 remain untouched until you explicitly save the corrected profile. Default profiles,
 absolute paths and custom unrecognized launchers are unchanged. Matrix does not
 automatically grant a Flatpak access to a separately selected user folder.
+
+
+## Additional libraries in 0.6.0
+
+| Library | Scanned formats | Launcher |
+| --- | --- | --- |
+| Nintendo NES | NES, UNF, UNIF, FDS, ZIP | Mednafen, module `nes` |
+| Super Nintendo | SFC, SMC, ZIP | Mednafen, module `snes_faust` |
+| Sega Genesis / Mega Drive | MD, GEN, SMD, BIN, ZIP | Mednafen, module `md` |
+| Sega Saturn | CUE, CCD, TOC | Mednafen, module `ss` |
+| Xbox | ISO (xemu-compatible disc image) | xemu |
+| Xbox 360 | ISO, extracted `default.xex` | Manually configured emulator / launcher |
+
+[Mednafen](https://mednafen.github.io/documentation/) uses `-video.fs 1`
+and `-force_module <module>` for game launches. Saturn uses a disc descriptor;
+raw BIN tracks and CHD files are not offered by this preset. ZIP recognition
+is by filename; Matrix-Play does not inspect the contents.
+
+[xemu](https://xemu.app/docs/cli/) uses `-full-screen -dvd_path <game>`.
+Configure its required system files and disk image in xemu first. Xbox 360
+is a separate custom profile; it never inherits xemu arguments. Select an
+installed Linux-compatible emulator or launcher and its documented arguments.
+For extracted titles, Matrix-Play passes the exact `default.xex` path; other
+XEX modules are excluded. The original Xbox and Xbox 360 libraries remain
+separate even when both contain ISO files.
+
+These adapters are checked with synthetic scan and launch fixtures, not real
+gameplay. BIOS, firmware, games and compatibility runtimes are configured
+outside Matrix-Play.

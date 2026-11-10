@@ -140,3 +140,23 @@ for (const id of ['ps5', 'switch2']) {
     assert.equal(f.calls.at(-1).args.uid,'/games/Game file.xci');
   });
 }
+
+
+test('six added console libraries preview their own formats and exact Xbox 360 boot files', () => {
+  const f=fixture();f.state.native=false;
+  for (const [id,file,title] of [
+    ['nes','Mario.NES','Mario'],['snes','Mario.SFC','Mario'],['genesis','Sonic.MD','Sonic'],
+    ['saturn','Disc.CUE','Disc'],['xbox','Halo.ISO','Halo'],['xbox360','default.xex','Extracted Game'],
+  ]) {
+    f.state.consoleId=id;
+    f.importFolder([{name:file,webkitRelativePath:'Games/Extracted Game/'+file}]);
+    assert.equal(f.state.imported[id].length,1,id);
+    assert.equal(f.state.imported[id][0].title,title,id);
+    assert.equal(f.state.imported[id][0].relativePath,'Games/Extracted Game/'+file);
+  }
+  f.state.consoleId='xbox360';
+  f.importFolder([{name:'module.xex',webkitRelativePath:'Games/Extracted Game/module.xex'}]);
+  assert.match(f.messages.at(-1),/No recognized/);
+  assert.equal(f.byId.xbox360.customEmulator,true);
+  assert.equal(f.byId.xbox.customEmulator,undefined);
+});

@@ -2,7 +2,7 @@
 
 # Matrix-Play
 
-A Linux game-library frontend for your console games, Steam library and Windows game shortcuts.
+A Linux game-library frontend for your console games, Steam library and Windows Games.
 
 [Download](https://github.com/relentlesspoetry-coder/Matrix-Play/releases) · [Setup guide](EMULATOR-LAUNCHES.md) · [Report a problem](https://github.com/relentlesspoetry-coder/Matrix-Play/issues)
 
@@ -15,21 +15,21 @@ Download the **DEB** or **AppImage** from [Releases](https://github.com/relentle
 For Zorin or Ubuntu, install the DEB from your download folder:
 
 ```bash
-sudo apt install ./Matrix-Play_0.5.25_amd64.deb
+sudo apt install ./Matrix-Play_0.6.0_amd64.deb
 ```
 
 For the portable AppImage:
 
 ```bash
-chmod +x Matrix-Play_0.5.25_amd64.AppImage
-./Matrix-Play_0.5.25_amd64.AppImage
+chmod +x Matrix-Play_0.6.0_amd64.AppImage
+./Matrix-Play_0.6.0_amd64.AppImage
 ```
 
 Use **Update** inside the app for future releases.
 
 ## Features
 
-- 18 console libraries, plus separate Steam and Windows collections.
+- 24 console libraries, plus separate Steam and Windows collections.
 - Existing game folders and external drives, without moving your files.
 - Native, AppImage and Flatpak emulator setup, with automatic detection for supported emulators.
 - Cover art, favorites, search, grid/list views and controller navigation.
@@ -37,9 +37,9 @@ Use **Update** inside the app for future releases.
 
 ## Console libraries
 
-| Nintendo | PlayStation | Sega |
-| --- | --- | --- |
-| Switch, Switch 2, N64, GameCube, Wii, Wii U, Game Boy, GBA, DS, 3DS | PS1, PS2, PS3, PS4, PS5, PSP, PS Vita | Dreamcast |
+| Nintendo | PlayStation | Sega | Xbox |
+| --- | --- | --- | --- |
+| NES, Super Nintendo, Switch, Switch 2, N64, GameCube, Wii, Wii U, Game Boy, GBA, DS, 3DS | PS1, PS2, PS3, PS4, PS5, PSP, PS Vita | Genesis / Mega Drive, Saturn, Dreamcast | Xbox, Xbox 360 |
 
 PS5 and Switch 2 use manually configured emulators. See the [setup guide](EMULATOR-LAUNCHES.md) for formats and launch options.
 

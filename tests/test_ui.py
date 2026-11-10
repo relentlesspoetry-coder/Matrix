@@ -69,10 +69,10 @@ with sync_playwright() as p:
     preview = browser.new_page(viewport={'width':1440,'height':940})
     preview.on('pageerror',lambda e: errors.append(str(e)))
     preview.set_content(HTML)
-    assert preview.locator('.console-card').count()==18
+    assert preview.locator('.console-card').count()==24
     assert preview.locator('#startup-status').is_hidden()
-    assert preview.get_by_role('button',name='Matrix Play home').count()==1
-    assert preview.locator('.brand-logo').get_attribute('alt')=='Matrix Play'
+    assert preview.get_by_role('button',name='Matrix-Play home').count()==1
+    assert preview.locator('.brand-logo').get_attribute('alt')=='Matrix-Play'
     preview.wait_for_function('document.querySelector(".brand-logo").naturalWidth > 0')
     preview.get_by_role('button', name='Steam Games').click()
     assert 'No steam games detected' in preview.locator('.external-empty').inner_text()
@@ -95,13 +95,14 @@ with sync_playwright() as p:
     native.on('pageerror',lambda e: errors.append(str(e)))
     native.set_content(HTML)
     native.wait_for_function('document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelector(".console-card__bottom small")?.textContent?.includes("games")')
-    assert native.locator('.console-card').count()==18
+    assert native.locator('.console-card').count()==24
     native.wait_for_function('[...document.querySelectorAll(".console-image")].length === 18 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)')
     screenshot(native,'matrix-native-home.png')
     for platform, id in [('PlayStation 5', 'ps5'), ('Nintendo Switch 2', 'switch2')]:
         native.get_by_role('button',name=f'Browse {platform} library').click()
+        native.locator('.library-notes > summary').click()
         assert 'Experimental custom emulator support' in native.locator('.platform-notice').inner_text()
-        native.locator('.console-hero [data-action="configure"]').click()
+        native.locator('.library-header [data-action="configure"]').click()
         assert native.locator('.advanced-setup').get_attribute('open') is not None
         assert '{gameDir}' in native.locator('.advanced-setup').inner_text()
         assert 'without arguments' in native.locator('.emulator-dialog > p').inner_text()
@@ -114,13 +115,15 @@ with sync_playwright() as p:
         native.wait_for_function('document.querySelector("#config-form")===null')
         saved=native.evaluate('window.__calls.filter(c=>c[0]==="save_emulator").at(-1)[1]')
         assert saved['id']==id and saved['launchArgs']==args.split('\n')
+        native.get_by_label('Library options',exact=True).click()
         native.get_by_role('button',name='Open emulator',exact=True).click()
         native.wait_for_function('(id)=>window.__calls.some(c=>c[0]==="open_emulator" && c[1].id===id)',arg=id)
         screenshot(native,f'matrix-custom-{id}.png')
-        native.get_by_role('button',name='All consoles',exact=True).click()
+        native.locator('#nav-consoles').click()
     native.get_by_role('button',name='Browse PlayStation Vita library').click()
+    native.locator('.library-notes > summary').click()
     assert 'SDL frontend' in native.locator('.platform-notice').inner_text()
-    native.get_by_role('button',name='All consoles',exact=True).click()
+    native.locator('#nav-consoles').click()
 
     # Keep a real polling interval active while checking DOM/focus ownership.
     native.evaluate("""() => {
@@ -133,7 +136,8 @@ with sync_playwright() as p:
         return window.__originalInvoke(name,args);
       };
     }""")
-    native.get_by_role('button',name='Update Matrix Play').click()
+    native.locator('#nav-settings').click()
+    native.get_by_role('button',name='Update Matrix-Play').click()
     native.get_by_role('button',name='Download update').click()
     native.get_by_role('button',name='Cancel download').focus()
     native.evaluate("window.__focusedCancel=document.activeElement")
@@ -147,7 +151,8 @@ with sync_playwright() as p:
     native.evaluate("window.__finishDownload(); window.__TAURI__.core.invoke=window.__originalInvoke")
     native.wait_for_timeout(100)
     assert native.locator('.update-dialog').count()==0
-    native.get_by_role('button',name='Update Matrix Play').click()
+    native.locator('#nav-settings').click()
+    native.get_by_role('button',name='Update Matrix-Play').click()
     native.locator('#update-games-closed').check()
     screenshot(native,'matrix-update-shutdown-confirmation.png')
     assert 'stays closed when it succeeds' in native.locator('#update-hint').inner_text()
@@ -156,10 +161,11 @@ with sync_playwright() as p:
     assert native.get_by_role('button',name='Restart Matrix Play').count()==0
     screenshot(native,'matrix-updates.png')
     native.keyboard.press('Escape')
+    native.locator('#nav-consoles').click()
     native.get_by_role('button',name='Browse PlayStation 2 library').click()
     assert native.locator('.game-item').count()==1
     native.get_by_role('button',name='Add Test Game to favorites',exact=True).click()
-    native.get_by_role('button',name='My favorites (1)').click()
+    native.get_by_role('button',name='Favorites (1)').click()
     assert native.locator('.game-item').count()==1
     screenshot(native,'matrix-console-favorites.png')
     assert native.evaluate('window.__favorites.ps2.length')==1
@@ -213,9 +219,8 @@ with sync_playwright() as p:
     native.get_by_role('button',name='Add game').click()
     native.wait_for_function('window.__windows.length === 2')
     assert native.locator('.game-item').count()==2
-    native.get_by_role('button',name='Emulators & folders').click()
-    assert native.locator('.root-path').count()==1
-    assert '/home/example/Games/Matrix' in native.locator('.root-path').inner_text()
+    native.locator('#nav-settings').click()
+    assert native.locator('.settings-row [data-action="library-folders"]').count()==24
     screenshot(native,'matrix-cover-settings.png')
     native.locator('#cover-style').select_option('3d')
     native.wait_for_function('window.__artOptions.style === "3d"')
@@ -249,9 +254,11 @@ with sync_playwright() as p:
     screenshot(native,'matrix-flatpak-setup.png')
     native.get_by_role('button',name='Save emulator',exact=True).click()
     native.wait_for_function('window.__calls.some(x=>x[0]==="save_emulator" && x[1].launcher==="flatpak" && x[1].flatpakId==="org.example.Emulator" && x[1].flatpakInstallation==="user")')
-    native.get_by_role('button',name='Consoles',exact=True).click()
+    native.locator('#nav-consoles').click()
     native.get_by_role('button',name='Browse PlayStation 2 library').click()
-    assert native.locator('.hero-open').is_visible()
+    native.get_by_label('Library options',exact=True).click()
+    assert native.get_by_role('button',name='Open emulator',exact=True).is_visible()
+    native.keyboard.press('Escape')
     native.evaluate('window.__failLaunch=true')
     native.locator('.game-card').first.click()
     native.wait_for_function('document.querySelector(".launch-error")?.textContent.includes("exit status 17")')
@@ -274,5 +281,5 @@ with sync_playwright() as p:
     screenshot(mobile,'matrix-mobile.png')
     assert mobile.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Mobile horizontal overflow'
     assert not errors, errors
-    print('PASS: 18 consoles, 3 libraries, launch dispatch, artwork status/serial/styles/disable/manual import, Windows registration, mobile layout (mock native bridge)')
+    print('PASS: 24 consoles, 3 libraries, launch dispatch, artwork status/serial/styles/disable/manual import, Windows registration, mobile layout (mock native bridge)')
     browser.close()

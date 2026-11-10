@@ -139,7 +139,7 @@ def main():
             return result.get('value')
 
         def click(selector):
-            js('document.querySelector(arguments[0]).click()', selector)
+            js('const target=document.querySelector(arguments[0]);const menu=target?.closest("details.library-menu");if(menu&&!menu.open)menu.querySelector("summary").click();target.click()', selector)
 
         def key(value, shift=False):
             actions = ([{'type':'keyDown','value':'\ue008'}] if shift else [])
@@ -183,9 +183,9 @@ def main():
             result=request('POST','/session',{'capabilities':{'alwaysMatch':{'tauri:options':{'application':str(binary)}}}})
             session=result['sessionId']
             request('POST', f'/session/{session}/timeouts', {'script':60000})
-            wait_for(lambda: js('return document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelectorAll(".console-card").length === 18'))
-            assert len([p for p in library.iterdir() if p.is_dir()]) == 18
-            assert js('return document.title').startswith('Matrix Play')
+            wait_for(lambda: js('return document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelectorAll(".console-card").length === 24'))
+            assert len([p for p in library.iterdir() if p.is_dir()]) == 24
+            assert js('return document.title').startswith('Matrix-Play')
             if cfg.shutdown_only:
                 check_shutdown_prompt()
                 from native_update_lifecycle import exercise, preserve_diagnostics
@@ -555,6 +555,7 @@ def main():
             assert update['phase'] == 'idle' and update['currentVersion'] == diagnostics['version']
             check_shutdown_prompt()
             if cfg.check_updates or cfg.download_update:
+                click('#nav-settings')
                 click('[data-action="updates"]')
                 wait_for(lambda: invoke('update_status')['phase'] in ['current','available','error'], 75)
                 status=invoke('update_status')
@@ -614,7 +615,7 @@ def main():
             print('PASS: native Switch product-code/region controls and custom-cover preservation; game bytes unchanged')
             click('[data-action="favorite"]')
             wait_for(lambda: invoke('bootstrap')['favorites'].get('ps2') == [str(ps2game)])
-            click('[data-action="console-favorites"]')
+            click('[data-action="filter-games"][data-value="Favorites"]')
             assert js('return document.querySelectorAll(".game-item").length') == 1
             assert set(invoke('bootstrap')['favorites'].get('ps1', [])) == ps1_favorite_baseline
             try:
@@ -622,7 +623,7 @@ def main():
                 raise AssertionError('Cross-console favorite accepted')
             except RuntimeError: pass
             request('POST',f'/session/{session}/refresh',{})
-            wait_for(lambda: js('return document.querySelectorAll(".console-card").length === 18 && document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"'))
+            wait_for(lambda: js('return document.querySelectorAll(".console-card").length === 24 && document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"'))
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
             # Bounded actual-WebKit focus continuity checks using synthetic games.
@@ -1016,7 +1017,7 @@ def main():
             time.sleep(.5)
             session=request('POST','/session',{'capabilities':{'alwaysMatch':{'tauri:options':{'application':str(binary)}}}})['sessionId']
             request('POST',f'/session/{session}/timeouts',{'script':60000})
-            wait_for(lambda: js('return document.querySelectorAll(".console-card").length === 18 && document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"'))
+            wait_for(lambda: js('return document.querySelectorAll(".console-card").length === 24 && document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX"'))
             click('[data-action="console"][data-id="ps2"]')
             wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
             assert invoke('bootstrap')['profiles']['ps2']['launcher']=='flatpak'
@@ -1027,7 +1028,7 @@ def main():
             print('PASS: scoped sidecar-save Flatpak argv, native/Flatpak Steam provenance, and delayed Windows runner diagnostics (synthetic fixtures)')
             print('PASS: automatic Flatpak/AppImage linking, canonical duplicate removal, execute-permission preservation, Open emulator and captured startup errors')
             print('PASS: native favorites survive process restart and webview reload, remain console-scoped, and preserve profiles; Flatpak discovery/setup/launch argv use harmless fixtures')
-            print('PASS: real Tauri/WebKit window, native IPC, 18 libraries, PS1/PS2 scanning, manual/cache artwork, console boundaries, persisted settings, three launcher argument paths')
+            print('PASS: real Tauri/WebKit window, native IPC, 24 libraries, PS1/PS2 scanning, manual/cache artwork, console boundaries, persisted settings, three launcher argument paths')
             if cfg.online:
                 print('PASS: real desktop automatic PS1, PS2 and Switch cover downloads (synthetic identity-labelled game fixtures)')
             # This final test deliberately closes the real native windows using

@@ -9,6 +9,9 @@ struct Engine {
     consoles: &'static [&'static str],
 }
 const ENGINES: &[Engine] = &[
+    Engine { name: "Mednafen", flatpak: "", prefixes: &["mednafen"], consoles: &["nes", "snes", "genesis", "saturn"] },
+    Engine { name: "xemu", flatpak: "app.xemu.xemu", prefixes: &["xemu"], consoles: &["xbox"] },
+
     Engine {
         name: "PCSX2",
         flatpak: "net.pcsx2.PCSX2",

@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.25 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.0 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -47,6 +47,13 @@ function deviceArt(id) {
     ? '<rect x="27" y="11" width="85" height="99" rx="13"/><rect x="38" y="19" width="63" height="33" rx="3"/><path d="M30 61h79"/><rect x="38" y="69" width="63" height="30" rx="3"/><circle cx="20" cy="84" r="3"/><circle cx="118" cy="84" r="3"/>'
     : '<rect x="10" y="33" width="120" height="55" rx="25"/><rect x="37" y="40" width="66" height="41" rx="4"/><path d="M24 53v15m-7-7h14"/><circle cx="115" cy="54" r="3"/><circle cx="120" cy="66" r="3"/>';
   const designs = {
+    genesis:'<path d="M17 53h103l10 43H8z"/><ellipse cx="69" cy="60" rx="30" ry="17"/><path d="M25 83h20m35 0h29M42 39h57v15"/>',
+    saturn:'<rect x="14" y="43" width="112" height="59" rx="15"/><ellipse cx="70" cy="54" rx="33" ry="20"/><path d="M28 86h19m45 0h20"/>',
+    snes:'<rect x="18" y="38" width="107" height="63" rx="13"/><path d="M40 38v63m13-63v63M63 53h47M65 72h42"/><circle cx="108" cy="89" r="5"/>',
+    nes:'<path d="M18 31h105v72H18zM18 78h105M85 31v47"/><path d="M96 39v27m9-27v27M27 88h15"/>',
+    xbox:'<rect x="12" y="39" width="118" height="64" rx="10"/><path d="m19 41 50 24 53-24M17 100l53-35 56 35"/><circle cx="70" cy="65" r="14"/>',
+    xbox360:'<path d="M47 15h46q-14 49 0 100H47q11-48 0-100Z"/><circle cx="70" cy="92" r="6"/><path d="M60 29h22M57 43h25"/>',
+
     switch: '<rect x="33" y="27" width="74" height="72" rx="6"/><rect x="42" y="36" width="56" height="54" rx="2"/><rect x="11" y="27" width="22" height="72" rx="11"/><rect x="107" y="27" width="22" height="72" rx="11"/><circle cx="22" cy="45" r="5"/><circle cx="118" cy="77" r="5"/>',
     ps1: '<rect x="19" y="47" width="105" height="45" rx="11"/><ellipse cx="71" cy="48" rx="38" ry="24"/><ellipse cx="71" cy="48" rx="24" ry="15"/><circle cx="35" cy="76" r="3"/><path d="M83 76h21"/>',
     ps2: '<path d="M25 35h94l-14 55H11z"/><path d="M38 35 24 91M48 40h58M37 51h67M28 65h69"/><path d="m69 66 26-1"/>',
@@ -71,6 +78,7 @@ const EXTS = {
   gamecube: ['iso','gcm','rvz','gcz','wia','ciso'], dreamcast: ['gdi','cdi','chd'],
   wii: ['wbfs','iso','rvz','wia','gcz','ciso'], wiiu: ['wua','wud','wux','rpx'],
   gb: ['gb','gbc'], gba: ['gba'], nds: ['nds'], '3ds': ['3ds','cci','cxi'], ps4:['elf','bin'], ps5:['pkg','iso','elf','zar','bin'], vita:['vpk','zip'], switch2:['nsp','xci','nup','nsz','xcz','nx','nro','nso','nca','kip'],
+  genesis:['md','gen','smd','bin','zip'],saturn:['cue','ccd','toc'],nes:['nes','unf','unif','fds','zip'],snes:['sfc','smc','zip'],xbox:['iso'],xbox360:['iso'],
 };
 const tones = { Sony: '#536cae', Nintendo: '#66547d', Sega: '#8d5e55' };
 const consoleTone = consoleInfo => tones[consoleInfo.group] || '#657aa5';
@@ -158,7 +166,7 @@ function clearCoverCache() {
 }
 let artDb = null;
 async function initializeArt() {
-  // Native Matrix Play artwork lives in XDG data; browser preview uses IndexedDB.
+  // Native Matrix-Play artwork lives in XDG data; browser preview uses IndexedDB.
   if (state.native || !('indexedDB' in window)) return;
   try {
     artDb = await new Promise((resolve, reject) => {
@@ -210,23 +218,17 @@ function renderNav() {
     : 'LIBRARY <span>/</span> CONSOLES';
 }
 function consoleCard(consoleInfo) {
-  const count = importedFor(consoleInfo.id).length;
-  return `<button class="console-card" type="button" data-action="console" data-id="${consoleInfo.id}" style="--tint:${consoleTone(consoleInfo)}" aria-label="Browse ${escapeHtml(consoleInfo.name)} library">
-    <span class="console-card__top"><span class="console-brand">${escapeHtml(consoleInfo.brand)}</span><span class="card-arrow">${glyph('arrow')}</span></span>
-    ${deviceArt(consoleInfo.id)}
-    <span class="console-card__bottom"><strong>${escapeHtml(consoleInfo.name)}</strong><small>${count ? `${count} ${state.native ? 'games' : 'folder preview titles'}` : state.native ? 'No games yet' : `${consoleInfo.games.length} sample titles`} <span class="card-status ${isConfigured(consoleInfo.id) ? 'ready' : ''}"></span> ${consoleInfo.libraryOnly ? 'Library only' : isConfigured(consoleInfo.id) ? 'Profile saved' : 'Not linked'}</small></span>
-  </button>`;
+  const count=gamesFor(consoleInfo.id).length;
+  return `<button class="console-card" type="button" data-action="console" data-id="${consoleInfo.id}" aria-label="Browse ${escapeHtml(consoleInfo.name)} library">
+    <span class="console-card__top"><span class="console-brand">${escapeHtml(consoleInfo.group==='Sony'?'PlayStation':consoleInfo.group)}</span><span class="connection-dot ${isConfigured(consoleInfo.id)?'ready':''}" title="${isConfigured(consoleInfo.id)?'Emulator ready':'Set up emulator'}"></span></span>
+    ${deviceArt(consoleInfo.id)}<span class="console-card__bottom"><strong>${escapeHtml(consoleInfo.name)}</strong><small>${count} ${count===1?'game':'games'}</small></span></button>`;
 }
 function renderHome() {
-  const focus = captureLibraryFocus($('#screen'), 'home');
-  const visible = consoles.filter(consoleInfo => state.vendor === 'All' || consoleInfo.group === state.vendor);
-  $('#screen').innerHTML = `<div class="title-row"><div><div class="eyebrow">YOUR LIBRARY</div><h1 class="page-title">Choose a console.</h1><p class="page-subtitle">Each console opens its own game collection.</p></div>
-    <div class="stats"><div class="stat"><strong>${consoles.length}</strong><span>Consoles</span></div><div class="stat-separator"></div><div class="stat"><strong>${configuredCount()}</strong><span>Profiles saved</span></div></div></div>
-    <div class="section-toolbar"><h2 class="section-title">All systems</h2><div class="segmented" role="group" aria-label="Filter console brands">${['All', 'Sony', 'Nintendo', 'Sega'].map(vendor => `<button type="button" class="${state.vendor === vendor ? 'active' : ''}" data-action="vendor" data-value="${vendor}" aria-pressed="${state.vendor === vendor}">${vendor === 'All' ? 'All systems' : vendor === 'Sony' ? 'PlayStation' : vendor}</button>`).join('')}</div></div>
-    <div class="console-grid">${visible.map(consoleCard).join('')}</div>
-    <div class="notice">${glyph('info')}<span>${state.native
-      ? `Matrix Play reads each console’s own Games directory under ${escapeHtml(state.root)}. Steam and Windows have separate tabs.`
-      : 'Browser-only preview: sample games are for design review. A native Matrix Play build creates the folders and scans installed games.'}</span></div>`;
+  const focus=captureLibraryFocus($('#screen'),'home');
+  const visible=consoles.filter(c=>state.vendor==='All'||c.group===state.vendor);
+  $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${consoles.length} libraries</p></div></div>
+    <div class="section-toolbar"><div class="segmented brand-filters" role="group" aria-label="Filter console brands">${['All','Sony','Nintendo','Sega','Xbox'].map(v=>`<button type="button" class="${state.vendor===v?'active':''}" data-action="vendor" data-value="${v}" aria-pressed="${state.vendor===v}">${v==='All'?'All systems':v==='Sony'?'PlayStation':v}</button>`).join('')}</div></div>
+    <div class="console-grid">${visible.map(consoleCard).join('')}</div>`;
   restoreLibraryFocus(focus);
 }
 function gameCover(consoleInfo, game, index) {
@@ -410,46 +412,46 @@ function renderGameResults() {
   const sortControl=$('#sort-games');if (sortControl) sortControl.value=state.sort;
   $('#game-results').innerHTML = games.length
     ? `<div class="${state.view === 'grid' ? 'game-grid' : 'game-list'}">${games.map((game,index) => gameCard(consoleInfo,game,index)).join('')}</div>`
-    : state.gameFilter === 'Favorites' ? `<div class="empty empty-library"><strong>${favoriteCount(consoleInfo.id) ? 'No favorites match this search' : `No ${escapeHtml(consoleInfo.name)} favorites yet`}</strong><p>${favoriteCount(consoleInfo.id) ? 'Try another search, or switch to All games.' : 'Select the heart on a game in All games to add it to this console’s favorites list.'}</p><button type="button" class="button button-ghost" data-action="filter-games" data-value="All">Browse all games</button></div>` : `<div class="empty empty-library"><strong>${state.native && !importedFor(consoleInfo.id).length ? 'No games detected yet' : 'No matching games'}</strong><p>${state.native && !importedFor(consoleInfo.id).length ? 'Place your game files in this console’s Games folder and click Refresh.' : 'Try another search or switch to All games.'}</p></div>`;
+    : state.gameFilter === 'Favorites' ? `<div class="empty empty-library"><strong>${favoriteCount(consoleInfo.id) ? 'No favorites match this search' : `No ${escapeHtml(consoleInfo.name)} favorites yet`}</strong><p>${favoriteCount(consoleInfo.id) ? 'Try another search, or switch to All games.' : 'Select the heart on a game in All games to add it to this console’s favorites list.'}</p><button type="button" class="button button-ghost" data-action="filter-games" data-value="All">Browse all games</button></div>` : `<div class="empty empty-library"><strong>${state.native && !importedFor(consoleInfo.id).length ? 'No games detected yet' : 'No matching games'}</strong><p>${state.native && !importedFor(consoleInfo.id).length ? 'Add a game folder to get started.' : 'Try another search or switch to All games.'}</p>${state.native && !importedFor(consoleInfo.id).length ? `<button type="button" class="button button-primary" data-action="library-folders" data-id="${consoleInfo.id}">Add games</button>` : ''}</div>`;
   hydrateNativeCovers();
   restoreLibraryFocus(focus);
 }
 function renderConsole() {
-  const focus = captureLibraryFocus($('#screen'), 'console:'+state.consoleId);
-  const consoleInfo = byId[state.consoleId];
-  normalizeGameSort(consoleInfo.id);
-  const yearSorting=hasReleaseYears(consoleInfo.id);
-  const imported = importedFor(consoleInfo.id);
-  const hasImported = imported.length > 0;
-  const subtitle = consoleInfo.libraryOnly ? `${imported.length} collection files · Library only` : state.native ? `${imported.length} games · ${isConfigured(consoleInfo.id) ? 'Emulator linked' : 'Emulator not linked'}` : hasImported ? `${imported.length} folder preview titles · ${isConfigured(consoleInfo.id) ? 'Profile saved' : 'Emulator not linked'}` : `${consoleInfo.games.length} sample titles · ${isConfigured(consoleInfo.id) ? 'Profile saved' : 'Emulator not linked'}`;
-  $('#screen').innerHTML = `<button type="button" class="back-link" data-action="home">${glyph('back')} All consoles</button>
-    <section class="console-hero" style="--tint:${consoleTone(consoleInfo)}"><div class="console-hero-copy"><div class="eyebrow">${escapeHtml(consoleInfo.brand)} · DEDICATED LIBRARY</div><h1>${escapeHtml(consoleInfo.name)}</h1><p>${subtitle}</p>${consoleInfo.libraryOnly ? '' : `<button type="button" class="button button-ghost" data-action="configure" data-id="${consoleInfo.id}">${glyph('plus')} ${isConfigured(consoleInfo.id) ? 'Edit emulator' : 'Set up emulator'}</button>`}${state.native && isConfigured(consoleInfo.id) ? `<button type="button" class="button button-ghost hero-open" data-action="open-emulator" data-id="${consoleInfo.id}">Open emulator</button>` : ''}<button type="button" class="button button-subtle hero-favorites" data-action="console-favorites">${glyph('heart')} My favorites (${favoriteCount(consoleInfo.id)})</button></div>${deviceArt(consoleInfo.id)}</section>
-    <div id="launch-status"></div>${consoleInfo.supportNote ? `<p class="platform-notice" role="note">${escapeHtml(consoleInfo.supportNote)}</p>` : ''}<div class="library-heading"><div><h2>Game library</h2><p>${state.native ? `Managed folder: ${escapeHtml(state.folders[consoleInfo.id] || '')}` : hasImported ? 'Showing filenames from your selected folder. Not playable from this browser.' : 'Sample games and placeholder covers for UI review.'}</p></div><div class="library-heading-actions">${state.native ? `<button type="button" class="button button-ghost" data-action="library-folders" data-id="${consoleInfo.id}">Manage folders</button>` : ''}<button type="button" class="button button-subtle" data-action="${state.native ? 'open-folder' : 'preview-folder'}">${glyph('folder')} ${state.native ? 'Open games folder' : 'Preview game folder'}</button>${!state.native && hasImported ? `<button type="button" class="button button-ghost" data-action="clear-preview">${glyph('trash')} Clear preview</button>` : ''}</div></div>
-    <div class="library-tools"><label class="search">${glyph('search')}<input type="search" id="game-search" autocomplete="off" placeholder="Search ${escapeHtml(consoleInfo.name)} games" aria-label="Search ${escapeHtml(consoleInfo.name)} games" value="${escapeHtml(state.query)}"></label>
-      <div class="segmented" role="group" aria-label="Game filter">${['All','Favorites'].map(value => `<button type="button" data-action="filter-games" data-value="${value}" class="${state.gameFilter === value ? 'active' : ''}" aria-pressed="${state.gameFilter === value}">${value === 'All' ? 'All games' : `Favorites (${favoriteCount(consoleInfo.id)})`}</button>`).join('')}</div>
-      <select id="sort-games" class="sort-select" aria-label="Sort games" aria-describedby="sort-year-hint"><option value="default" ${state.sort === 'default' ? 'selected' : ''}>Default order</option><option value="az" ${state.sort === 'az' ? 'selected' : ''}>Title: A to Z</option><option value="recent" ${state.sort === 'recent' ? 'selected' : ''} ${yearSorting ? '' : 'disabled'}>Release year: newest first</option></select>
-      <div class="segmented" role="group" aria-label="Library layout"><button type="button" data-action="view" data-value="grid" aria-label="Grid view" aria-pressed="${state.view === 'grid'}" class="${state.view === 'grid' ? 'active' : ''}">${glyph('grid')}</button><button type="button" data-action="view" data-value="list" aria-label="List view" aria-pressed="${state.view === 'list'}" class="${state.view === 'list' ? 'active' : ''}">${glyph('list')}</button></div>
-    </div><p id="sort-year-hint" class="muted">${yearSorting ? 'Release-year sorting places titles with unknown years last.' : 'Release-year sorting is unavailable: these titles have no release-year metadata.'}</p><div id="game-results"></div>
-    <div class="notice">${glyph('info')}<span>${state.native ? 'Your ROM files are not moved or modified. Launch requires a configured emulator path; launch arguments vary by emulator.' : hasImported ? 'Only filenames and relative paths were read. Nothing was uploaded. Folder preview entries cannot launch games until the native app is implemented.' : 'This is a browser preview. The native app will create and scan console folders on first run.'}</span></div>`;
-  renderGameResults();renderLaunchStatus();
-  restoreLibraryFocus(focus);
+  const focus=captureLibraryFocus($('#screen'),'console:'+state.consoleId);
+  const consoleInfo=byId[state.consoleId]; normalizeGameSort(consoleInfo.id);
+  const yearSorting=hasReleaseYears(consoleInfo.id), imported=importedFor(consoleInfo.id), hasImported=imported.length>0;
+  $('#screen').innerHTML=`<button type="button" class="back-link" data-action="home">${glyph('back')} Consoles</button>
+    <div class="library-header"><div><h1 class="page-title">${escapeHtml(consoleInfo.name)}</h1><p class="page-subtitle">${gamesFor(consoleInfo.id).length} ${gamesFor(consoleInfo.id).length===1?'game':'games'}</p></div>
+    <div class="library-header-actions">${!isConfigured(consoleInfo.id)?`<button type="button" class="button button-primary" data-action="configure" data-id="${consoleInfo.id}">Set up emulator</button>`:''}
+      <details class="library-menu"><summary aria-label="Library options" title="Library options">···</summary><div class="menu-items">
+        ${isConfigured(consoleInfo.id)?`<button type="button" data-action="configure" data-id="${consoleInfo.id}">Edit emulator</button>`:''}
+        ${state.native&&isConfigured(consoleInfo.id)?`<button type="button" data-action="open-emulator" data-id="${consoleInfo.id}">Open emulator</button>`:''}
+        ${state.native?`<button type="button" data-action="library-folders" data-id="${consoleInfo.id}">Manage folders</button>`:''}
+        ${state.native?`<button type="button" data-action="launch-details" data-id="${consoleInfo.id}" ${state.launches[consoleInfo.id]?'':'hidden'}>Launch details</button>`:''}
+        <button type="button" data-action="${state.native?'open-folder':'preview-folder'}">${state.native?'Open games folder':'Preview game folder'}</button>
+        ${!state.native&&hasImported?'<button type="button" data-action="clear-preview">Clear preview</button>':''}
+      </div></details></div></div>
+    <div id="launch-status"></div>
+    <div class="library-tools"><label class="search">${glyph('search')}<input type="search" id="game-search" autocomplete="off" placeholder="Search games" aria-label="Search ${escapeHtml(consoleInfo.name)} games" value="${escapeHtml(state.query)}"></label>
+      <div class="segmented" role="group" aria-label="Game filter">${['All','Favorites'].map(v=>`<button type="button" data-action="filter-games" data-value="${v}" class="${state.gameFilter===v?'active':''}" aria-pressed="${state.gameFilter===v}">${v==='All'?'All games':`Favorites (${favoriteCount(consoleInfo.id)})`}</button>`).join('')}</div>
+      <select id="sort-games" class="sort-select" aria-label="Sort games" aria-describedby="sort-year-hint"><option value="default" ${state.sort==='default'?'selected':''}>Default</option><option value="az" ${state.sort==='az'?'selected':''}>Name</option><option value="recent" ${state.sort==='recent'?'selected':''} ${yearSorting?'':'disabled'}>Release year</option></select>
+      <div class="segmented" role="group" aria-label="Library layout"><button type="button" data-action="view" data-value="grid" aria-label="Grid view" aria-pressed="${state.view==='grid'}" class="${state.view==='grid'?'active':''}">${glyph('grid')}</button><button type="button" data-action="view" data-value="list" aria-label="List view" aria-pressed="${state.view==='list'}" class="${state.view==='list'?'active':''}">${glyph('list')}</button></div></div>
+    <p id="sort-year-hint" class="sr-only">${yearSorting?'Titles with unknown years appear last.':'Release-year sorting is unavailable: these titles have no release-year metadata.'}</p><div id="game-results"></div>
+    ${consoleInfo.supportNote?`<details class="library-notes"><summary>Format &amp; emulator notes</summary><p class="platform-notice">${escapeHtml(consoleInfo.supportNote)}</p></details>`:''}`;
+  renderGameResults();renderLaunchStatus();restoreLibraryFocus(focus);
 }
 function renderSettings() {
-  const focus = captureLibraryFocus($('#screen'), 'settings');
-  $('#screen').innerHTML = `<div class="settings-header"><div class="eyebrow">YOUR SETUP</div><h1 class="page-title">Emulators &amp; folders.</h1><p class="page-subtitle">Keep managed folders and add existing libraries from other drives.</p>${state.native ? `<div class="root-path">${glyph('folder')} Managed folder <strong>${escapeHtml(state.root)}</strong></div>` : ''}</div>
-    <div class="notice" style="margin:0 0 25px">${glyph('info')}<span>${state.native ? 'Choose Set up for a console, then select AppImage, Flatpak, or another executable. Browse for an AppImage anywhere, or choose an already-installed Flatpak from the list.' : 'Browser preview settings are not connected to your filesystem. Native folder creation and launching require the Matrix Play Linux application.'}</span></div>
-    ${state.native ? discoverySummary() : ''}
-    <section class="artwork-settings"><h2>Cover artwork</h2>
-    <p>PS1/PS2 covers use exact xlenore serials; GameCube/Wii use exact GameTDB disc IDs. Switch uses a five-character GameTDB product code plus an explicit artwork region (AAACA-US), not a 16-digit title ID. Eleven more libraries use exact Libretro catalog titles, including region and edition. Local covers take priority. Catalogs are incomplete, especially Vita.</p>
-    <label><input type="checkbox" id="auto-covers" ${state.artwork.enabled ? 'checked' : ''} ${state.native && !state.artworkSaving ? '' : 'disabled'}> Download missing covers for supported consoles after library scans</label>
-    <label><input type="checkbox" id="auto-title-covers" ${state.artwork.titleEnabled ? 'checked' : ''} ${state.native && !state.artworkSaving ? '' : 'disabled'}> Enable automatic title-based covers: send filename-based game titles to Libretro</label>
-    <label for="cover-style">Cover style</label><select id="cover-style" ${state.native && !state.artworkSaving ? '' : 'disabled'}><option value="default" ${state.artwork.style==='default'?'selected':''}>Default</option><option value="3d" ${state.artwork.style==='3d'?'selected':''}>3D</option></select>
-    <p>Downloaded covers stay on this computer for offline use. Requests send the game serial, disc ID or filename-based catalog title, console and style to GitHub, GameTDB or Libretro; your game files and full paths are not uploaded. Libretro and Switch supply flat covers even when 3D is selected.</p>
-    <p>PS5 and Switch 2 still need local covers while a reliable online provider is verified. Extracted PS5 eboot games in their own folders can use existing sce_sys/icon0.png images automatically; imported and sidecar covers take priority. Switch filenames need an explicit code and region such as [HAC-P-AAACA-USA], or confirmation in game details; the product code does not identify its artwork region. EUR selects English artwork (EN). Game Boy and Game Boy Color use separate catalogs selected by .gb/.gbc extensions; ambiguous archives need a local cover.</p>
-    <p>TheCoverProject: manual only. Automated access permission has not been established. Download in your browser, then use Choose cover in game details.</p>
-    <button type="button" class="button button-ghost" data-action="cover-project">Open TheCoverProject</button><p id="cover-scan-status" role="status"></p></section>
-    <div class="section-toolbar"><h2 class="section-title">Console profiles</h2><span class="status">${configuredCount()} / ${consoles.length} saved</span></div>
-    <div class="settings-list">${consoles.map(consoleInfo => `<div class="settings-row"><div class="settings-row__left"><div class="settings-glyph" style="--tint:${consoleTone(consoleInfo)}">${deviceArt(consoleInfo.id)}</div><div class="settings-name"><strong>${escapeHtml(consoleInfo.name)}</strong><small>Suggested: ${escapeHtml(consoleInfo.emulator)}${state.native ? ` · ${escapeHtml(state.folders[consoleInfo.id] || '')}` : state.configs[consoleInfo.id]?.folderPath ? ` · ${escapeHtml(state.configs[consoleInfo.id].folderPath)}` : ''}</small></div></div><div class="settings-row__right">${state.native ? `<button type="button" class="button button-ghost" data-action="library-folders" data-id="${consoleInfo.id}" aria-label="Manage ${escapeHtml(consoleInfo.name)} folders">Folders</button>` : ''}<span class="status ${isConfigured(consoleInfo.id) ? 'ready' : ''}">${consoleInfo.libraryOnly ? 'Library only' : isConfigured(consoleInfo.id) ? 'Profile saved' : 'Not set up'}</span><button type="button" class="button button-ghost" data-action="configure" data-id="${consoleInfo.id}" ${consoleInfo.libraryOnly ? 'disabled' : ''}>${consoleInfo.libraryOnly ? 'Library only' : isConfigured(consoleInfo.id) ? 'Edit' : 'Set up'}</button></div></div>`).join('')}</div>`;
+  const focus=captureLibraryFocus($('#screen'),'settings');
+  $('#screen').innerHTML=`<div class="settings-header"><h1 class="page-title">Settings</h1><div class="settings-app"><span>Matrix-Play</span><button type="button" class="button button-ghost" data-action="updates" aria-label="Update Matrix-Play">Check for updates</button></div></div>
+    ${state.native?discoverySummary():''}
+    <section class="artwork-settings"><h2>Artwork</h2>
+      <label><input type="checkbox" id="auto-covers" ${state.artwork.enabled?'checked':''} ${state.native&&!state.artworkSaving?'':'disabled'}> Download missing covers</label>
+      <label><input type="checkbox" id="auto-title-covers" ${state.artwork.titleEnabled?'checked':''} ${state.native&&!state.artworkSaving?'':'disabled'}> Match game titles with Libretro</label>
+      <p class="setting-hint">Title matching sends game names to Libretro. Local covers take priority.</p>
+      <label for="cover-style">Cover style</label><select id="cover-style" ${state.native&&!state.artworkSaving?'':'disabled'}><option value="default" ${state.artwork.style==='default'?'selected':''}>Default</option><option value="3d" ${state.artwork.style==='3d'?'selected':''}>3D</option></select>
+      <details class="library-notes"><summary>Artwork details</summary><p>Requests send the game serial, disc ID or filename-based catalog title, console and style to GitHub, GameTDB or Libretro; game files and full paths are not uploaded. Local covers take priority. Libretro and Switch use flat covers.</p><p>PS5 and Switch 2 still need local covers. The six additional libraries also use local covers. Choose cover is available in game details.</p><button type="button" class="button button-ghost" data-action="cover-project">Open TheCoverProject</button></details><p id="cover-scan-status" role="status"></p></section>
+    <div class="section-toolbar"><h2 class="section-title">Emulators &amp; folders</h2><span class="status">${configuredCount()} / ${consoles.length}</span></div>
+    <div class="settings-list">${consoles.map(c=>`<div class="settings-row"><div class="settings-row__left"><div class="settings-name"><strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(state.configs[c.id]?.emulatorName||c.emulator)}</small></div></div><div class="settings-row__right">${state.native?`<button type="button" class="button button-ghost" data-action="library-folders" data-id="${c.id}" aria-label="Manage ${escapeHtml(c.name)} folders">Folders</button>`:''}<button type="button" class="button button-ghost" data-action="configure" data-id="${c.id}">${isConfigured(c.id)?'Edit':'Set up'}</button></div></div>`).join('')}</div>`;
   restoreLibraryFocus(focus);
 }
 function render() {
@@ -481,8 +483,7 @@ function renderExternal(page) {
   const steam = page === 'steam';
   const title = steam ? 'Steam Games' : 'Windows Games';
   const games = externalList(page).filter(g => g.title.toLowerCase().includes(state.query.toLowerCase()));
-  $('#screen').innerHTML = `<div class="title-row"><div><div class="eyebrow">${steam ? 'STEAM LIBRARY' : 'WINDOWS LIBRARY'}</div><h1 class="page-title">${title}.</h1>
-      <p class="page-subtitle">${steam ? 'Detected from existing Steam installations. Matrix Play does not copy or reinstall your games.' : 'Keep Windows games organized and open existing desktop shortcuts. Nothing is moved.'}</p></div>
+  $('#screen').innerHTML = `<div class="title-row"><div><h1 class="page-title">${title}</h1><p class="page-subtitle">${externalList(page).length} games</p></div>
       <div class="stats"><div class="stat"><strong>${externalList(page).length}</strong><span>Games</span></div></div></div>
     <div class="library-tools"><label class="search">${glyph('search')}<input type="search" id="external-search" placeholder="Search ${title}" value="${escapeHtml(state.query)}"></label>
     ${!steam ? `<button type="button" class="button button-primary" data-action="add-windows">${glyph('plus')} Add Windows game</button>` : state.native ? '<button type="button" class="button button-ghost" data-action="library-folders" data-id="steam">Manage Steam libraries</button>' : ''}</div>
@@ -491,7 +492,7 @@ function renderExternal(page) {
       const cover = gameCover({ id: page, abbrev: steam ? 'STEAM' : 'WINDOWS' }, game, index);
       return `<div class="game-item"><button class="game-card" type="button" data-action="quick-external" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="${state.native && (steam || windowsShortcutSupported(game)) ? 'Launch' : 'View'} ${escapeHtml(game.title)}">${cover}<span class="game-title">${escapeHtml(game.title)}</span><span class="game-meta">${steam ? 'Steam · App ' + escapeHtml(game.appId || game.uid) : windowsShortcutSupported(game) ? 'Windows · Desktop shortcut' : 'Windows · Shortcut required'}</span></button><button class="game-info" type="button" data-action="external-game" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="Details for ${escapeHtml(game.title)}" title="Game details">${glyph('info')}</button></div>`;
     }).join('')}</div>` : `<div class="empty external-empty"><strong>${state.query ? 'No matching games' : `No ${title.toLowerCase()} detected`}</strong><p>${state.query ? 'Try a different search term.' : steam ? 'Install and sign into Steam, then click Refresh.' : 'Choose Add Windows game to register an existing .desktop shortcut.'}</p></div>`}
-    <div class="notice">${glyph('info')}<span>${state.native ? steam ? 'Steam titles are discovered from appmanifest files and launched through Steam.' : 'Matrix Play opens .desktop shortcuts only. It does not run .exe files or supply a Windows compatibility runtime. Shortcuts must already work outside Matrix Play.' : 'Browser preview only. Native discovery and launching are available in the Matrix Play Linux build.'}</span></div>`;
+    `;
   renderLaunchStatus();
   hydrateNativeCovers();
   restoreLibraryFocus(focus);
@@ -502,10 +503,10 @@ function openExternalGame(kind, uid) {
   state.lastFocus = document.activeElement; state.overlay = 'external'; state.selectedGame = {id:kind,uid};
   $('#overlay-root').innerHTML = `<div class="overlay detail-overlay" data-backdrop="true"><aside class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detail-title"><button class="close" data-action="close" aria-label="Close details">${glyph('close')}</button>
     <div class="detail-cover">${gameCover({id:kind,abbrev:kind.toUpperCase()},game,0)}</div><div class="eyebrow">${kind.toUpperCase()} LIBRARY</div><h2 id="detail-title">${escapeHtml(game.title)}</h2>
-    <p class="detail-sub">${escapeHtml(game.target || `Steam app ID ${game.appId || game.uid}`)}</p><p class="detail-description">${kind === 'steam' ? 'Matrix Play asks your existing Steam client to start this game.' : supported ? 'Matrix Play opens your existing desktop shortcut. Any external software it uses is managed outside Matrix Play.' : 'Direct .exe launching is unavailable. This saved entry and its artwork are retained. Add a working .desktop shortcut, then remove this old entry if you no longer need it. Your installed game files are unchanged.'}</p>
+    <p class="detail-sub">${escapeHtml(game.target || `Steam app ID ${game.appId || game.uid}`)}</p><p class="detail-description">${kind === 'steam' ? 'Matrix-Play asks your existing Steam client to start this game.' : supported ? 'Matrix-Play opens your existing desktop shortcut. Any external software it uses is managed outside Matrix-Play.' : 'Direct .exe launching is unavailable. This saved entry and its artwork are retained. Add a working .desktop shortcut, then remove this old entry if you no longer need it. Your installed game files are unchanged.'}</p>
     <button class="button button-primary launch-button" data-action="launch-external" data-kind="${kind}" data-uid="${escapeHtml(uid)}" ${supported ? '' : 'disabled'}>${glyph('play')} ${supported ? 'Play game' : 'Desktop shortcut required'}</button>
     <div class="detail-actions"><button class="button button-ghost" type="button" data-action="pick-cover">${glyph('image')} Choose cover</button></div>
-    ${kind === 'windows' ? `<div class="detail-actions"><button class="button button-ghost" data-action="remove-windows" data-uid="${escapeHtml(uid)}">${glyph('trash')} Remove from Matrix Play</button></div>` : ''}
+    ${kind === 'windows' ? `<div class="detail-actions"><button class="button button-ghost" data-action="remove-windows" data-uid="${escapeHtml(uid)}">${glyph('trash')} Remove from Matrix-Play</button></div>` : ''}
     <p class="detail-hint">${state.native ? 'Launching uses your installed Steam client or existing desktop shortcut.' : 'Browser preview cannot launch games.'}</p></aside></div>`;
   $('.detail-panel .close').focus();
   hydrateNativeCovers();
@@ -515,7 +516,7 @@ function openAddWindows() {
   $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="windows-title"><button type="button" class="close" data-action="close" aria-label="Close add game">${glyph('close')}</button>
    <div class="eyebrow">WINDOWS LIBRARY</div><h2 id="windows-title">Add existing game.</h2><p class="muted">Register a .desktop shortcut that already works on Linux. No files are moved or copied.</p>
    <form id="windows-form"><div class="field"><label for="windows-name">Game title</label><input id="windows-name" name="title" required maxlength="150" placeholder="Game title"></div>
-   <div class="field"><label for="windows-target">Existing desktop shortcut</label><input id="windows-target" name="target" required placeholder="/home/you/.local/share/applications/My Game.desktop"><small>Only .desktop shortcuts are supported. Direct .exe launching is unavailable. Matrix Play does not provide or configure a Windows compatibility runtime.</small></div>
+   <div class="field"><label for="windows-target">Existing desktop shortcut</label><input id="windows-target" name="target" required placeholder="/home/you/.local/share/applications/My Game.desktop"><small>Only .desktop shortcuts are supported. Direct .exe launching is unavailable. Matrix-Play does not provide or configure a Windows compatibility runtime.</small></div>
    <div class="dialog-actions"><button class="button button-ghost" type="button" data-action="close">Cancel</button><button class="button button-primary" type="submit">Add game</button></div></form></section></div>`;
   $('#windows-name').focus();
 }
@@ -532,7 +533,10 @@ function activeLaunchId() { return state.page === 'console' ? state.consoleId : 
 function renderLaunchStatus() {
   const target=$('#launch-status');if (!target) return;
   const id=activeLaunchId(), info=state.launches[id], emulator=!!byId[id];
-  target.innerHTML=info ? `<div class="launch-notice ${['error','needs-setup'].includes(info.phase)?'launch-error':''}" role="status"><p>${escapeHtml(info.message)}</p><div class="launch-actions">${emulator ? `<button type="button" class="button button-ghost" data-action="open-emulator" data-id="${id}">Open emulator</button>`:''}${info.log || info.logPath ? `<button type="button" class="button button-ghost" data-action="launch-details" data-id="${id}">Launch details</button>`:''}</div></div>` : '';
+  const detailsButton=$('.library-menu [data-action="launch-details"]');
+  if (detailsButton) detailsButton.hidden=!info;
+  // Successful launches use the transient toast. Keep actionable failures visible.
+  target.innerHTML=info && ['error','needs-setup'].includes(info.phase) ? `<div class="launch-notice ${['error','needs-setup'].includes(info.phase)?'launch-error':''}" role="status"><p>${escapeHtml(info.message)}</p><div class="launch-actions">${emulator ? `<button type="button" class="button button-ghost" data-action="open-emulator" data-id="${id}">Open emulator</button>`:''}${info.log || info.logPath ? `<button type="button" class="button button-ghost" data-action="launch-details" data-id="${id}">Launch details</button>`:''}</div></div>` : '';
 }
 let launchDetailsRequest = 0;
 async function showLaunchDetails(id) {
@@ -596,7 +600,7 @@ async function launchExternal(kind,uid) {
 function discoverySummary() {
   const report=state.discovery, total=report.candidates.length;
   const auto=Object.values(state.configs).filter(p=>p.autoDetected).length;
-  return `<section class="discovery-box"><div><h2>Automatic emulator linking</h2><p>${total} detected installation${total===1?'':'s'} · ${auto} console${auto===1?'':'s'} automatically linked. Saved choices are kept.</p>${report.ambiguous.length ? `<p>Choose between multiple matches for: ${report.ambiguous.map(id=>escapeHtml(byId[id]?.name || id)).join(', ')}.</p>`:''}${report.candidates.some(c=>!c.ready) ? '<p>Some downloaded AppImages need execute permission. Choose one in Set up, then Save emulator.</p>':''}<small>Scans installed Flatpaks, common AppImage folders and application shortcuts. Unknown emulator names remain manual.</small></div><button type="button" class="button button-primary" data-action="find-emulators">Find emulators</button></section>`;
+  return `<section class="discovery-box"><div><h2>Emulator discovery</h2><p>${total} detected installation${total===1?'':'s'} · ${auto} console${auto===1?'':'s'} linked.</p>${report.ambiguous.length ? `<p>Choose between multiple matches for: ${report.ambiguous.map(id=>escapeHtml(byId[id]?.name || id)).join(', ')}.</p>`:''}${report.candidates.some(c=>!c.ready) ? '<p>Some downloaded AppImages need execute permission. Choose one in Set up, then Save emulator.</p>':''}</div><button type="button" class="button button-primary" data-action="find-emulators">Find emulators</button></section>`;
 }
 function detectedEmulatorOptions(id) {
   return '<option value="">Choose a detected installation…</option>'+state.discovery.candidates.filter(c=>c.consoleIds.includes(id)).map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.profile.emulatorName)} — ${escapeHtml(c.profile.emulatorPath || c.source)}${c.ready?'':' (allow execution when saving)'}</option>`).join('');
@@ -652,7 +656,7 @@ function updateLauncherFields() {
   $('#emulator-path').required=launcher!=='flatpak';
   $('#flatpak-app').required=launcher==='flatpak';
   $('#emulator-file-label').textContent=launcher==='appimage' ? 'AppImage file' : 'Emulator executable';
-  $('#emulator-file-hint').textContent=launcher==='appimage' ? 'Choose your downloaded .AppImage wherever you keep it. Matrix Play leaves it in place.' : 'Choose an installed emulator file, for example one in /usr/bin.';
+  $('#emulator-file-hint').textContent=launcher==='appimage' ? 'Choose your downloaded .AppImage wherever you keep it. Matrix-Play leaves it in place.' : 'Choose an installed emulator file, for example one in /usr/bin.';
   if (launcher==='flatpak') void loadFlatpakChoices();
 }
 let flatpakRequest = 0;
@@ -672,7 +676,7 @@ async function loadFlatpakChoices() {
     // Seed the initial choice once. Keep it for failed-load retries, but never
     // restore it over a later explicit blank choice on reload.
     delete select.dataset.saved;
-    $('#flatpak-help').textContent=apps.length ? 'Choose your installed emulator. Matrix Play gives it access to the selected game library, with scoped save access for supported emulators.' : 'No Flatpak apps found. Install an emulator through Software, then click Reload apps.';
+    $('#flatpak-help').textContent=apps.length ? 'Choose your installed emulator. Matrix-Play gives it access to the selected game library, with scoped save access for supported emulators.' : 'No Flatpak apps found. Install an emulator through Software, then click Reload apps.';
   } catch(error) { if (current()) $('#flatpak-help').textContent=String(error); }
   finally {
     if (current()) {
@@ -693,7 +697,7 @@ function openConfigure(id) {
     <div id="file-fields"><div class="field"><label id="emulator-file-label" for="emulator-path">AppImage file</label><div class="file-choice"><input id="emulator-path" name="emulatorPath" placeholder="Choose a file or paste its full path" value="${escapeHtml(current.emulatorPath || '')}"><button type="button" class="button button-ghost" data-action="browse-emulator">Browse…</button></div><small id="emulator-file-hint"></small></div><div id="appimage-options" class="field"><label class="check-row"><input type="checkbox" id="allow-execute" name="allowExecute" checked> Allow this AppImage to run</label><small>Adds execute permission to the chosen AppImage if needed. Saving does not run it.</small><label class="check-row"><input type="checkbox" name="extractAppimage" ${current.extractAppimage?'checked':''}> Run without FUSE (extraction mode)</label><small>Use this if your AppImage reports that FUSE is unavailable.</small></div></div>
     <div id="flatpak-fields" hidden><div class="field"><label for="flatpak-app">Installed Flatpak emulator</label><select id="flatpak-app" name="flatpakApp" data-saved="${escapeHtml(current.flatpakId ? current.flatpakId+'|'+current.flatpakInstallation : '')}"><option value="">Choose an installed app…</option></select><small id="flatpak-help"></small></div><button type="button" class="button button-ghost" data-action="reload-flatpaks">Reload apps</button><label class="check-row runtime-font-choice"><input type="checkbox" id="runtime-fonts" name="flatpakRuntimeFonts" ${(current.flatpakRuntimeFonts ?? current.flatpakId==='net.pcsx2.PCSX2')?'checked':''}> Use compatible runtime fonts</label><small>Recommended for PCSX2. Avoids crashes from host font configuration; applies only to emulator launches.</small><p class="muted">Flatpak apps are installed through Software. Downloaded .flatpakref files are not executable files to browse for.</p></div>
     <div class="field"><label for="emulator-name">Emulator name</label><input id="emulator-name" name="emulatorName" maxlength="120" value="${escapeHtml(current.emulatorName || consoleInfo.emulator)}" required></div>
-    <details class="advanced-setup" ${consoleInfo.customEmulator ? 'open' : ''}><summary>Advanced launch options</summary><div class="field"><label for="launch-args">Launch arguments (one per line)</label><textarea id="launch-args" name="launchArgs" rows="3">${escapeHtml((current.launchArgs?.length ? current.launchArgs : defaultLaunchArgs(id)).join('\n'))}</textarea><small>{game} is the game file. ${consoleInfo.customEmulator ? '{gameDir} is its containing folder. Put each placeholder on its own line. These arguments are used only for game launches; no fullscreen options are added.' : 'Defaults vary by console; some emulators require different options.'} Each line is passed as one argument, without a shell.</small>${consoleInfo.customEmulator ? `<p class="muted custom-launch-help">${id==='ps5' ? 'KytyPS5 core example: choose kyty_emulator, then enter --game and {gameDir} on separate lines for an extracted eboot.bin title. For ELF or ZAR, use --game and {game}. PKG/ISO collection files are not KytyPS5 boot targets.' : 'Lichii/Eglantine example: enter -f, -g and {game} on three separate lines. Check the documentation for your installed build; original Switch emulator settings are not reused.'}</p>` : ''}</div></details>
+    <details class="advanced-setup" ${consoleInfo.customEmulator ? 'open' : ''}><summary>Advanced launch options</summary><div class="field"><label for="launch-args">Launch arguments (one per line)</label><textarea id="launch-args" name="launchArgs" rows="3">${escapeHtml((current.launchArgs?.length ? current.launchArgs : defaultLaunchArgs(id)).join('\n'))}</textarea><small>{game} is the game file. ${consoleInfo.customEmulator ? '{gameDir} is its containing folder. Put each placeholder on its own line. These arguments are used only for game launches; no fullscreen options are added.' : 'Defaults vary by console; some emulators require different options.'} Each line is passed as one argument, without a shell.</small>${consoleInfo.customEmulator ? `<p class="muted custom-launch-help">${id==='xbox360' ? 'Choose a Linux-compatible Xbox 360 emulator. Put {game} on its own line; add only the arguments documented for your installed build.' : id==='ps5' ? 'KytyPS5 core example: choose kyty_emulator, then enter --game and {gameDir} on separate lines for an extracted eboot.bin title. For ELF or ZAR, use --game and {game}. PKG/ISO collection files are not KytyPS5 boot targets.' : 'Lichii/Eglantine example: enter -f, -g and {game} on three separate lines. Check the documentation for your installed build; original Switch emulator settings are not reused.'}</p>` : ''}</div></details>
     <div class="field"><label for="library-path">Game library folder</label><input id="library-path" name="folderPath" value="${escapeHtml(state.native ? state.folders[id] || '' : current.folderPath || '')}" ${state.native?'readonly':'required'}><small>Place this console’s games here. Your emulator can stay wherever it is installed.</small></div><p id="config-error" class="config-error" role="alert"></p><p id="config-save-status" class="muted" role="status"></p><div class="dialog-actions"><button class="button button-ghost" type="button" data-action="close">Cancel</button><button class="button button-primary" type="submit">Save emulator</button><button class="button button-ghost" type="submit" data-open-after-save="true">Save and open emulator</button></div></form></section></div>`;
   updateLauncherFields();$('#emulator-launcher').focus();void loadDetectedEmulators();
 }
@@ -770,7 +774,7 @@ function openGame(id, uid) {
     <div class="detail-cover">${gameCover(consoleInfo,game,index)}</div><div class="eyebrow">GAME DETAILS · ${state.native ? consoleInfo.libraryOnly ? 'COLLECTION FILE' : 'LOCAL GAME' : game.demo ? 'DEMO TITLE' : 'FOLDER PREVIEW'}</div><h2 id="detail-title">${escapeHtml(game.title)}</h2>
     <p class="detail-sub">${escapeHtml(consoleInfo.name)}${game.year ? ` · ${game.year}` : ''}</p>
     <div class="tag-row"><span class="tag">${escapeHtml(consoleInfo.abbrev)}</span><span class="tag">${escapeHtml(state.configs[id]?.emulatorName || consoleInfo.emulator)}</span><span class="tag">${consoleInfo.libraryOnly ? 'No launch adapter' : isConfigured(id) ? 'Profile saved' : 'Not connected'}</span></div>
-    <p class="detail-description">${consoleInfo.libraryOnly || consoleInfo.customEmulator ? escapeHtml(consoleInfo.supportNote) : state.native ? 'The Play button starts this file fullscreen with the recognized emulator’s game-only launch options. Custom launchers need their own fullscreen arguments.' : `The native application will launch this game using ${escapeHtml(state.configs[id]?.emulatorName || consoleInfo.emulator)}. This browser preview cannot execute games.`}</p>
+    <details class="library-notes"><summary>Game information</summary><p class="detail-description">${consoleInfo.libraryOnly || consoleInfo.customEmulator ? escapeHtml(consoleInfo.supportNote) : state.native ? 'The Play button starts this file fullscreen with the recognized emulator’s game-only launch options. Custom launchers need their own fullscreen arguments.' : `The native application will launch this game using ${escapeHtml(state.configs[id]?.emulatorName || consoleInfo.emulator)}. This browser preview cannot execute games.`}</p></details>
     ${consoleInfo.libraryOnly ? '' : `<button type="button" class="button button-primary launch-button" data-action="play-console">${glyph('play')} Play game</button>`}
     <div class="detail-actions"><button type="button" class="button button-ghost" data-action="pick-cover">${glyph('image')} Choose cover</button><button type="button" class="button button-ghost" data-action="favorite" data-id="${id}" data-uid="${escapeHtml(uid)}" aria-pressed="${liked}">${glyph('heart')} ${liked ? 'Unfavorite' : 'Favorite'}</button></div>
     ${state.native ? `<section class="cover-tools"><h3>Cover artwork</h3><p class="cover-result" role="status">${escapeHtml(coverMessage(id,uid))}</p>${AUTO_COVER_KINDS.includes(id) ? `<label for="cover-serial">${TITLE_COVER_KINDS.includes(id) ? 'Confirm exact catalog title' : id==='switch' ? 'Confirm Switch product code and region' : ['gamecube','wii'].includes(id) ? 'Confirm disc ID' : 'Confirm game serial'}</label><input id="cover-serial" placeholder="${TITLE_COVER_KINDS.includes(id) ? 'Exact title (USA) (Rev 1)' : id==='switch' ? 'AAACA-US' : id==='gamecube' ? 'GMSE01' : id==='wii' ? 'RMGE01' : 'SLUS-20312'}" value="${escapeHtml(state.coverStatus.get(artKey(id,uid))?.serial || '')}" maxlength="${TITLE_COVER_KINDS.includes(id) ? 240 : 16}"><small>${TITLE_COVER_KINDS.includes(id) ? 'Match the Libretro title exactly, including region, language and edition. No fuzzy matching or region guessing. Only flat covers are available.' : id==='switch' ? 'Use the five-character original Switch product code and artwork region, for example AAACA-US or HAC-P-AAACA-USA. This is not the 16-digit title ID. EUR selects English artwork (EN). Only flat covers are available; no Switch 2 fallback.' : 'Use the identity for this exact game, region and disc. Compressed images may need an ID entered here.'}</small><button type="button" class="button button-ghost" data-action="download-cover">Find exact cover</button>` : id==='ps5' ? '<p>No verified automatic provider for online PS5 downloads. Extracted eboot games in their own folders can use an existing sce_sys/icon0.png. Imported and sidecar covers take priority.</p>' : '<p>No verified automatic provider for this console yet. Choose a local image; existing covers are kept.</p>'}<button type="button" class="button button-ghost" data-action="cover-project">Open TheCoverProject</button></section>` : ''}
@@ -809,14 +813,15 @@ function importFolder(files) {
     if (id==='switch2' && parts.slice(1,-1).some(part=>part.startsWith('.') || part.toLowerCase()==='romfs')) return false;
     if (id==='switch2' && file.name.startsWith('.')) return false;
     return (allowed.has(extension) && (id!=='ps5' || extension!=='bin' || /^eboot\.bin$/i.test(file.name)))
-      || (id==='switch2' && switch2ExtractedTitle(file.webkitRelativePath || file.name)!==null);
+      || (id==='switch2' && switch2ExtractedTitle(file.webkitRelativePath || file.name)!==null)
+      || (id==='xbox360' && /^default\.xex$/i.test(file.name));
   });
   const seen = new Set();
   const imported = matched.slice(0,2000).map((file,index) => {
     const path = file.webkitRelativePath || file.name;
     if (seen.has(path)) return null;
     seen.add(path);
-    const folderTitle=id==='ps5' && /^eboot\.bin$/i.test(file.name) ? path.split('/').at(-2) : null;
+    const folderTitle=(id==='ps5' && /^eboot\.bin$/i.test(file.name) || id==='xbox360' && /^default\.xex$/i.test(file.name)) ? path.split('/').at(-2) : null;
     return { uid: `file:${path}`, title: (id==='switch2' ? switch2ExtractedTitle(path) : null) || cleanTitle(folderTitle ? folderTitle+'.bin' : file.name), relativePath: path, year: null, demo: false,
       a: ['#5877b7','#a16570','#6e94b2','#8a7bad'][index % 4],
       b: ['#213459','#352b49','#20394f','#2e2c4a'][index % 4] };
@@ -889,7 +894,7 @@ async function loadCover(file) {
         cacheCover(key, URL.createObjectURL(file));
         state.missingArt.delete(key);
         refreshCoverUI(selected);
-        toast('Cover saved to Matrix Play’s Linux artwork folder.');
+        toast('Cover saved to Matrix-Play’s Linux artwork folder.');
       });
       coverWrites.set(key,writing);
       try {await writing;} finally {if (coverWrites.get(key)===writing) coverWrites.delete(key);}
@@ -985,7 +990,7 @@ async function saveArtworkOptions() {
 }
 let nativeRefreshGeneration=0;
 async function refreshNative() {
-  if (!state.native) { toast('Preview mode — launch the native Matrix Play app to scan your filesystem.'); return; }
+  if (!state.native) { toast('Preview mode — launch the native Matrix-Play app to scan your filesystem.'); return; }
   const generation=++nativeRefreshGeneration;
   try {
     const results = await Promise.all([
@@ -1034,20 +1039,20 @@ async function initializeNative() {
   $('#native-status').textContent = 'Native backend · folders managed automatically';
   try {
     if (await bootstrapNative()) await refreshNative();
-  } catch(error) { toast(`Matrix Play initialization failed: ${error}`); }
+  } catch(error) { toast(`Matrix-Play initialization failed: ${error}`); }
 }
 
 function renderUpdater() {
   if (state.overlay !== 'updates') return;
   const info = state.update || {phase:'checking',message:'Checking GitHub…'};
   const busy = ['checking','downloading','installing'].includes(info.phase);
-  const action = {available:['download-update','Download update'], downloaded:['install-update',info.installMode === 'download' ? 'Installation instructions' : 'Agree and update'],installed:['restart-update','Restart Matrix Play'],downloading:['cancel-update','Cancel download']}[info.phase];
+  const action = {available:['download-update','Download update'], downloaded:['install-update',info.installMode === 'download' ? 'Installation instructions' : 'Agree and update'],installed:['restart-update','Restart Matrix-Play'],downloading:['cancel-update','Cancel download']}[info.phase];
   const percent = info.total ? Math.min(100,Math.round(info.received / info.total * 100)) : 0;
   const hint = info.installMode === 'system' ? 'Installation uses your Linux system installer and may ask for your password.' : info.installMode === 'appimage' ? 'Your AppImage will be replaced in its current folder. A .previous backup is kept.' : 'The downloaded Linux installer opens in your system installer.';
   // Keep interactive elements alive across polling ticks so keyboard focus,
   // screen-reader position and a pointer press survive progress updates.
   if (!$('.update-dialog')) {
-    $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title"><button type="button" class="close" data-action="close" aria-label="Close updates">${glyph('close')}</button><div class="eyebrow">MATRIX PLAY</div><h2 id="update-title">App updates</h2><p class="muted">Installed <strong id="update-current"></strong><span id="update-latest-label"> · Latest <strong id="update-latest"></strong></span></p><p class="update-message" role="status"></p><div id="update-progress"><progress max="100" value="0" aria-label="Update download"></progress><p class="muted" id="update-progress-text"></p></div><div class="update-notes"></div><p class="muted" id="update-hint"></p><p class="muted" id="update-safety">Before updating, save your progress and close games, emulators and other apps launched through Matrix Play. Let installers and updates finish before closing them.</p><label id="update-close-confirm"><input type="checkbox" id="update-games-closed"> I have saved my progress, closed running apps, and waited for installers and updates to finish. Close all Matrix Play windows to install.</label><div class="dialog-actions"><button type="button" class="button button-ghost" data-action="update-releases">GitHub releases</button><button type="button" class="button button-primary" id="update-action"></button></div></section></div>`;
+    $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title"><button type="button" class="close" data-action="close" aria-label="Close updates">${glyph('close')}</button><div class="eyebrow">MATRIX PLAY</div><h2 id="update-title">App updates</h2><p class="muted">Installed <strong id="update-current"></strong><span id="update-latest-label"> · Latest <strong id="update-latest"></strong></span></p><p class="update-message" role="status"></p><div id="update-progress"><progress max="100" value="0" aria-label="Update download"></progress><p class="muted" id="update-progress-text"></p></div><div class="update-notes"></div><p class="muted" id="update-hint"></p><p class="muted" id="update-safety">Before updating, save your progress and close games, emulators and other apps launched through Matrix-Play. Let installers and updates finish before closing them.</p><label id="update-close-confirm"><input type="checkbox" id="update-games-closed"> I have saved my progress, closed running apps, and waited for installers and updates to finish. Close all Matrix-Play windows to install.</label><div class="dialog-actions"><button type="button" class="button button-ghost" data-action="update-releases">GitHub releases</button><button type="button" class="button button-primary" id="update-action"></button></div></section></div>`;
   }
   const shell=$('.app-shell');if (shell) shell.inert=true;
   $('#update-current').textContent=info.currentVersion || '—';
@@ -1059,7 +1064,7 @@ function renderUpdater() {
   $('#update-progress-text').textContent=`${percent}% · ${((info.received || 0)/1048576).toFixed(1)} / ${((info.total || 0)/1048576).toFixed(1)} MB`;
   $('.update-notes').textContent=info.notes || '';
   $('.update-notes').hidden=!info.notes;
-  $('#update-hint').textContent=`${hint} Matrix Play closes to install the update and stays closed when it succeeds. Open it again when you are ready. Running games, apps and installers are never force-stopped. Downloads are checked against a signed release before installation.`;
+  $('#update-hint').textContent=`${hint} Matrix-Play closes to install the update and stays closed when it succeeds. Open it again when you are ready. Running games, apps and installers are never force-stopped. Downloads are checked against a signed release before installation.`;
   $('#update-close-confirm').hidden=info.phase!=='downloaded';
   $('#update-safety').hidden=info.phase!=='downloaded';
   const nextAction=action?.[0] || 'check-updates';
@@ -1123,6 +1128,8 @@ async function openUpdater() {
 }
 
 async function handleAction(button) {
+  const menu=button.closest?.('.library-menu');
+  if (menu) { menu.open=false;menu.querySelector('summary')?.focus(); }
   const { action, id, uid, value } = button.dataset;
   if (action === 'updates') void openUpdater();
   else if (action === 'check-updates') void runUpdate('check_updates');
@@ -1169,7 +1176,7 @@ async function handleAction(button) {
     void launchExternal(button.dataset.kind,uid);
   }
   else if (action === 'remove-windows') {
-    if (!state.native) { toast('Native Matrix Play required.'); return; }
+    if (!state.native) { toast('Native Matrix-Play required.'); return; }
     const dialog=$('#overlay-root').firstElementChild;
     if (button.disabled) return;
     button.disabled=true;
@@ -1252,7 +1259,7 @@ function setupEvents() {
   document.addEventListener('submit', event => {
     if (event.target.id === 'windows-form') {
       event.preventDefault();
-      if (!state.native) { toast('Windows game registration requires native Matrix Play.'); return; }
+      if (!state.native) { toast('Windows game registration requires native Matrix-Play.'); return; }
       const owner=event.target; if (owner.dataset.saving==='true') return;owner.dataset.saving='true';
       const form = new FormData(owner);
       void nativeInvoke('add_windows_game', {
@@ -1301,6 +1308,8 @@ function setupEvents() {
   });
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') {
+      const menu=document.querySelector('details.library-menu[open]');
+      if (menu?.open && !state.overlay) { event.preventDefault();menu.open=false;menu.querySelector('summary')?.focus();return; }
       if (state.overlay) dismissOverlay();
       else if (state.page === 'console') goHome();
     }
