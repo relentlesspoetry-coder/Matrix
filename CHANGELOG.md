@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+- Combine the clean library controls with a navy-and-blue gaming dashboard: larger console artwork, bolder tiles, bigger game covers and clearer controller focus.
+- Add shaded hardware illustrations for the six new consoles and bundle Inter for consistent offline typography on Linux.
+- Refine library headings, navigation, settings and dialogs while retaining all 24 libraries and existing game data.
+
 ## 0.6.0
 
 - Redesign the library with compact navigation, smaller console cards and a clean game grid. Move emulator and folder actions into a single options menu; remove oversized banners, repeated notices and duplicate Favorites buttons.

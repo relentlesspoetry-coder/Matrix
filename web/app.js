@@ -1,4 +1,4 @@
-/* Matrix-Play v0.6.0 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.1 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -43,16 +43,19 @@ const consoleImages = {"switch": "./assets/consoles/switch.webp", "ps1": "./asse
 // Supplied console artwork; original silhouettes remain a fallback.
 function deviceArt(id) {
   if (consoleImages[id]) return `<img class="device-illustration console-image" src="${consoleImages[id]}" alt="" decoding="async">`;
+  const hardware = {
+    nes: '<ellipse cx="71" cy="112" rx="53" ry="7" fill="#020815" stroke="none"/><path d="m15 61 20-29h88l3 29Z" fill="#b9c1d0" stroke="#77869f"/><path d="M15 61h111v38l-8 9H23l-8-9Z" fill="#919bad" stroke="#66758c"/><path d="M23 63h95v18H23Z" fill="#29364b" stroke="none"/><path d="M56 33h51v26H39Z" fill="#d7dce4" stroke="#8c98ac"/><path d="M76 37h25m-27 5h27m-28 5h28m-29 5h29" stroke="#65748c"/><path d="M24 89h13v7H24Z" fill="#ea5e6c" stroke="none"/><path d="M44 89h13v7H44Z" fill="#cbd3e0" stroke="none"/><path d="M76 90h15v9H76Zm22 0h15v9H98Z" fill="#29364b" stroke="none"/>',
+    snes: '<ellipse cx="70" cy="112" rx="52" ry="7" fill="#020815" stroke="none"/><path d="M17 66q0-12 12-24l9-9h66l13 12q9 9 9 21v27q0 12-13 12H30q-13 0-13-12Z" fill="#a5aec3" stroke="#71819b"/><path d="M18 66h107v25q0 12-13 12H31q-13 0-13-12Z" fill="#808da6" stroke="#71819b"/><path d="M39 35h61l8 28H30Z" fill="#c8cfdf" stroke="#9aa6be"/><path d="M42 44h55v8H42Z" fill="#34415e" stroke="none"/><path d="m30 66 15-5v12l-15 4Z" fill="#a18adc" stroke="#7465b0"/><path d="m96 61 16 5v11l-16-4Z" fill="#a18adc" stroke="#7465b0"/><path d="M41 86h22v10H41Zm36 0h22v10H77Z" fill="#26334c" stroke="none"/><circle cx="26" cy="87" r="2" fill="#e75e6e" stroke="none"/>',
+    genesis: '<ellipse cx="70" cy="111" rx="56" ry="7" fill="#020815" stroke="none"/><path d="M16 50h109l5 45q0 12-15 12H25Q10 107 10 95Z" fill="#171e2d" stroke="#5a6c8c"/><ellipse cx="70" cy="54" rx="56" ry="29" fill="#303c52" stroke="#72809b"/><ellipse cx="70" cy="51" rx="32" ry="21" fill="#151c2b" stroke="#bda976"/><ellipse cx="70" cy="51" rx="28" ry="17" fill="#253147" stroke="#67758f"/><path d="M42 43h57v10H42Z" fill="#090f1c" stroke="#4c5e7a"/><path d="M20 87h100" stroke="#627493"/><path d="M32 94h24v9H32Zm50 0h24v9H82Z" fill="#070d18" stroke="#566783"/><circle cx="116" cy="77" r="3" fill="#e56575" stroke="none"/><path d="M20 74h15" stroke="#c6a768"/>',
+    saturn: '<ellipse cx="70" cy="111" rx="54" ry="7" fill="#020815" stroke="none"/><rect x="15" y="49" width="111" height="58" rx="17" fill="#29354b" stroke="#6c7d9c"/><path d="M16 63q2-30 30-34h48q29 4 31 34Z" fill="#3e4d66" stroke="#8492ac"/><ellipse cx="70" cy="52" rx="33" ry="22" fill="#303e56" stroke="#7e8fac"/><ellipse cx="70" cy="52" rx="28" ry="18" fill="#253147" stroke="#526582"/><path d="M19 81h104" stroke="#7687a1"/><path d="M31 91h25v9H31Zm52 0h25v9H83Z" fill="#0d1728" stroke="#5c6c88"/><circle cx="27" cy="72" r="4" fill="#748cad"/><circle cx="114" cy="72" r="4" fill="#748cad"/><circle cx="41" cy="73" r="2" fill="#67c2e3" stroke="none"/>',
+    xbox: '<ellipse cx="70" cy="111" rx="55" ry="7" fill="#020815" stroke="none"/><rect x="14" y="46" width="112" height="61" rx="10" fill="#1f302f" stroke="#637d78"/><path d="m15 49 16-19h78l16 19v29H15Z" fill="#334c42" stroke="#7b9680"/><path d="m33 34 37 20 36-20M21 74l49-20 48 20" stroke="#83b85b" stroke-width="9"/><path d="m33 34 37 20 36-20M21 74l49-20 48 20" stroke="#abc977" stroke-width="2"/><ellipse cx="70" cy="54" rx="14" ry="10" fill="#9fc969" stroke="#314d2a"/><path d="M26 87h51v7H26Z" fill="#111e24" stroke="#56766b"/><circle cx="98" cy="91" r="5" fill="#9bd365" stroke="#446e3c"/><circle cx="114" cy="92" r="2" fill="#8abc69" stroke="none"/>',
+    xbox360: '<ellipse cx="70" cy="118" rx="32" ry="6" fill="#020815" stroke="none"/><path d="m44 15 43 1 13 10-3 86-12 7-42-5q8-50 1-99Z" fill="#d3dce3" stroke="#9caec0"/><path d="m87 16 13 10-3 86-12 7q-8-52 2-103Z" fill="#91a6b6" stroke="#708a9e"/><path d="M52 32h28v6H52Z" fill="#445d72" stroke="#748fa3"/><path d="M53 48h25m-24 6h23m-23 6h23m-23 6h23" stroke="#9cafbf"/><circle cx="65" cy="94" r="8" fill="#c2d0d9" stroke="#80c767" stroke-width="2.7"/><circle cx="65" cy="94" r="3" fill="#83b45f" stroke="none"/><path d="M91 39v55" stroke="#627c91"/>',
+  };
+  if (hardware[id]) return `<svg class="device-illustration hardware-art" viewBox="0 0 140 130" aria-hidden="true">${hardware[id]}</svg>`;
   const handheld = (twoScreens = false) => twoScreens
     ? '<rect x="27" y="11" width="85" height="99" rx="13"/><rect x="38" y="19" width="63" height="33" rx="3"/><path d="M30 61h79"/><rect x="38" y="69" width="63" height="30" rx="3"/><circle cx="20" cy="84" r="3"/><circle cx="118" cy="84" r="3"/>'
     : '<rect x="10" y="33" width="120" height="55" rx="25"/><rect x="37" y="40" width="66" height="41" rx="4"/><path d="M24 53v15m-7-7h14"/><circle cx="115" cy="54" r="3"/><circle cx="120" cy="66" r="3"/>';
   const designs = {
-    genesis:'<path d="M17 53h103l10 43H8z"/><ellipse cx="69" cy="60" rx="30" ry="17"/><path d="M25 83h20m35 0h29M42 39h57v15"/>',
-    saturn:'<rect x="14" y="43" width="112" height="59" rx="15"/><ellipse cx="70" cy="54" rx="33" ry="20"/><path d="M28 86h19m45 0h20"/>',
-    snes:'<rect x="18" y="38" width="107" height="63" rx="13"/><path d="M40 38v63m13-63v63M63 53h47M65 72h42"/><circle cx="108" cy="89" r="5"/>',
-    nes:'<path d="M18 31h105v72H18zM18 78h105M85 31v47"/><path d="M96 39v27m9-27v27M27 88h15"/>',
-    xbox:'<rect x="12" y="39" width="118" height="64" rx="10"/><path d="m19 41 50 24 53-24M17 100l53-35 56 35"/><circle cx="70" cy="65" r="14"/>',
-    xbox360:'<path d="M47 15h46q-14 49 0 100H47q11-48 0-100Z"/><circle cx="70" cy="92" r="6"/><path d="M60 29h22M57 43h25"/>',
 
     switch: '<rect x="33" y="27" width="74" height="72" rx="6"/><rect x="42" y="36" width="56" height="54" rx="2"/><rect x="11" y="27" width="22" height="72" rx="11"/><rect x="107" y="27" width="22" height="72" rx="11"/><circle cx="22" cy="45" r="5"/><circle cx="118" cy="77" r="5"/>',
     ps1: '<rect x="19" y="47" width="105" height="45" rx="11"/><ellipse cx="71" cy="48" rx="38" ry="24"/><ellipse cx="71" cy="48" rx="24" ry="15"/><circle cx="35" cy="76" r="3"/><path d="M83 76h21"/>',
@@ -80,7 +83,7 @@ const EXTS = {
   gb: ['gb','gbc'], gba: ['gba'], nds: ['nds'], '3ds': ['3ds','cci','cxi'], ps4:['elf','bin'], ps5:['pkg','iso','elf','zar','bin'], vita:['vpk','zip'], switch2:['nsp','xci','nup','nsz','xcz','nx','nro','nso','nca','kip'],
   genesis:['md','gen','smd','bin','zip'],saturn:['cue','ccd','toc'],nes:['nes','unf','unif','fds','zip'],snes:['sfc','smc','zip'],xbox:['iso'],xbox360:['iso'],
 };
-const tones = { Sony: '#536cae', Nintendo: '#66547d', Sega: '#8d5e55' };
+const tones = { Sony: '#648aff', Nintendo: '#fa7687', Sega: '#53c9ec', Xbox: '#91d179' };
 const consoleTone = consoleInfo => tones[consoleInfo.group] || '#657aa5';
 const artKey = (consoleId, uid) => `${consoleId}|${uid}`;
 const favoriteKey = (consoleId, uid) => `${consoleId}|${uid}`;
@@ -211,7 +214,7 @@ function renderNav() {
   }
   const name = state.page === 'console' ? byId[state.consoleId]?.abbrev : null;
   $('#breadcrumbs').innerHTML = state.page === 'settings'
-    ? 'LIBRARY <span>/</span> EMULATORS &amp; FOLDERS'
+    ? 'LIBRARY <span>/</span> SETTINGS'
     : state.page === 'steam' ? 'LIBRARY <span>/</span> STEAM GAMES'
     : state.page === 'windows' ? 'LIBRARY <span>/</span> WINDOWS GAMES'
     : name ? `LIBRARY <span>/</span> CONSOLES <span>/</span> ${escapeHtml(name)}`
@@ -219,9 +222,9 @@ function renderNav() {
 }
 function consoleCard(consoleInfo) {
   const count=gamesFor(consoleInfo.id).length;
-  return `<button class="console-card" type="button" data-action="console" data-id="${consoleInfo.id}" aria-label="Browse ${escapeHtml(consoleInfo.name)} library">
+  return `<button class="console-card" style="--tint:${consoleTone(consoleInfo)}" type="button" data-action="console" data-id="${consoleInfo.id}" aria-label="Browse ${escapeHtml(consoleInfo.name)} library">
     <span class="console-card__top"><span class="console-brand">${escapeHtml(consoleInfo.group==='Sony'?'PlayStation':consoleInfo.group)}</span><span class="connection-dot ${isConfigured(consoleInfo.id)?'ready':''}" title="${isConfigured(consoleInfo.id)?'Emulator ready':'Set up emulator'}"></span></span>
-    ${deviceArt(consoleInfo.id)}<span class="console-card__bottom"><strong>${escapeHtml(consoleInfo.name)}</strong><small>${count} ${count===1?'game':'games'}</small></span></button>`;
+    <span class="console-card__art">${deviceArt(consoleInfo.id)}</span><span class="console-card__bottom"><strong>${escapeHtml(consoleInfo.name)}</strong><small>${count} ${count===1?'game':'games'}</small></span></button>`;
 }
 function renderHome() {
   const focus=captureLibraryFocus($('#screen'),'home');
@@ -421,7 +424,7 @@ function renderConsole() {
   const consoleInfo=byId[state.consoleId]; normalizeGameSort(consoleInfo.id);
   const yearSorting=hasReleaseYears(consoleInfo.id), imported=importedFor(consoleInfo.id), hasImported=imported.length>0;
   $('#screen').innerHTML=`<button type="button" class="back-link" data-action="home">${glyph('back')} Consoles</button>
-    <div class="library-header"><div><h1 class="page-title">${escapeHtml(consoleInfo.name)}</h1><p class="page-subtitle">${gamesFor(consoleInfo.id).length} ${gamesFor(consoleInfo.id).length===1?'game':'games'}</p></div>
+    <div class="library-header" style="--tint:${consoleTone(consoleInfo)}"><div class="library-identity"><span class="library-emblem" aria-hidden="true">${deviceArt(consoleInfo.id)}</span><div><h1 class="page-title">${escapeHtml(consoleInfo.name)}</h1><p class="page-subtitle">${gamesFor(consoleInfo.id).length} ${gamesFor(consoleInfo.id).length===1?'game':'games'}</p></div></div>
     <div class="library-header-actions">${!isConfigured(consoleInfo.id)?`<button type="button" class="button button-primary" data-action="configure" data-id="${consoleInfo.id}">Set up emulator</button>`:''}
       <details class="library-menu"><summary aria-label="Library options" title="Library options">···</summary><div class="menu-items">
         ${isConfigured(consoleInfo.id)?`<button type="button" data-action="configure" data-id="${consoleInfo.id}">Edit emulator</button>`:''}
