@@ -202,7 +202,7 @@ with sync_playwright() as p:
     native.evaluate("window.__finishCover(); window.__TAURI__.core.invoke=window.__originalInvoke")
     native.wait_for_function('window.__artSaved === true')
     assert native.locator('.detail-panel').count()==0
-    assert native.locator('.page-title').inner_text()=='Steam Games.'
+    assert native.locator('.page-title').inner_text()=='Steam Games'
     assert native.locator('.game-item').count()==1
     screenshot(native,'matrix-native-steam.png')
     native.locator('.game-card').first.click()
@@ -268,6 +268,7 @@ with sync_playwright() as p:
     native.locator('.launch-dialog').get_by_role('button',name='Open emulator',exact=True).click()
     native.wait_for_function('window.__calls.some(x=>x[0]==="open_emulator" && x[1].id==="ps2")')
     native.wait_for_function('!document.querySelector(".launch-dialog")')
+    native.get_by_label('Library options',exact=True).click()
     native.get_by_role('button',name='Edit emulator',exact=True).click()
     native.get_by_role('button',name='Save and open emulator',exact=True).click()
     native.wait_for_function('window.__calls.filter(x=>x[0]==="open_emulator").length>=2')
