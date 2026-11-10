@@ -63,9 +63,31 @@ against installed emulator binaries or real games:
 
 The projects describe their support as experimental and may change between
 builds. File extensions and successful process startup do not establish game
-compatibility. Switch 2 lists `.nup`, `.nsp` and `.xci` collection files by extension, including
-uppercase extensions. Listing does not verify the file format, contents or
-playability. The PS5 scanner recognizes exact `eboot.bin` filenames and uses
+compatibility. Switch 2 lists `.nup`, `.nsp`, `.xci`, `.nsz`, `.xcz`, `.nx`,
+`.nro`, `.nso`, `.nca` and `.kip` files, including uppercase extensions. These
+match [Lichii's loader types](https://github.com/zortos293/Lichii/blob/d2eaae4f3abca636b030b726f107bace06f61079/src/core/loader/loader.cpp),
+checked on 2026-11-09. NCA/KIP and other loose files may be content or system
+modules rather than complete games; listing does not verify contents or playability.
+
+Extracted Switch 2 dumps are recognized by the exact `exefs/main` boot filename
+(case insensitive), including these layouts:
+
+- `<game>/exefs/main`
+- `<game>/base/exefs/main` → `<game> — Base`
+- `<game>/updates/<version>/exefs/main` → `<game> — Update <version>`
+
+The game folder supplies the display name, rather than `main`, `exefs` or a
+numeric version directory. Base and update entries remain independently selectable;
+Matrix does not assume the newest folder is compatible or combine files from
+different versions. `{game}` passes the selected executable's full original path;
+`{gameDir}` is still its containing `exefs` directory, not the title root.
+Existing custom launch arguments are retained. [Lichii's inherited documented CLI](https://github.com/zortos293/Lichii/blob/d2eaae4f3abca636b030b726f107bace06f61079/docs/user/CommandLine.md)
+for fullscreen uses `-f`, `-g`, `{game}` on three lines; check your installed build.
+Only regular in-scope files enter the native scan: directory symlinks, file
+symlinks, hidden entries and arbitrary extensionless `main` files are excluded.
+This is discovery and dispatch support, not a real-game compatibility claim.
+
+The PS5 scanner recognizes exact `eboot.bin` filenames and uses
 the containing folder's display name; arbitrary `.bin` files are not scanned.
 Existing library folders, canonical file identities, covers, favorites and saved
 profiles are retained. Custom Flatpaks retain read-only library access and must

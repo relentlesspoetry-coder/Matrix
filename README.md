@@ -16,7 +16,7 @@ The original 14 libraries remain separate. The supplied PS4, PS5, PS Vita and Sw
 
 - **PS4:** experimental shadPS4 core and current QtLauncher/Flatpak support. Extracted games need `eboot.bin` with `sce_sys/param.sfo`; ELF files are also scanned. PKG installation is performed in the emulator, not by clicking a PKG in Matrix Play. Open emulator first to configure firmware and select/download a core.
 - **PS Vita:** experimental current Vita3K AppImage/native support using its SDL frontend. VPK/ZIP content in the managed folder is passed to Vita3K to install and run. Complete firmware, user and license setup first; older builds without `--frontend sdl` are not supported by this preset.
-- **PS5 and Switch 2:** experimental **custom emulator support**. Choose Set up emulator to link your own Linux AppImage, executable or installed Flatpak, then enter its documented launch arguments (one per line). No emulator is automatically selected and no fullscreen flags are added. PS5 scans extracted `eboot.bin`, ELF and ZAR files while preserving existing PKG/ISO collection entries; Switch 2 lists NUP/NSP/XCI files by extension without inspecting or validating their contents. Compatibility depends on your emulator/build, not the filename or artwork. See [custom launch examples](EMULATOR-LAUNCHES.md#custom-ps5-and-switch-2-emulators).
+- **PS5 and Switch 2:** experimental **custom emulator support**. Choose Set up emulator to link your own Linux AppImage, executable or installed Flatpak, then enter its documented launch arguments (one per line). No emulator is automatically selected and no fullscreen flags are added. PS5 scans extracted `eboot.bin`, ELF and ZAR files while preserving existing PKG/ISO collection entries; Switch 2 lists NUP/NSP/XCI, NSZ/XCZ/NX and NRO/NSO/NCA/KIP files by extension, plus extracted `exefs/main` boot files. Direct, `base/exefs/main` and `updates/<version>/exefs/main` layouts use the game folder name, with Base/Update labels where appropriate. Each executable stays separately selectable; Matrix does not automatically pick or merge updates. Listing does not validate contents or playability. Compatibility depends on your emulator/build, not the filename or artwork. See [custom launch examples](EMULATOR-LAUNCHES.md#custom-ps5-and-switch-2-emulators).
 
 Steam and Windows retain their independent tabs and existing launch behavior. Their fullscreen settings belong to each game/launcher.
 
@@ -64,7 +64,7 @@ Regression checks now include an actual painted, non-WebDriver window, normal la
 
 ## Install the Linux test release
 
-Download **Matrix-Play_0.5.24_amd64.deb** from the [v0.5.24 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.24), then run `sudo apt install ./Matrix-Play_0.5.24_amd64.deb` in its download folder. Open **Matrix Play** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
+Download **Matrix-Play_0.5.25_amd64.deb** from the [v0.5.25 release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.5.25), then run `sudo apt install ./Matrix-Play_0.5.25_amd64.deb` in its download folder. Open **Matrix Play** from the application menu. Tested on Zorin OS 18.1 / Ubuntu 24.04 base, x86-64. See [TESTING.md](TESTING.md) for setup, verified behavior and remaining limits.
 
 ![Real compiled Matrix Play window in an isolated test display](screenshots/matrix-linux-home.png)
 

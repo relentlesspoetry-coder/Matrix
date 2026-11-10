@@ -368,6 +368,34 @@ def main():
             wait_for(lambda: js('return document.querySelector(".game-card")?.dataset.uid')==str(stored))
             assert 'does not verify their contents or playability' in js('return document.querySelector(".platform-notice").textContent')
             screenshot('matrix-linux-switch2-nup-library.png')
+            # Screenshot-shaped extracted layouts, through actual native IPC and UI.
+            # This uses the existing harmless Flatpak fixture, never Lichii/gameplay.
+            extracted=[]
+            for relative, title in [
+                ('Donkey Kong Bananza/updates/458752/exefs/main', 'Donkey Kong Bananza — Update 458752'),
+                ('Pokémon™ Pokopia/updates/655360/exefs/main', 'Pokémon™ Pokopia — Update 655360'),
+                ('Pokémon™ Pokopia/base/exefs/main', 'Pokémon™ Pokopia — Base'),
+            ]:
+                boot=folder/relative
+                boot.parent.mkdir(parents=True,exist_ok=True)
+                boot.write_bytes(b'Synthetic extracted boot fixture')
+                boot.with_name('main.npdm').write_bytes(b'Synthetic metadata, not a game')
+                rows=invoke('scan_console',{'id':'switch2'})
+                row=next(g for g in rows if g['uid']==str(boot))
+                assert row['title']==title and row['path']==str(boot)
+                invoke('save_cover', {'kind':'switch2','uid':str(boot),'bytes':list(local_png)})
+                assert invoke('get_cover', {'kind':'switch2','uid':str(boot)}) == expected_icon
+                log.unlink(missing_ok=True)
+                invoke('launch_console_game', {'id':'switch2','uid':str(boot)})
+                wait_for(lambda: log.exists() and log.read_text().splitlines()==['run','--user',f'--filesystem={folder}:ro','org.matrix.TestEmulator','-f','-g',str(boot)])
+                assert boot.read_bytes()==b'Synthetic extracted boot fixture'
+                extracted.append((str(boot),title))
+            click('[data-action="refresh"]')
+            wait_for(lambda: js('return state.imported.switch2?.length === 4'))
+            for uid,title in extracted:
+                assert js('return Array.from(document.querySelectorAll(".game-card")).some(c=>c.dataset.uid===arguments[0] && c.textContent.includes(arguments[1]))',uid,title)
+            screenshot('matrix-linux-switch2-extracted-library.png')
+            print('PASS: extracted Switch 2 base/update names, exact native launch argv, local covers and refreshed library; synthetic fixtures only')
             click('[data-action="home"]')
 
             image_candidates=[c for c in discovered['emulatorDiscovery']['candidates'] if c['profile'].get('emulatorPath')==str(appimage)]

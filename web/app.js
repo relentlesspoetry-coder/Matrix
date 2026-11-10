@@ -1,4 +1,4 @@
-/* Matrix Play v0.5.24 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix Play v0.5.25 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -70,7 +70,7 @@ const EXTS = {
   ps3: ['iso'], psp: ['iso','cso','pbp','chd'], n64: ['z64','n64','v64'],
   gamecube: ['iso','gcm','rvz','gcz','wia','ciso'], dreamcast: ['gdi','cdi','chd'],
   wii: ['wbfs','iso','rvz','wia','gcz','ciso'], wiiu: ['wua','wud','wux','rpx'],
-  gb: ['gb','gbc'], gba: ['gba'], nds: ['nds'], '3ds': ['3ds','cci','cxi'], ps4:['elf','bin'], ps5:['pkg','iso','elf','zar','bin'], vita:['vpk','zip'], switch2:['nsp','xci','nup'],
+  gb: ['gb','gbc'], gba: ['gba'], nds: ['nds'], '3ds': ['3ds','cci','cxi'], ps4:['elf','bin'], ps5:['pkg','iso','elf','zar','bin'], vita:['vpk','zip'], switch2:['nsp','xci','nup','nsz','xcz','nx','nro','nso','nca','kip'],
 };
 const tones = { Sony: '#536cae', Nintendo: '#66547d', Sega: '#8d5e55' };
 const consoleTone = consoleInfo => tones[consoleInfo.group] || '#657aa5';
@@ -693,7 +693,7 @@ function openConfigure(id) {
     <div id="file-fields"><div class="field"><label id="emulator-file-label" for="emulator-path">AppImage file</label><div class="file-choice"><input id="emulator-path" name="emulatorPath" placeholder="Choose a file or paste its full path" value="${escapeHtml(current.emulatorPath || '')}"><button type="button" class="button button-ghost" data-action="browse-emulator">Browse…</button></div><small id="emulator-file-hint"></small></div><div id="appimage-options" class="field"><label class="check-row"><input type="checkbox" id="allow-execute" name="allowExecute" checked> Allow this AppImage to run</label><small>Adds execute permission to the chosen AppImage if needed. Saving does not run it.</small><label class="check-row"><input type="checkbox" name="extractAppimage" ${current.extractAppimage?'checked':''}> Run without FUSE (extraction mode)</label><small>Use this if your AppImage reports that FUSE is unavailable.</small></div></div>
     <div id="flatpak-fields" hidden><div class="field"><label for="flatpak-app">Installed Flatpak emulator</label><select id="flatpak-app" name="flatpakApp" data-saved="${escapeHtml(current.flatpakId ? current.flatpakId+'|'+current.flatpakInstallation : '')}"><option value="">Choose an installed app…</option></select><small id="flatpak-help"></small></div><button type="button" class="button button-ghost" data-action="reload-flatpaks">Reload apps</button><label class="check-row runtime-font-choice"><input type="checkbox" id="runtime-fonts" name="flatpakRuntimeFonts" ${(current.flatpakRuntimeFonts ?? current.flatpakId==='net.pcsx2.PCSX2')?'checked':''}> Use compatible runtime fonts</label><small>Recommended for PCSX2. Avoids crashes from host font configuration; applies only to emulator launches.</small><p class="muted">Flatpak apps are installed through Software. Downloaded .flatpakref files are not executable files to browse for.</p></div>
     <div class="field"><label for="emulator-name">Emulator name</label><input id="emulator-name" name="emulatorName" maxlength="120" value="${escapeHtml(current.emulatorName || consoleInfo.emulator)}" required></div>
-    <details class="advanced-setup" ${consoleInfo.customEmulator ? 'open' : ''}><summary>Advanced launch options</summary><div class="field"><label for="launch-args">Launch arguments (one per line)</label><textarea id="launch-args" name="launchArgs" rows="3">${escapeHtml((current.launchArgs?.length ? current.launchArgs : defaultLaunchArgs(id)).join('\n'))}</textarea><small>{game} is the game file. ${consoleInfo.customEmulator ? '{gameDir} is its containing folder. Put each placeholder on its own line. These arguments are used only for game launches; no fullscreen options are added.' : 'Defaults vary by console; some emulators require different options.'} Each line is passed as one argument, without a shell.</small>${consoleInfo.customEmulator ? `<p class="muted custom-launch-help">${id==='ps5' ? 'KytyPS5 core example: choose kyty_emulator, then enter --game and {gameDir} on separate lines for an extracted eboot.bin title. For ELF or ZAR, use --game and {game}. PKG/ISO collection files are not KytyPS5 boot targets.' : 'Eglantine example: enter -f, -g and {game} on three separate lines. Check the documentation for your installed build; original Switch emulator settings are not reused.'}</p>` : ''}</div></details>
+    <details class="advanced-setup" ${consoleInfo.customEmulator ? 'open' : ''}><summary>Advanced launch options</summary><div class="field"><label for="launch-args">Launch arguments (one per line)</label><textarea id="launch-args" name="launchArgs" rows="3">${escapeHtml((current.launchArgs?.length ? current.launchArgs : defaultLaunchArgs(id)).join('\n'))}</textarea><small>{game} is the game file. ${consoleInfo.customEmulator ? '{gameDir} is its containing folder. Put each placeholder on its own line. These arguments are used only for game launches; no fullscreen options are added.' : 'Defaults vary by console; some emulators require different options.'} Each line is passed as one argument, without a shell.</small>${consoleInfo.customEmulator ? `<p class="muted custom-launch-help">${id==='ps5' ? 'KytyPS5 core example: choose kyty_emulator, then enter --game and {gameDir} on separate lines for an extracted eboot.bin title. For ELF or ZAR, use --game and {game}. PKG/ISO collection files are not KytyPS5 boot targets.' : 'Lichii/Eglantine example: enter -f, -g and {game} on three separate lines. Check the documentation for your installed build; original Switch emulator settings are not reused.'}</p>` : ''}</div></details>
     <div class="field"><label for="library-path">Game library folder</label><input id="library-path" name="folderPath" value="${escapeHtml(state.native ? state.folders[id] || '' : current.folderPath || '')}" ${state.native?'readonly':'required'}><small>Place this console’s games here. Your emulator can stay wherever it is installed.</small></div><p id="config-error" class="config-error" role="alert"></p><p id="config-save-status" class="muted" role="status"></p><div class="dialog-actions"><button class="button button-ghost" type="button" data-action="close">Cancel</button><button class="button button-primary" type="submit">Save emulator</button><button class="button button-ghost" type="submit" data-open-after-save="true">Save and open emulator</button></div></form></section></div>`;
   updateLauncherFields();$('#emulator-launcher').focus();void loadDetectedEmulators();
 }
@@ -788,13 +788,28 @@ function toast(message) {
 function cleanTitle(filename) {
   return filename.replace(/\.[^.]+$/, '').replace(/[._]+/g,' ').replace(/\s*\[[^\]]+\]/g,'').replace(/\s*\([^)]*\)/g,'').replace(/\s+/g,' ').trim() || filename;
 }
+function switch2ExtractedTitle(path) {
+  const parts=path.split('/');
+  if (parts.length<3 || parts.at(-1).toLowerCase()!=='main' || parts.at(-2).toLowerCase()!=='exefs') return null;
+  const name=parts.at(-3), storage=parts.at(-4);
+  if (storage?.toLowerCase()==='updates') {
+    const title=parts.at(-5);
+    return title ? cleanTitle(title+'.bin')+' — Update '+name : null;
+  }
+  if (name.toLowerCase()==='base') return storage ? cleanTitle(storage+'.bin')+' — Base' : null;
+  return cleanTitle(name+'.bin');
+}
 function importFolder(files) {
   const id = state.consoleId;
   if (!id) return;
   const allowed = new Set(EXTS[id] || []);
   const matched = Array.from(files).filter(file => {
     const extension=file.name.split('.').at(-1).toLowerCase();
-    return allowed.has(extension) && (id!=='ps5' || extension!=='bin' || /^eboot\.bin$/i.test(file.name));
+    const parts=(file.webkitRelativePath || file.name).split('/');
+    if (id==='switch2' && parts.slice(1,-1).some(part=>part.startsWith('.') || part.toLowerCase()==='romfs')) return false;
+    if (id==='switch2' && file.name.startsWith('.')) return false;
+    return (allowed.has(extension) && (id!=='ps5' || extension!=='bin' || /^eboot\.bin$/i.test(file.name)))
+      || (id==='switch2' && switch2ExtractedTitle(file.webkitRelativePath || file.name)!==null);
   });
   const seen = new Set();
   const imported = matched.slice(0,2000).map((file,index) => {
@@ -802,12 +817,12 @@ function importFolder(files) {
     if (seen.has(path)) return null;
     seen.add(path);
     const folderTitle=id==='ps5' && /^eboot\.bin$/i.test(file.name) ? path.split('/').at(-2) : null;
-    return { uid: `file:${path}`, title: cleanTitle(folderTitle ? folderTitle+'.bin' : file.name), relativePath: path, year: null, demo: false,
+    return { uid: `file:${path}`, title: (id==='switch2' ? switch2ExtractedTitle(path) : null) || cleanTitle(folderTitle ? folderTitle+'.bin' : file.name), relativePath: path, year: null, demo: false,
       a: ['#5877b7','#a16570','#6e94b2','#8a7bad'][index % 4],
       b: ['#213459','#352b49','#20394f','#2e2c4a'][index % 4] };
   }).filter(Boolean);
   if (!imported.length) {
-    toast(`No recognized ${byId[id].name} game filenames were found. Supported extensions: ${[...allowed].map(ext => id==='ps5' && ext==='bin' ? 'eboot.bin only' : '.'+ext).join(', ')}.`);
+    toast(`No recognized ${byId[id].name} game filenames were found. Supported extensions: ${[...allowed].map(ext => id==='ps5' && ext==='bin' ? 'eboot.bin only' : '.'+ext).join(', ')}${id==='switch2' ? ', extracted exefs/main' : ''}.`);
     return;
   }
   state.imported[id] = imported; state.query = ''; state.gameFilter = 'All';

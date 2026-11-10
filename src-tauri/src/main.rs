@@ -155,7 +155,9 @@ const SPECS: &[ConsoleSpec] = &[
         dir: "Switch 2",
         games: "Switch 2 Games",
         // Collection recognition only; a custom emulator decides what it can load.
-        extensions: &["nsp", "xci", "nup"],
+        extensions: &[
+            "nsp", "xci", "nup", "nsz", "xcz", "nx", "nro", "nso", "nca", "kip",
+        ],
     },
 ];
 
@@ -526,6 +528,40 @@ fn is_ps5_eboot(id: &str, path: &Path) -> bool {
             .is_some_and(|n| n.eq_ignore_ascii_case("eboot.bin"))
 }
 
+// An extracted Switch 2 title is represented by its actual ExeFS boot file.
+// Keep each base/update path independently addressable; never pick an update by
+// traversal order or change existing package identities, favorites or covers.
+fn switch2_extracted_title(path: &Path) -> Option<String> {
+    if !path.file_name()?.eq_ignore_ascii_case("main") {
+        return None;
+    }
+    let exefs = path.parent()?;
+    if !exefs.file_name()?.eq_ignore_ascii_case("exefs") {
+        return None;
+    }
+    let content = exefs.parent()?;
+    let name = content.file_name()?;
+    let storage = content.parent()?;
+    let (title, suffix) = if storage
+        .file_name()
+        .is_some_and(|n| n.eq_ignore_ascii_case("updates"))
+    {
+        (
+            storage.parent()?,
+            format!(" — Update {}", name.to_string_lossy()),
+        )
+    } else if name.eq_ignore_ascii_case("base") {
+        (storage, " — Base".into())
+    } else {
+        (content, String::new())
+    };
+    Some(format!(
+        "{}{}",
+        prettify(title.file_name()?.to_str()?),
+        suffix
+    ))
+}
+
 // Scanning and direct validation must present the same title without changing
 // the canonical path used by launches, favorites or artwork.
 fn console_game_title(id: &str, path: &Path, roots: &[PathBuf]) -> String {
@@ -534,6 +570,11 @@ fn console_game_title(id: &str, path: &Path, roots: &[PathBuf]) -> String {
     }
     if is_ps3_eboot(id, path) {
         return ps3_title(path);
+    }
+    if id == "switch2" {
+        if let Some(title) = switch2_extracted_title(path) {
+            return title;
+        }
     }
     let name = if is_ps4_eboot(id, path) || is_ps5_eboot(id, path) {
         path.parent().and_then(Path::file_name)
@@ -554,6 +595,7 @@ fn supported_console_file(s: &ConsoleSpec, path: &Path) -> bool {
         || is_ps3_eboot(s.id, path)
         || is_ps4_eboot(s.id, path)
         || is_ps5_eboot(s.id, path)
+        || (s.id == "switch2" && switch2_extracted_title(path).is_some())
         || libraries::is_playlist(s.id, path)
 }
 
@@ -598,7 +640,15 @@ fn scan_console_with_customizations(
             .follow_links(false)
             .max_depth(9)
             .into_iter()
-            .filter_entry(|e| e.depth() == 0 || !e.file_name().to_string_lossy().starts_with('.'))
+            .filter_entry(|e| {
+                e.depth() == 0
+                    || (!e.file_name().to_string_lossy().starts_with('.')
+                        // Extracted RomFS trees contain assets, not launch targets.
+                        // Avoid walking hundreds of thousands of payload files.
+                        && !(id == "switch2"
+                            && e.file_type().is_dir()
+                            && e.file_name().eq_ignore_ascii_case("romfs")))
+            })
         {
             let entry = match entry {
                 Ok(entry) => entry,

@@ -68,6 +68,48 @@ test('Switch 2 preview recognizes NUP case variants without adding them to Switc
   assert.deepEqual(Array.from(f.state.imported.switch,g=>g.title),['Existing','Existing']);
 });
 
+test('Switch 2 previews extracted base and update boot files using game names and exact paths', () => {
+  const f=fixture();f.state.consoleId='switch2';f.state.native=false;
+  const paths=[
+    'Switch 2 Games/Donkey Kong Bananza/updates/458752/exefs/main',
+    'Switch 2 Games/Pokémon™ Pokopia/updates/655360/exefs/main',
+    'Switch 2 Games/Pokémon™ Pokopia/base/exefs/main',
+    'Switch 2 Games/Loose.Title/EXEFS/MAIN',
+    'Switch 2 Games/Pokémon™ Pokopia/updates/655360/exefs/main',
+    'Switch 2 Games/Unrelated/main',
+    'Switch 2 Games/Loose.Title/exefs/main.npdm',
+    'Switch 2 Games/Loose.Title/exefs/subsdk0',
+    'Switch 2 Games/Loose.Title/romfs/main',
+    'Switch 2 Games/Loose.Title/romfs/Data.nro',
+    'Switch 2 Games/.Hidden/exefs/main',
+  ];
+  const files=paths.map(p=>({name:p.split('/').at(-1),webkitRelativePath:p}));
+  f.importFolder(files);
+  assert.deepEqual(Array.from(f.state.imported.switch2,g=>g.title),[
+    'Donkey Kong Bananza — Update 458752','Pokémon™ Pokopia — Update 655360',
+    'Pokémon™ Pokopia — Base','Loose Title',
+  ]);
+  assert.equal(f.state.imported.switch2[0].uid,'file:'+paths[0]);
+  for (const id of ['switch','ps5','ps4']) {
+    f.state.consoleId=id;f.importFolder(files);
+    assert.equal(f.state.imported[id]?.length || 0,0,'ExeFS detection is Switch 2 only');
+  }
+});
+
+test('Switch 2 previews Lichii file types case insensitively and keeps existing package identities', () => {
+  const f=fixture();f.state.consoleId='switch2';f.state.native=false;
+  const extensions=['nup','nsp','xci','nsz','xcz','nx','nro','nso','nca','kip'];
+  f.importFolder(extensions.flatMap(ext=>[
+    {name:'A.'+ext,webkitRelativePath:'Games/A.'+ext},
+    {name:'B.'+ext.toUpperCase(),webkitRelativePath:'Games/B.'+ext.toUpperCase()},
+  ]).concat([{name:'Not.nup.txt',webkitRelativePath:'Games/Not.nup.txt'}]));
+  assert.equal(f.state.imported.switch2.length,20);
+  assert.equal(f.state.imported.switch2[0].uid,'file:Games/A.nup');
+  assert.equal(f.state.imported.switch2[1].uid,'file:Games/B.NUP');
+  assert.match(f.byId.switch2.supportNote,/exefs\/main/);
+  assert.match(f.byId.switch2.supportNote,/separate, labelled entries/);
+});
+
 for (const id of ['ps5', 'switch2']) {
   test(`${id} exposes custom setup and saves literal launch arguments`, async () => {
     const f = fixture();

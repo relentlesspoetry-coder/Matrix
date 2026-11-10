@@ -131,6 +131,67 @@ fn library_fixture() {
         assert!(load_settings().unwrap().favorites[id].contains(&game.uid));
         assert!(get_cover(id.into(), game.uid).unwrap().is_some());
     }
+    for (relative, title) in [
+        (
+            "Donkey Kong Bananza/updates/458752/exefs/main",
+            "Donkey Kong Bananza — Update 458752",
+        ),
+        (
+            "Pokémon™ Pokopia/updates/655360/exefs/main",
+            "Pokémon™ Pokopia — Update 655360",
+        ),
+        (
+            "Pokémon™ Pokopia/base/exefs/main",
+            "Pokémon™ Pokopia — Base",
+        ),
+    ] {
+        let path = games_dir("switch2").unwrap().join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"synthetic extracted boot target").unwrap();
+        let game = scan_console_impl("switch2")
+            .unwrap()
+            .into_iter()
+            .find(|g| Path::new(&g.path) == path)
+            .unwrap();
+        assert_eq!(game.title, title);
+        assert_eq!(validate_game("switch2", &game.uid).unwrap().title, title);
+        assert!(validate_game("switch", &game.uid).is_err());
+        favorites::set_favorite("switch2".into(), game.uid.clone(), true).unwrap();
+        save_cover(
+            "switch2".into(),
+            game.uid.clone(),
+            include_bytes!("../../tests/fixtures/demo-cover.png").to_vec(),
+        )
+        .unwrap();
+        assert!(get_cover("switch2".into(), game.uid.clone())
+            .unwrap()
+            .is_some());
+        fs::remove_file(&log).unwrap();
+        launch_console_impl("switch2".into(), game.uid.clone()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let status = launches::get_launch_status("switch2".into())
+                .unwrap()
+                .unwrap();
+            assert_ne!(status.phase, "error", "{}", status.message);
+            if status.phase == "exited" {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "fixture launcher timed out"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(
+            fs::read_to_string(&log)
+                .unwrap()
+                .lines()
+                .collect::<Vec<_>>(),
+            vec![path.to_str().unwrap()]
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"synthetic extracted boot target");
+    }
     assert!(!supported_console_file(
         spec("psp").unwrap(),
         Path::new("title.zso")
@@ -494,4 +555,74 @@ fn relative_config_fixture() {
     wait();
     assert_eq!(fs::read_to_string(&log).unwrap(), chosen.to_string_lossy());
     assert_eq!(fs::read(chosen.join("save.sav")).unwrap(), b"existing save");
+}
+
+#[test]
+fn switch2_extracted_and_lichii_formats_are_scoped_and_preserve_exact_targets() {
+    use std::os::unix::fs::symlink;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("Switch 2 Games");
+    let targets = [
+        (
+            "Donkey Kong Bananza/updates/458752/exefs/main",
+            "Donkey Kong Bananza — Update 458752",
+        ),
+        (
+            "Pokémon™ Pokopia/updates/655360/exefs/main",
+            "Pokémon™ Pokopia — Update 655360",
+        ),
+        (
+            "Pokémon™ Pokopia/base/exefs/main",
+            "Pokémon™ Pokopia — Base",
+        ),
+        ("Loose.Title/EXEFS/MAIN", "Loose Title"),
+    ];
+    for (relative, _) in targets {
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"synthetic boot target").unwrap();
+    }
+    for relative in [
+        "Unrelated/main",
+        "Loose.Title/exefs/main.npdm",
+        "Loose.Title/exefs/subsdk0",
+        "Loose.Title/romfs/main",
+        "Loose.Title/romfs/Data.nro",
+        ".Hidden/exefs/main",
+    ] {
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"not a boot target").unwrap();
+    }
+    let outside = temp.path().join("Outside/exefs");
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("main"), b"outside").unwrap();
+    symlink(&outside, root.join("LinkedExefs")).unwrap();
+    let linked = root.join("LinkedFile/exefs");
+    fs::create_dir_all(&linked).unwrap();
+    symlink(outside.join("main"), linked.join("main")).unwrap();
+    fs::create_dir_all(root.join("Directory/exefs/main")).unwrap();
+    let rows = scan_console_in("switch2", &[root.clone(), root.join("Pokémon™ Pokopia")]).unwrap();
+    assert_eq!(rows.len(), targets.len());
+    for (relative, title) in targets {
+        let path = root.join(relative);
+        let row = rows.iter().find(|g| Path::new(&g.path) == path).unwrap();
+        assert_eq!(row.title, title);
+        assert_eq!(row.uid, row.path);
+        assert_eq!(fs::read(&row.path).unwrap(), b"synthetic boot target");
+        for id in SPECS.iter().map(|s| s.id).filter(|id| *id != "switch2") {
+            assert!(!supported_console_file(spec(id).unwrap(), &path));
+        }
+    }
+    for ext in [
+        "nsp", "xci", "nup", "nsz", "xcz", "nx", "nro", "nso", "nca", "kip",
+    ] {
+        for name in [
+            format!("Title.{ext}"),
+            format!("Other.{}", ext.to_uppercase()),
+        ] {
+            fs::write(root.join(name), b"synthetic format fixture").unwrap();
+        }
+    }
+    assert_eq!(scan_console_in("switch2", &[root]).unwrap().len(), 24);
 }

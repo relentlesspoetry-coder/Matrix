@@ -21,8 +21,8 @@ pub(crate) fn unique_game_folder(game: &Game) -> bool {
     let Ok(parent_path) = parent.canonicalize() else {
         return false;
     };
-    if game.kind != "ps5" {
-        // Preserve established non-PS5 eligibility exactly. In particular, PS1
+    if !matches!(game.kind.as_str(), "ps5" | "switch2") {
+        // Preserve established eligibility for other consoles exactly. PS1
         // playlists must not add a second target beside their referenced CHD.
         return !roots.is_empty()
             && !roots.contains(&parent_path)
@@ -47,7 +47,7 @@ pub(crate) fn unique_game_folder(game: &Game) -> bool {
     !roots.contains(&parent_path)
         && libraries::containing_root(&parent_path, &roots).is_some()
         && fs::read_dir(parent).ok().is_some_and(|entries| {
-            // For PS5 only, count actual boot targets including extracted eboots.
+            // Count actual boot targets including extracted eboots and ExeFS main.
             // Do not group away ELF or other independent targets in this folder.
             let mut count = 0;
             for entry in entries {

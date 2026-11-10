@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.25
+
+- Detect extracted Switch 2 ExeFS games, including game/base/exefs/main and game/updates/<version>/exefs/main layouts. Show the game folder name and distinguish base/update versions while keeping each original launch path.
+- Recognize Lichii collection and executable extensions NUP/NSP/XCI, NSZ/XCZ/NX and NRO/NSO/NCA/KIP case insensitively. Keep original Switch libraries and existing package favorites/artwork separate and unchanged.
+- Cover screenshot-shaped synthetic dumps, duplicate roots, excluded links/metadata, exact launch arguments, favorites and artwork in regression tests. Detection does not certify file contents or gameplay.
+
 ## 0.5.24
 
 - Preserve newer emulator setup edits made while a native save is pending. Keep the dialog and focused field open, explain which settings remain unsaved, and suppress Save and open until the user explicitly saves the newer draft.
