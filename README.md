@@ -6,8 +6,6 @@ A Linux game-library frontend for your console games, Steam library and Windows 
 
 [Download](https://github.com/relentlesspoetry-coder/Matrix-Play/releases) · [Setup guide](EMULATOR-LAUNCHES.md) · [Report a problem](https://github.com/relentlesspoetry-coder/Matrix-Play/issues)
 
-![Matrix-Play library](screenshots/matrix-linux-home.png)
-
 ## Install
 
 Download the **DEB** or **AppImage** from [Releases](https://github.com/relentlesspoetry-coder/Matrix-Play/releases). Linux x86-64; tested on Zorin OS 18.1 and Ubuntu 24.04.
@@ -25,7 +23,7 @@ chmod +x Matrix-Play_0.6.0_amd64.AppImage
 ./Matrix-Play_0.6.0_amd64.AppImage
 ```
 
-Use **Update** inside the app for future releases.
+For future releases, open **Settings → Check for updates**.
 
 ## Features
 
@@ -41,11 +39,11 @@ Use **Update** inside the app for future releases.
 | --- | --- | --- | --- |
 | NES, Super Nintendo, Switch, Switch 2, N64, GameCube, Wii, Wii U, Game Boy, GBA, DS, 3DS | PS1, PS2, PS3, PS4, PS5, PSP, PS Vita | Genesis / Mega Drive, Saturn, Dreamcast | Xbox, Xbox 360 |
 
-PS5 and Switch 2 use manually configured emulators. See the [setup guide](EMULATOR-LAUNCHES.md) for formats and launch options.
+PS5, Switch 2 and Xbox 360 use manually configured emulators. See the [setup guide](EMULATOR-LAUNCHES.md) for formats and launch options.
 
 ## Get started
 
-1. Open a console library and choose **Manage folders** to add your games.
+1. Open a console library, then **··· → Manage folders** to add your games.
 2. Choose **Set up emulator**, select your installed emulator and save.
 3. Click **Refresh**, then select a game to launch it.
 
