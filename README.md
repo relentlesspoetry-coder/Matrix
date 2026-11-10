@@ -4,13 +4,13 @@
 
 A Linux game-library frontend for your console games, Steam library and Windows game shortcuts.
 
-[Download](https://github.com/relentlesspoetry-coder/Matrix/releases) · [Setup guide](EMULATOR-LAUNCHES.md) · [Report a problem](https://github.com/relentlesspoetry-coder/Matrix/issues)
+[Download](https://github.com/relentlesspoetry-coder/Matrix-Play/releases) · [Setup guide](EMULATOR-LAUNCHES.md) · [Report a problem](https://github.com/relentlesspoetry-coder/Matrix-Play/issues)
 
 ![Matrix-Play library](screenshots/matrix-linux-home.png)
 
 ## Install
 
-Download the **DEB** or **AppImage** from [Releases](https://github.com/relentlesspoetry-coder/Matrix/releases). Linux x86-64; tested on Zorin OS 18.1 and Ubuntu 24.04.
+Download the **DEB** or **AppImage** from [Releases](https://github.com/relentlesspoetry-coder/Matrix-Play/releases). Linux x86-64; tested on Zorin OS 18.1 and Ubuntu 24.04.
 
 For Zorin or Ubuntu, install the DEB from your download folder:
 
