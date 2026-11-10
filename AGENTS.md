@@ -1,4 +1,4 @@
-# Matrix Play development
+# Matrix-Play development
 
 The user requires every new version to be pushed to GitHub. After implementation and appropriate tests, commit the reviewed changes and the next version's CHANGELOG notes on main, then run `python3 scripts/release.py X.Y.Z`. It bumps the application versions, commits and pushes main. GitHub Actions tests and builds installers, signs the update manifest using its encrypted secret, and publishes the version. Do not leave a new version only in a local checkout unless the user explicitly requests that.
 
