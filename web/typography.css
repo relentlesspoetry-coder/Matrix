@@ -1,0 +1,92 @@
+/* Approved Sora typography, shared by both themes and all application screens.
+   Keep this after theme styles so text sizes stay consistent when switching. */
+@font-face {
+  font-family: 'Matrix Sora';
+  src: url('./assets/fonts/SoraVariable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+}
+:root { font-family:'Matrix Sora',ui-sans-serif,system-ui,sans-serif; font-synthesis:none }
+body { font-size:18px; font-weight:600; line-height:1.45 }
+button,input,select,textarea { font-family:inherit }
+button,summary,h1,h2,h3,strong { font-weight:700 }
+
+:root body .brand-wordmark { font-size:24px; font-weight:700 }
+:root body .nav-item { font-size:18px; font-weight:700; min-height:48px }
+:root body .breadcrumbs { font-size:15px; font-weight:600; letter-spacing:0 }
+:root body .page-title { font-size:40px; line-height:1.2; font-weight:700; letter-spacing:-1px; overflow-wrap:anywhere }
+:root body .page-subtitle { font-size:18px; font-weight:600 }
+:root body .section-title,:root body .settings-name strong { font-size:20px; font-weight:700 }
+:root body .button,:root body .segmented button,:root body .brand-filters button,
+:root body .settings-tabs button { font-size:17px; font-weight:700; min-height:44px; height:auto; padding-top:8px; padding-bottom:8px; white-space:normal }
+:root body .brand-filters { flex-wrap:wrap }
+:root body .button { line-height:1.35; max-width:100% }
+:root body .search { min-height:46px; height:auto }
+:root body .search input,:root body .sort-select,:root body .field input,
+:root body .field select,:root body .field textarea,:root body .cover-tools input,
+:root body .artwork-settings select { font-size:16px; font-weight:600 }
+:root body .sort-select { min-height:44px; height:auto; max-width:100% }
+:root body .menu-items button { font-size:16px; font-weight:700; min-height:44px; white-space:normal }
+:root body .back-link,:root body .library-notes>summary { font-size:16px; font-weight:700 }
+
+:root body .console-brand { font-size:14px; font-weight:600; line-height:1.3 }
+:root body .console-card { min-height:138px; height:auto; grid-template-rows:auto 1fr }
+:root body .console-card__bottom strong,:root body .frost-console>strong { font-size:18px; font-weight:700; line-height:1.3; overflow-wrap:anywhere }
+:root body .console-card__bottom small,:root body .console-tile-meta { font-size:14px; font-weight:600; white-space:normal; flex-wrap:wrap }
+:root body .console-preview h2 { font-size:34px; font-weight:700 }
+:root body .console-preview p { font-size:21px; font-weight:600 }
+:root body .game-title { font-size:18px; font-weight:700; line-height:1.35 }
+:root body .console-library .library-header .page-title { font-size:40px; line-height:1.2 }
+:root body .console-library .game-list .game-title { font-size:20px; font-weight:700; line-height:1.35 }
+:root body .game-preview h2 { font-size:34px; font-weight:700; line-height:1.2 }
+:root body .game-preview>p { font-size:21px; font-weight:600 }
+:root body .cover-faux-label { font-weight:700 }
+
+:root body .dialog h2,:root body .detail-panel h2,:root body .theme-choice h3 { font-size:26px; font-weight:700; overflow-wrap:anywhere }
+:root body .field label,:root body .artwork-settings h3,:root body .discovery-box h2 { font-size:18px; font-weight:700 }
+:root body .field small,:root body .dialog .muted,:root body .detail-description,
+:root body .detail-hint,:root body .library-notes,:root body .platform-notice,
+:root body .settings-name small,:root body .settings-app,:root body .setting-hint,
+:root body .artwork-settings p.setting-hint,:root body .discovery-box p,
+:root body .discovery-box small,:root body .config-error,:root body .advanced-setup,
+:root body .root-path,:root body .library-folder-list strong,:root body .empty p,
+:root body .update-notes,:root body .steamgrid-cover span { font-size:15px; font-weight:600; line-height:1.6 }
+:root body .empty strong { font-size:20px; font-weight:700 }
+:root body .settings-row { flex-wrap:wrap; gap:16px }
+:root body .settings-row__left { flex:1 1 250px; min-width:0 }
+:root body .settings-row__right { max-width:100%; flex-wrap:wrap }
+:root body .settings-row__right .status,:root body .tag { font-size:14px; font-weight:600 }
+:root body .sidebar-version,:root body .controller-help,:root body .page-footer { font-size:13px; font-weight:600; letter-spacing:0 }
+:root body .version-count,:root body .offline-badge { font-size:13px; font-weight:600 }
+
+/* Gallery tiles make room for Sora's wider titles and two-line metadata. */
+html[data-theme="white-frost"] body .frost-console { min-height:204px; height:auto; padding:10px 8px }
+html[data-theme="white-frost"] body .frost-console .console-card__art { flex:0 0 120px; height:120px }
+html[data-theme="white-frost"] body .console-preview h2 { font-size:21px; line-height:1.3 }
+html[data-theme="white-frost"] body .console-preview p { font-size:16px; line-height:1.4 }
+html[data-theme="white-frost"] body .console-preview .button { font-size:17px }
+html[data-theme="white-frost"] body .sidebar { height:auto; min-height:62px }
+
+@media(min-width:1101px) and (max-width:1500px) {
+  html:not([data-theme="white-frost"]) .console-grid { grid-template-columns:repeat(3,minmax(0,1fr)) }
+}
+@media(max-width:900px) {
+  :root body .library-header { flex-wrap:wrap }
+  :root body .library-header-actions { flex-wrap:wrap; max-width:100% }
+}
+@media(max-width:550px) {
+  :root body .brand-wordmark { font-size:23px }
+  :root body .nav-item { font-size:16px }
+  :root body .page-title,:root body .console-library .library-header .page-title { font-size:34px }
+  :root body .console-card { grid-template-columns:48px minmax(0,1fr); min-height:160px }
+  :root body .console-card__bottom strong,:root body .frost-console>strong { font-size:16px }
+  :root body .console-brand,:root body .console-card__bottom small,:root body .console-tile-meta { font-size:13px }
+  :root body .brand-filters button,:root body .segmented button { font-size:15px }
+  :root body .console-library .game-list .game-title { font-size:18px }
+  :root body .library-header-actions .button { font-size:15px; max-width:100% }
+  :root body .dialog,:root body .detail-panel { padding:20px }
+  html[data-theme="white-frost"] body .frost-console { min-height:194px }
+  html[data-theme="white-frost"] body .console-preview h2 { font-size:18px }
+  html[data-theme="white-frost"] body .console-preview p { font-size:14px }
+}

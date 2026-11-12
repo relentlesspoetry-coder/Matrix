@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.13
+
+- Apply the approved larger, bold Sora typography across Arctic Current and White Frost Current: 40px page headings, bold navigation and game titles, larger controls, and clearer supporting text in Settings, dialogs and library tools.
+- Bundle the variable Sora font and its SIL Open Font License for consistent offline rendering. Adjust console tiles, wrapping and responsive spacing for the wider type while preserving all console libraries, settings and actions.
+- Verify the actual packaged font, heading size and weight, library titles and White Frost tile typography in the native desktop release checks.
+
 ## 0.6.12
 
 - Make Matrix Play console-only: remove Steam and Windows game navigation, pages, registration forms, discovery, library management, cover scanning and native launch commands. Background refresh scans only console libraries.

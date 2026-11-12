@@ -156,6 +156,15 @@ def main():
                 data=request('GET', f'/session/{session}/screenshot')
                 (cfg.screenshots/name).write_bytes(base64.b64decode(data))
 
+        def check_typography():
+            loaded = request('POST', f'/session/{session}/execute/async', {
+                'script': 'const done=arguments[arguments.length-1];document.fonts.load(\'700 18px "Matrix Sora"\').then(faces=>done(faces.length)).catch(()=>done(0))', 'args':[]})
+            assert loaded > 0, 'Bundled Sora must load without an external font service'
+            assert js('return getComputedStyle(document.body).fontFamily.includes("Matrix Sora")')
+            assert js('return getComputedStyle(document.querySelector(".page-title")).fontSize') == '40px'
+            assert js('return getComputedStyle(document.querySelector(".page-title")).fontWeight') == '700'
+            assert js('return document.documentElement.scrollWidth <= window.innerWidth'), 'Larger typography must fit the window'
+
         def check_shutdown_prompt():
             update=invoke('update_status')
             # Real WebKit layout/interaction check with synthetic status only.
@@ -399,6 +408,8 @@ def main():
             wait_for(lambda: js('return document.querySelector("#game-preview h2")?.textContent') == js('return document.querySelector(".game-card .game-title").textContent'))
             assert js('return document.querySelectorAll("#game-results .is-previewed").length') == 1
             assert js('return document.documentElement.scrollWidth <= window.innerWidth'), 'Console split pane must not overflow'
+            check_typography()
+            assert js('return getComputedStyle(document.querySelector(".game-title")).fontWeight') == '700'
             # Exact-version WebKit checks for optional version grouping and title overrides.
             prefs=invoke('set_library_preference',{'section':'grouping','key':'','value':True})
             js('state.libraryPrefs=arguments[0];renderConsole()',prefs)
@@ -730,6 +741,8 @@ def main():
             wait_for(lambda: js('return document.querySelector(".console-preview").dataset.consoleId === "ps2"'))
             assert js('return document.querySelectorAll(".is-console-selected").length') == 1
             assert js('return document.documentElement.scrollWidth <= window.innerWidth')
+            check_typography()
+            assert js('return getComputedStyle(document.querySelector(".frost-console>strong")).fontSize') == '18px'
             screenshot('matrix-linux-white-frost-home.png')
             click('[data-action="settings"]')
             click('[data-action="select-theme"][data-value="arctic-current"]')

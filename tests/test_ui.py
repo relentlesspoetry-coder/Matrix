@@ -15,6 +15,9 @@ APP = (WEB / 'app.js').read_text()
 for asset in (WEB/'assets/consoles').glob('*.webp'):
     APP = APP.replace('./assets/consoles/'+asset.name, 'data:image/webp;base64,'+base64.b64encode(asset.read_bytes()).decode())
 HTML = HTML.replace('<link rel="stylesheet" href="./themes.css">','<style>'+(WEB/'themes.css').read_text()+'</style>')
+typography = (WEB/'typography.css').read_text().replace('./assets/fonts/SoraVariable.ttf', 'data:font/ttf;base64,'+base64.b64encode((WEB/'assets/fonts/SoraVariable.ttf').read_bytes()).decode())
+HTML = HTML.replace('<link rel="stylesheet" href="./typography.css">', '<style>'+typography+'</style>')
+HTML = HTML.replace('<link rel="preload" href="./assets/fonts/SoraVariable.ttf" as="font" type="font/ttf" crossorigin>', '')
 HTML = HTML.replace('</body>', '<script>' + (WEB / 'startup.js').read_text() + '</script>' + '<script>' + (WEB / 'data.js').read_text() + '</script><script>' + APP + '</script><script>' + (WEB / 'gamepad.js').read_text() + '</script></body>')
 SCREENS = ROOT / 'screenshots'
 SCREENS.mkdir(exist_ok=True)
