@@ -1310,6 +1310,20 @@ fn legacy_stored_cover_path(kind: &str, uid: &str, extension: &str) -> Result<Pa
         .join(format!("{}.{}", cover_key(kind, uid), extension)))
 }
 
+fn console_cover_candidates(kind: &str, uid: &str) -> Result<Vec<PathBuf>, String> {
+    let covers = console_covers_dir(kind)?;
+    let mut candidates = Vec::new();
+    for extension in ["png", "jpg", "webp"] {
+        candidates.push(stored_cover_path(kind, uid, extension)?);
+    }
+    if let Some(stem) = Path::new(uid).file_stem().and_then(|s| s.to_str()) {
+        for extension in ["png", "jpg", "jpeg", "webp", "PNG", "JPG", "JPEG", "WEBP"] {
+            candidates.push(covers.join(format!("{stem}.{extension}")));
+        }
+    }
+    Ok(candidates)
+}
+
 fn candidate_cover_paths(game: &Game) -> Vec<PathBuf> {
     if game.kind == "steam" {
         let id = game.app_id.as_deref().unwrap_or("");
@@ -1360,19 +1374,12 @@ fn candidate_cover_paths(game: &Game) -> Vec<PathBuf> {
 
 fn read_local_cover_bytes(kind: &str, uid: &str, game: &Game) -> Result<Option<Vec<u8>>, String> {
     let mut candidates = Vec::new();
-    for extension in ["png", "jpg", "webp"] {
-        candidates.push(stored_cover_path(kind, uid, extension)?);
-    }
     if spec(kind).is_ok() {
-        if let Some(stem) = Path::new(&game.path).file_stem().and_then(|s| s.to_str()) {
-            for extension in ["png", "jpg", "jpeg", "webp", "PNG", "JPG", "JPEG", "WEBP"] {
-                candidates.push(console_covers_dir(kind)?.join(format!("{stem}.{extension}")));
-            }
-        }
-        // Keep pre-upgrade imports readable without moving or deleting them.
-        for extension in ["png", "jpg", "webp"] {
-            candidates.push(legacy_stored_cover_path(kind, uid, extension)?);
-        }
+        candidates.extend(console_cover_candidates(kind, uid)?);
+    }
+    // Keep pre-upgrade imports readable without moving or deleting them.
+    for extension in ["png", "jpg", "webp"] {
+        candidates.push(legacy_stored_cover_path(kind, uid, extension)?);
     }
     candidates.extend(candidate_cover_paths(game));
     for candidate in candidates {

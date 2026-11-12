@@ -235,6 +235,10 @@ pub(crate) fn has_manual_cover(root: &Path, id: &str, uid: &str) -> bool {
     ["png", "jpg", "webp"]
         .iter()
         .any(|ext| root.join(id).join(format!("{key}.{ext}")).is_file())
+        || console_cover_candidates(id, uid)
+            .unwrap_or_default()
+            .iter()
+            .any(|path| path.is_file())
 }
 
 #[cfg(test)]
