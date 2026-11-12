@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.4
+
+- Apply the Arctic Current theme: frosted glass surfaces, navy typography, cobalt controls, compact console cards, and a console preview beside the menu.
+- Apply the theme across the entire UI: console and game libraries, Steam, Windows Games, search, favorites, settings, setup and update dialogs, notices and empty states. Add subtle blue currents using lightweight transform animation with reduced-motion support.
+- Preserve all 24 console libraries, launch and update controls, game folders, artwork and controller navigation.
+
 ## 0.6.3
 
 - Create a Covers folder beside the games folder for all 24 consoles, including existing installations. Save new cover imports and downloaded cover images in the matching console folder.

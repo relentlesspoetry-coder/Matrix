@@ -256,8 +256,13 @@ function renderHome() {
   const visible=consoles.filter(c=>state.vendor==='All'||c.group===state.vendor);
   $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${consoles.length} libraries</p></div></div>
     <div class="section-toolbar"><div class="segmented brand-filters" role="group" aria-label="Filter console brands">${['All','Sony','Nintendo','Sega','Xbox'].map(v=>`<button type="button" class="${state.vendor===v?'active':''}" data-action="vendor" data-value="${v}" aria-pressed="${state.vendor===v}">${v==='All'?'All systems':v==='Sony'?'PlayStation':v}</button>`).join('')}</div></div>
-    <div class="console-grid">${visible.map(consoleCard).join('')}</div>`;
+    <div class="console-browser"><div class="console-grid">${visible.map(consoleCard).join('')}</div><aside class="console-preview" aria-label="Console preview">${consolePreview(visible.find(c=>c.id==='switch2') || visible[0])}</aside></div>`;
   restoreLibraryFocus(focus);
+}
+function consolePreview(consoleInfo) {
+  if (!consoleInfo) return '';
+  const count=gamesFor(consoleInfo.id).length;
+  return `<div class="preview-device" aria-hidden="true">${deviceArt(consoleInfo.id)}</div><h2>${escapeHtml(consoleInfo.name)}</h2><p>${escapeHtml(consoleInfo.group)}</p><p>${count} ${count===1?'game':'games'}</p><button type="button" class="button button-primary" data-action="console" data-id="${consoleInfo.id}">Open library</button>`;
 }
 function gameCover(consoleInfo, game, index) {
   const key = artKey(consoleInfo.id, game.uid);
@@ -1255,6 +1260,15 @@ function emulatorFormDraft(owner) {
     .map(field=>[field.name,field.type==='checkbox' ? field.checked : field.value]));
 }
 function setupEvents() {
+  const previewConsole = event => {
+    const card=event.target.closest?.('.console-card');
+    const preview=$('.console-preview');
+    if (state.page!=='home' || !card || !preview || preview.dataset.consoleId===card.dataset.id) return;
+    preview.dataset.consoleId=card.dataset.id;
+    preview.innerHTML=consolePreview(byId[card.dataset.id]);
+  };
+  document.addEventListener('pointerover', previewConsole);
+  document.addEventListener('focusin', previewConsole);
   document.addEventListener('change', event => {
     if (event.target.id==='detected-emulator') chooseDetectedEmulator();
     if (event.target.id==='flatpak-app') $('#runtime-fonts').checked=event.target.value.startsWith('net.pcsx2.PCSX2|');
