@@ -4,7 +4,7 @@ function fixture(invoke){
  const calls=[];
  const context=vm.createContext({consoles:[{id:'ps2'}],document:{querySelector:s=>nodes[s]},window:{__TAURI__:{core:{invoke:(name,args)=>{calls.push([name,args]);return invoke(name,args);}}}}});
  const source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8').replace('readPrefs(); setupEvents(); render(); window.matrixStartup?.complete(); void initializeArt(); void initializeNative();','');
- vm.runInContext(source+';render=()=>{};dismissOverlay=()=>{};clearCoverCache=()=>{};toast=()=>{};globalThis.api={state,steamGridAction,scanArtwork,stubFetch(fn){fetchArtwork=fn;updateCoverStatus=()=>{};}};',context);
+ vm.runInContext(source+';render=()=>{};dismissOverlay=()=>{};clearCoverCache=()=>{};toast=()=>{};globalThis.api={state,steamGridAction,scanArtwork,handleAction,stubFetch(fn){fetchArtwork=fn;updateCoverStatus=()=>{};}};',context);
  return {nodes,calls,...context.api};
 }
 test('SteamGridDB picker escapes titles and saves the chosen cover for the original game',async()=>{
@@ -32,4 +32,35 @@ test('automatic scans stop after a rejected key or rate limit',async()=>{
   f.stubFetch(async()=>{calls++;throw Error(message);});
   await f.scanArtwork();assert.equal(calls,1);
  }
+});
+
+test('key save survives navigation and preserves a newer draft',async()=>{
+ for(const navigate of [false,true]){
+  let resolve;const f=fixture(()=>new Promise(r=>{resolve=r;}));
+  const owner={value:'original-key'};f.nodes['#steamgrid-key']=owner;
+  const pending=f.handleAction({dataset:{action:'steamgrid-key-save'},disabled:false});
+  if(navigate)delete f.nodes['#steamgrid-key'];else owner.value='new draft';
+  resolve(true);await pending;
+  assert.equal(owner.value,navigate?'original-key':'new draft');
+  assert.equal(f.state.steamgridEnabled,true);
+ }
+});
+test('cover queue resumes interrupted work and retries failures without repeating completed jobs',async()=>{
+ const f=fixture(()=>{});f.state.native=true;f.state.steamgridEnabled=true;
+ f.state.imported.ps2=[{uid:'one'},{uid:'two'},{uid:'three'}];
+ const calls=[];let first=true;
+ f.stubFetch(async(kind,uid)=>{calls.push(uid);if(uid==='two'&&first){first=false;throw Error('temporary error');}return {status:'saved'};});
+ await f.scanArtwork();
+ assert.equal(f.state.coverQueue.items[1].status,'failed');
+ await f.scanArtwork(true);
+ assert.deepEqual(calls,['one','two','three','two']);
+ let resolve;f.state.coverQueue.items=[];calls.length=0;
+ f.stubFetch((kind,uid)=>{calls.push(uid);return new Promise(r=>{resolve=r;});});
+ const pending=f.scanArtwork();
+ await f.handleAction({dataset:{action:'queue-pause'}});
+ resolve({status:'saved'});await pending;
+ assert.deepEqual(calls,['one']);assert.equal(f.state.coverQueue.paused,true);
+ f.stubFetch(async(kind,uid)=>{calls.push(uid);return {status:'saved'};});
+ f.state.coverQueue.paused=false;await f.scanArtwork(true);
+ assert.deepEqual(calls,['one','one','two','three']);
 });

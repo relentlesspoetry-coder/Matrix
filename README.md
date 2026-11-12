@@ -13,14 +13,14 @@ Download the **DEB** or **AppImage** from [Releases](https://github.com/relentle
 For Zorin or Ubuntu, install the DEB from your download folder:
 
 ```bash
-sudo apt install ./Matrix-Play_0.6.6_amd64.deb
+sudo apt install ./Matrix-Play_0.6.7_amd64.deb
 ```
 
 For the portable AppImage:
 
 ```bash
-chmod +x Matrix-Play_0.6.6_amd64.AppImage
-./Matrix-Play_0.6.6_amd64.AppImage
+chmod +x Matrix-Play_0.6.7_amd64.AppImage
+./Matrix-Play_0.6.7_amd64.AppImage
 ```
 
 For future releases, open **Settings → Check for updates**.
@@ -80,3 +80,10 @@ Emulators, games, firmware and keys are supplied separately.
 In Settings → Artwork → SteamGridDB, use **Get API key** to open your SteamGridDB preferences, then paste your key and choose **Save and enable**. This enables missing-cover lookups for every console using unique exact game-title matches. Title lookups send titles to SteamGridDB; full paths and game files stay local. Your key is saved in the private local settings file and is not returned to the web UI.
 
 For ambiguous titles or a different cover, open game details → **Find on SteamGridDB**, select the correct game, and choose a cover. Selection explicitly replaces the current cover. Images are validated and saved in the console’s `Covers` folder. Existing local covers take priority over automatic downloads. Disable SteamGridDB to use the existing serial/Libretro providers again. SteamGridDB uses static portrait covers and does not supply the existing 3D-cover style.
+
+## Library tools
+
+- **Recently played** on the console menu shows the last eight successful launch requests across consoles, Steam and Windows; the latest 20 are saved. This is launch history, not measured playtime.
+- Open a console game's details → **Launch settings** to override its emulator arguments. Enter one literal argument per line, with `{game}` for the game path. Leave blank to restore console defaults. These overrides do not change Steam or Windows shortcuts.
+- Settings → **Backup and restore** exports settings, favorites, recent history, launch overrides and managed console cover files. API keys, game files, external sidecar art and old online caches are excluded. Paths remain unchanged; backups are intended for the same library layout. Restore keeps existing covers, fills in missing files and saves `before-restore.json` beside the settings first. Only restore trusted backups: emulator profiles contain executable paths and arguments. A backup is limited to 64 MB, with at most 32 MB of source covers (4 MB per image).
+- Settings → Artwork → **Cover download queue** shows results and errors. Pause stops scheduling further jobs; an in-flight request may finish. Resume retries pending/interrupted/failed jobs and skips completed jobs. Provider rate limits still apply.

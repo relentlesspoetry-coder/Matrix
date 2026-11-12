@@ -1,4 +1,4 @@
-/* Matrix-Play v0.6.6 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.7 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -13,6 +13,7 @@ const state = {
   steam: [], windows: [],
   discovery:{candidates:[],linked:[],ambiguous:[],notices:[]}, launches:{},launchBusy:{},launchGeneration:{},
   missingArt: new Set(), pendingArt: new Map(),
+  readyProfiles: {}, recent: [], coverQueue: {paused:false,items:[]},
   artwork: {enabled:true, style:"default", titleEnabled:false}, artworkSaving: false, coverStatus: new Map(), coverGeneration: 0, artRevision: 0,
 };
 const $ = selector => document.querySelector(selector);
@@ -114,6 +115,7 @@ const artKey = (consoleId, uid) => `${consoleId}|${uid}`;
 const favoriteKey = (consoleId, uid) => `${consoleId}|${uid}`;
 const importedFor = id => Array.isArray(state.imported[id]) ? state.imported[id] : [];
 const isConfigured = id => !byId[id]?.libraryOnly && Boolean((state.configs[id]?.launcher === "flatpak" ? state.configs[id]?.flatpakId : state.configs[id]?.emulatorPath) && (state.native || state.configs[id]?.folderPath));
+const consoleReady = id => isConfigured(id) && (!state.native || state.readyProfiles[id]===true) && importedFor(id).length>0;
 const configuredCount = () => consoles.filter(consoleInfo => isConfigured(consoleInfo.id)).length;
 
 function demoGames(consoleInfo) {
@@ -248,7 +250,7 @@ function renderNav() {
 function consoleCard(consoleInfo) {
   const count=gamesFor(consoleInfo.id).length;
   return `<button class="console-card" style="--tint:${consoleTone(consoleInfo)}" type="button" data-action="console" data-id="${consoleInfo.id}" aria-label="Browse ${escapeHtml(consoleInfo.name)} library">
-    <span class="console-card__top"><span class="console-brand">${escapeHtml(consoleInfo.group==='Sony'?'PlayStation':consoleInfo.group)}</span><span class="connection-dot ${isConfigured(consoleInfo.id)&&importedFor(consoleInfo.id).length>0?'ready':''}" title="${!isConfigured(consoleInfo.id)?'Set up emulator':importedFor(consoleInfo.id).length>0?'Emulator and games ready':'Add games'}"></span></span>
+    <span class="console-card__top"><span class="console-brand">${escapeHtml(consoleInfo.group==='Sony'?'PlayStation':consoleInfo.group)}</span><span class="connection-dot ${consoleReady(consoleInfo.id)?'ready':''}" title="${consoleReady(consoleInfo.id)?'Emulator and games ready':!isConfigured(consoleInfo.id)?'Set up emulator':state.native&&state.readyProfiles[consoleInfo.id]!==true?'Emulator unavailable':'Add games'}"></span></span>
     <span class="console-card__art">${deviceArt(consoleInfo.id)}</span><span class="console-card__bottom"><strong>${escapeHtml(consoleInfo.name)}</strong><small>${count} ${count===1?'game':'games'}</small></span></button>`;
 }
 function renderHome() {
@@ -256,6 +258,7 @@ function renderHome() {
   const visible=consoles.filter(c=>state.vendor==='All'||c.group===state.vendor);
   $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${consoles.length} libraries</p></div></div>
     <div class="section-toolbar"><div class="segmented brand-filters" role="group" aria-label="Filter console brands">${['All','Sony','Nintendo','Sega','Xbox'].map(v=>`<button type="button" class="${state.vendor===v?'active':''}" data-action="vendor" data-value="${v}" aria-pressed="${state.vendor===v}">${v==='All'?'All systems':v==='Sony'?'PlayStation':v}</button>`).join('')}</div></div>
+    ${state.recent.length?`<details class="library-notes recent-games"><summary>Recently played</summary><div class="tag-row">${state.recent.slice(0,8).map(g=>`<button class="button button-ghost" type="button" data-action="recent-game" data-id="${escapeHtml(g.kind)}" data-uid="${escapeHtml(g.uid)}">${escapeHtml(g.title)}</button>`).join('')}</div></details>`:''}
     <div class="console-browser"><div class="console-grid">${visible.map(consoleCard).join('')}</div><aside class="console-preview" aria-label="Console preview">${consolePreview(visible.find(c=>c.id==='switch2') || visible[0])}</aside></div>`;
   restoreLibraryFocus(focus);
 }
@@ -477,13 +480,14 @@ function renderSettings() {
   const focus=captureLibraryFocus($('#screen'),'settings');
   $('#screen').innerHTML=`<div class="settings-header"><h1 class="page-title">Settings</h1><div class="settings-app"><span>Matrix-Play</span><button type="button" class="button button-ghost" data-action="updates" aria-label="Update Matrix-Play">Check for updates</button></div></div>
     ${state.native?discoverySummary():''}
+    <details class="library-notes"><summary>Backup and restore</summary><p>Back up settings, favorites and covers (up to 64 MB). Game files and API keys are excluded. Restore only backups you trust; existing covers are kept, and a safety snapshot is saved before restoring settings.</p><div class="tag-row"><button type="button" class="button button-ghost" data-action="backup-library" ${state.native?'':'disabled'}>Create backup</button><button type="button" class="button button-ghost" data-action="restore-library" ${state.native?'':'disabled'}>Restore backup…</button></div><p id="backup-status" role="status"></p></details>
     <section class="artwork-settings"><h2>Artwork</h2>
       <div class="steamgrid-settings"><h3>SteamGridDB</h3><p>${state.steamgridEnabled?'Enabled for automatic missing covers.':'Add your personal API key to enable SteamGridDB covers for all consoles.'}</p><label class="field" for="steamgrid-key">API key<input type="password" id="steamgrid-key" autocomplete="new-password" placeholder="Paste your SteamGridDB API key" ${state.native?'':'disabled'}></label><div class="tag-row"><button type="button" class="button button-primary" data-action="steamgrid-key-save" ${state.native?'':'disabled'}>Save and enable</button><button type="button" class="button button-ghost" data-action="steamgrid-key-clear" ${state.native?'':'disabled'}>Disable SteamGridDB</button><button type="button" class="button button-ghost" data-action="steamgrid-key-open" ${state.native?'':'disabled'}>Get API key</button></div><p class="setting-hint">Automatic lookups send game titles to SteamGridDB. Unique exact title matches use static portrait covers (flat only). Ambiguous matches can be selected in game details. Local covers take priority; the key stays in your private local settings.</p></div>
       <label><input type="checkbox" id="auto-covers" ${state.artwork.enabled?'checked':''} ${state.native&&!state.artworkSaving?'':'disabled'}> Download missing covers</label>
       <label><input type="checkbox" id="auto-title-covers" ${state.artwork.titleEnabled?'checked':''} ${state.native&&!state.artworkSaving?'':'disabled'}> Match game titles with Libretro</label>
       <p class="setting-hint">Title matching sends game names to Libretro. Local covers take priority.</p>
       <label for="cover-style">Cover style</label><select id="cover-style" ${state.native&&!state.artworkSaving?'':'disabled'}><option value="default" ${state.artwork.style==='default'?'selected':''}>Default</option><option value="3d" ${state.artwork.style==='3d'?'selected':''}>3D</option></select>
-      <details class="library-notes"><summary>Artwork details</summary><p>Requests send the game serial, disc ID or filename-based catalog title, console and style to GitHub, GameTDB or Libretro; game files and full paths are not uploaded. Local covers take priority. Libretro and Switch use flat covers.</p><p>PS5 and Switch 2 still need local covers. The six additional libraries also use local covers. Choose cover is available in game details.</p><button type="button" class="button button-ghost" data-action="cover-project">Open TheCoverProject</button></details><p id="cover-scan-status" role="status"></p></section>
+      <details class="library-notes"><summary>Artwork details</summary><p>Requests send the game serial, disc ID or filename-based catalog title, console and style to GitHub, GameTDB or Libretro; game files and full paths are not uploaded. Local covers take priority. Libretro and Switch use flat covers.</p><p>PS5 and Switch 2 still need local covers. The six additional libraries also use local covers. Choose cover is available in game details.</p><button type="button" class="button button-ghost" data-action="cover-project">Open TheCoverProject</button></details><p id="cover-scan-status" role="status"></p><details class="library-notes"><summary>Cover download queue</summary><div class="tag-row"><button type="button" class="button button-ghost" data-action="queue-pause">Pause</button><button type="button" class="button button-ghost" data-action="queue-resume">Resume / retry failures</button></div><div id="cover-queue-results"></div></details></section>
     <div class="section-toolbar"><h2 class="section-title">Emulators &amp; folders</h2><span class="status">${configuredCount()} / ${consoles.length}</span></div>
     <div class="settings-list">${consoles.map(c=>`<div class="settings-row"><div class="settings-row__left"><div class="settings-name"><strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(state.configs[c.id]?.emulatorName||c.emulator)}</small></div></div><div class="settings-row__right">${state.native?`<button type="button" class="button button-ghost" data-action="library-folders" data-id="${c.id}" aria-label="Manage ${escapeHtml(c.name)} folders">Folders</button>`:''}<button type="button" class="button button-ghost" data-action="configure" data-id="${c.id}">${isConfigured(c.id)?'Edit':'Set up'}</button></div></div>`).join('')}</div>`;
   restoreLibraryFocus(focus);
@@ -602,6 +606,7 @@ async function launchTracked(id,command,args) {
     state.launches[id]=info || {phase:'started',message:'Game launch requested.'};
     if (['game','external','launch-details'].includes(overlay) && state.overlay===overlay && $('#overlay-root').firstElementChild===dialog) dismissOverlay();
     if (activeLaunchId()===id) renderLaunchStatus();
+    if(args.uid&&['launch_console_game','launch_steam_game','launch_windows_game'].includes(command)&&info?.phase!=='error'){const game=(byId[id]?gamesFor(id):id==='steam'?state.steam:state.windows).find(g=>g.uid===args.uid);if(game){state.recent=[{kind:id,uid:args.uid,title:game.title},...state.recent.filter(g=>g.kind!==id||g.uid!==args.uid)].slice(0,20);}}
     toast(state.launches[id].message);
     let attempts=0;
     const poll=async()=>{
@@ -811,6 +816,7 @@ function openGame(id, uid) {
     <details class="library-notes"><summary>Game information</summary><p class="detail-description">${consoleInfo.libraryOnly || consoleInfo.customEmulator ? escapeHtml(consoleInfo.supportNote) : state.native ? 'The Play button starts this file fullscreen with the recognized emulator’s game-only launch options. Custom launchers need their own fullscreen arguments.' : `The native application will launch this game using ${escapeHtml(state.configs[id]?.emulatorName || consoleInfo.emulator)}. This browser preview cannot execute games.`}</p></details>
     ${consoleInfo.libraryOnly ? '' : `<button type="button" class="button button-primary launch-button" data-action="play-console">${glyph('play')} Play game</button>`}
     <div class="detail-actions"><button type="button" class="button button-ghost" data-action="pick-cover">${glyph('image')} Choose cover</button><button type="button" class="button button-ghost" data-action="favorite" data-id="${id}" data-uid="${escapeHtml(uid)}" aria-pressed="${liked}">${glyph('heart')} ${liked ? 'Unfavorite' : 'Favorite'}</button></div>
+    ${state.native ? `<button type="button" class="button button-ghost" data-action="game-options">Launch settings</button>` : ''}
     ${state.native ? `<section class="cover-tools"><h3>Cover artwork</h3><p class="cover-result" role="status">${escapeHtml(coverMessage(id,uid))}</p>${state.steamgridEnabled ? '<p>SteamGridDB is enabled. Find on SteamGridDB lets you select the game and cover.</p>' : AUTO_COVER_KINDS.includes(id) ? `<label for="cover-serial">${TITLE_COVER_KINDS.includes(id) ? 'Confirm exact catalog title' : id==='switch' ? 'Confirm Switch product code and region' : ['gamecube','wii'].includes(id) ? 'Confirm disc ID' : 'Confirm game serial'}</label><input id="cover-serial" placeholder="${TITLE_COVER_KINDS.includes(id) ? 'Exact title (USA) (Rev 1)' : id==='switch' ? 'AAACA-US' : id==='gamecube' ? 'GMSE01' : id==='wii' ? 'RMGE01' : 'SLUS-20312'}" value="${escapeHtml(state.coverStatus.get(artKey(id,uid))?.serial || '')}" maxlength="${TITLE_COVER_KINDS.includes(id) ? 240 : 16}"><small>${TITLE_COVER_KINDS.includes(id) ? 'Match the Libretro title exactly, including region, language and edition. No fuzzy matching or region guessing. Only flat covers are available.' : id==='switch' ? 'Use the five-character original Switch product code and artwork region, for example AAACA-US or HAC-P-AAACA-USA. This is not the 16-digit title ID. EUR selects English artwork (EN). Only flat covers are available; no Switch 2 fallback.' : 'Use the identity for this exact game, region and disc. Compressed images may need an ID entered here.'}</small><button type="button" class="button button-ghost" data-action="download-cover">Find exact cover</button>` : id==='ps5' ? '<p>No verified automatic provider for online PS5 downloads. Extracted eboot games in their own folders can use an existing sce_sys/icon0.png. Imported and sidecar covers take priority.</p>' : '<p>No verified automatic provider for this console yet. Choose a local image; existing covers are kept.</p>'}<button type="button" class="button button-primary" data-action="steamgrid-open">Find on SteamGridDB</button><button type="button" class="button button-ghost" data-action="cover-project">Open TheCoverProject</button></section>` : ''}
     <p class="detail-hint">${consoleInfo.libraryOnly ? 'Collection files can have local covers and favorites. Launching is unavailable for this system.' : state.native ? 'The configured emulator is required to launch this title. Covers are saved in this console’s Covers folder. To add an image there manually, match the game filename without its extension.' : 'Preview only. Play does not execute an emulator. Custom artwork is saved in this browser.'}</p>
   </aside></div>`;
@@ -1005,27 +1011,25 @@ async function fetchArtwork(kind,uid,serial=null,generation=state.coverGeneratio
   }
   return outcome;
 }
-async function scanArtwork() {
-  const generation=++state.coverGeneration;
-  if (!state.native || !state.artwork.enabled) return;
-  let complete=0;
-  const games=(state.steamgridEnabled ? consoles.map(c=>c.id) : AUTO_COVER_KINDS.filter(kind => !TITLE_COVER_KINDS.includes(kind) || state.artwork.titleEnabled)).flatMap(kind => (state.imported[kind] || []).map(g=>({kind,uid:g.uid})));
-  for (const {kind,uid} of games) {
-    if (generation!==state.coverGeneration || !state.artwork.enabled) return;
-    try { await fetchArtwork(kind,uid,null,generation); }
-    catch(error) {
-      if (generation!==state.coverGeneration) return;
-      state.coverStatus.set(artKey(kind,uid),{message:`Artwork unavailable: ${error}`});updateCoverStatus(kind,uid);
-      if (state.steamgridEnabled && /API key was rejected|rate limit|cooling down|Cannot reach SteamGridDB/i.test(String(error))) {
-        const progress=$('#cover-scan-status');
-        if (progress) progress.textContent=`SteamGridDB scan paused: ${error}`;
-        return;
-      }
-    }
-    complete++;
-    const progress=$('#cover-scan-status');
-    if (progress) progress.textContent=`Artwork scan: ${complete} / ${games.length} checked`;
-  }
+function renderCoverQueue() {
+ const node=$('#cover-queue-results');if(node)node.innerHTML=state.coverQueue.items.filter(i=>i.status!=='pending').slice(-30).map(i=>`<p>${escapeHtml(byId[i.kind]?.name||i.kind)} · ${escapeHtml(i.title)} — ${escapeHtml(i.status)}${i.error?': '+escapeHtml(i.error):''}</p>`).join('');
+}
+async function scanArtwork(resume=false) {
+ const generation=++state.coverGeneration;
+ if(!state.native||!state.artwork.enabled||state.coverQueue.paused)return;
+ const kinds=state.steamgridEnabled?consoles.map(c=>c.id):AUTO_COVER_KINDS.filter(k=>!TITLE_COVER_KINDS.includes(k)||state.artwork.titleEnabled);
+ const items=resume&&state.coverQueue.items.length?state.coverQueue.items:kinds.flatMap(kind=>(state.imported[kind]||[]).map(g=>({kind,uid:g.uid,title:g.title||g.uid,status:'pending'})));
+ state.coverQueue.items=items;renderCoverQueue();let complete=0;
+ for(const item of items){
+  if(resume&&!['pending','downloading','failed'].includes(item.status)){complete++;continue;}
+  delete item.error;
+  if(generation!==state.coverGeneration||!state.artwork.enabled||state.coverQueue.paused)return;
+  item.status='downloading';renderCoverQueue();
+  try {const result=await fetchArtwork(item.kind,item.uid,null,generation);if(generation!==state.coverGeneration)return;item.status=result?.status||'checked';}
+  catch(error){if(generation!==state.coverGeneration)return;item.status='failed';item.error=String(error);state.coverStatus.set(artKey(item.kind,item.uid),{message:String(error)});updateCoverStatus(item.kind,item.uid);
+   if(state.steamgridEnabled&&/API key was rejected|rate limit|cooling down|Cannot reach SteamGridDB/i.test(String(error))){state.coverQueue.paused=true;renderCoverQueue();const p=$('#cover-scan-status');if(p)p.textContent='Scan paused: '+String(error);return;}}
+  complete++;renderCoverQueue();const p=$('#cover-scan-status');if(p)p.textContent=`Artwork scan: ${complete} / ${items.length} checked`;
+ }
 }
 async function saveArtworkOptions() {
   if (!state.native || state.artworkSaving) return;
@@ -1088,10 +1092,11 @@ async function bootstrapNative() {
     const config=await nativeInvoke('bootstrap');
     if (!current()) return null;
     const profiles={...(config.profiles || {})};
+    const readiness={...(config.readyProfiles||{})};
     for (const [id,profile] of Object.entries(state.configs)) {
-      if (emulatorSavedRequests.get(id)!==profileRevisions.get(id)) profiles[id]=profile;
+      if (emulatorSavedRequests.get(id)!==profileRevisions.get(id)) profiles[id]=profile;readiness[id]=state.readyProfiles[id];
     }
-    state.configs=profiles;
+    state.recent=config.recent||state.recent;state.configs=profiles;state.readyProfiles=readiness;
     state.root=config.root;state.folders=config.folders;state.steamgridEnabled=Boolean(config.steamgridEnabled);
     state.discovery=config.emulatorDiscovery || state.discovery;
     if (artworkWriteRevision===artworkRevision) state.artwork=config.artwork || state.artwork;
@@ -1196,6 +1201,7 @@ async function openUpdater() {
   if (!state.updateBusy && ['idle','current'].includes(state.update?.phase)) void runUpdate('check_updates');
 }
 
+let steamgridKeyRevision=0;
 async function handleAction(button) {
   const menu=button.closest?.('.library-menu');
   if (menu) { menu.open=false;menu.querySelector('summary')?.focus(); }
@@ -1287,12 +1293,30 @@ async function handleAction(button) {
     if (!state.native) {toast('Open thecoverproject.net in your browser.');return;}
     try {await nativeInvoke('open_cover_project');} catch(error) {toast(String(error));}
   }
+  else if (action === 'queue-pause') {state.coverQueue.paused=true;++state.coverGeneration;renderCoverQueue();toast('Cover queue paused.');}
+  else if (action === 'queue-resume') {state.coverQueue.paused=false;void scanArtwork(true);}
+  else if (action === 'recent-game') {if(byId[id]){goConsole(id);if(state.native)await launchConsole(id,uid);}else{goExternal(id);if(state.native)await launchExternal(id,uid);}}
+  else if (action === 'backup-library' || action === 'restore-library') {
+    button.disabled=true;
+    try {const result=await nativeInvoke('backup_library',{restoreBackup:action==='restore-library'});toast(result);if(action==='restore-library'&&result!=='Cancelled'){await bootstrapNative();await refreshNative();}}catch(e){toast(String(e));}finally{button.disabled=false;}
+  }
+  else if (action === 'game-options') {
+    const selected={...state.selectedGame};state.overlay='game-options';
+    $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog game-options-dialog" role="dialog" aria-modal="true" aria-labelledby="game-options-title"><button type="button" class="close" data-action="close" aria-label="Close launch settings">${glyph('close')}</button><h2 id="game-options-title">Game launch settings</h2><p class="muted">Override this game's arguments only. One literal argument per line; use {game} for the file. No shell commands. Leave blank to use console defaults.</p><label class="field">Arguments<textarea id="game-options-args" rows="6" disabled></textarea></label><p id="game-options-status" role="status">Loading…</p><button type="button" class="button button-primary" data-action="save-game-options" disabled>Save</button></section></div>`;
+    const owner=$('.game-options-dialog');owner._selection=selected;
+    try {const options=await nativeInvoke('game_options',{kind:selected.id,uid:selected.uid});if($('.game-options-dialog')===owner){$('#game-options-args').value=(options.args||[]).join('\n');$('#game-options-args').disabled=false;owner.querySelector('[data-action=save-game-options]').disabled=false;$('#game-options-status').textContent='';$('#game-options-args').focus();}}catch(e){if($('.game-options-dialog')===owner)$('#game-options-status').textContent=String(e);}
+  }
+  else if (action === 'save-game-options') {
+    const owner=$('.game-options-dialog');const selected=owner._selection;const args=$('#game-options-args').value.split('\n').map(a=>a.trim()).filter(Boolean);button.disabled=true;
+    try {await nativeInvoke('save_game_options',{kind:selected.id,uid:selected.uid,args});if($('.game-options-dialog')===owner)dismissOverlay();toast('Game launch settings saved.');}catch(e){if($('.game-options-dialog')===owner)$('#game-options-status').textContent=String(e);}finally{button.disabled=false;}
+  }
   else if (action === 'steamgrid-key-open') { try {await nativeInvoke('steamgrid_open_key');} catch(e){toast(String(e));} }
   else if (action === 'steamgrid-key-save' || action === 'steamgrid-key-clear') {
-    const key=action==='steamgrid-key-clear'?'':$('#steamgrid-key').value.trim();
+    const owner=$('#steamgrid-key');
+    const key=action==='steamgrid-key-clear'?'':owner.value.trim();
     if (action==='steamgrid-key-save' && !key) {toast('Paste your SteamGridDB API key first.');return;}
-    button.disabled=true;
-    try {state.steamgridEnabled=await nativeInvoke('steamgrid_save_key',{key});$('#steamgrid-key').value='';renderSettings();void scanArtwork();toast(state.steamgridEnabled?'SteamGridDB enabled.':'SteamGridDB disabled.');}catch(e){toast(String(e));}finally{button.disabled=false;}
+    const request=++steamgridKeyRevision;button.disabled=true;
+    try {const enabled=await nativeInvoke('steamgrid_save_key',{key});if(request!==steamgridKeyRevision)return;state.steamgridEnabled=enabled;if ($('#steamgrid-key')===owner && owner.value.trim()===key) {owner.value='';if(state.page==='settings')renderSettings();}void scanArtwork();toast(state.steamgridEnabled?'SteamGridDB enabled.':'SteamGridDB disabled.');}catch(e){toast(String(e));}finally{button.disabled=false;}
   }
   else if (action === 'steamgrid-open') openSteamGrid();
   else if (action === 'steamgrid-search' || action === 'steamgrid-game' || action === 'steamgrid-cover') void steamGridAction(button);
@@ -1380,7 +1404,7 @@ function setupEvents() {
       void nativeInvoke('save_emulator', {id,...profile,allowExecute:form.has('allowExecute')}).then(() => {
         if ((emulatorSavedRequests.get(id)||0)>request) return;
         emulatorSavedRequests.set(id,request);
-        state.configs[id]=profile;
+        state.configs[id]=profile;state.readyProfiles[id]=true;
         const current=state.overlay==='configure' && $('#config-form')===owner;
         const edited=current && emulatorFormDraft(owner)!==submittedDraft;
         if (current && !edited) dismissOverlay();

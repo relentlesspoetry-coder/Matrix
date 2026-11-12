@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.7
+
+- Protect manual covers from late automatic downloads and remove stale SteamGridDB success/error caching so missing covers and recovered requests can retry immediately.
+- Preserve new API-key drafts and safe navigation while saves finish. Check the saved emulator executable or exact Flatpak installation before showing a green console status; games are also required.
+- Add Recently played across console, Steam and Windows launches, keeping the latest 20 entries and showing the latest eight on the console menu.
+- Add per-game console launch arguments in game details, preserving console defaults and literal, shell-free argument handling.
+- Add native backup/restore of settings, favorites, recent history, launch overrides and managed covers, excluding API keys and game files. Preserve existing covers and create a safety snapshot before restore.
+- Add a cover-download queue with pause, resume, retry failures and per-game errors.
+
 ## 0.6.6
 
 - Shift the currents to cooler cobalt and ice blue and pre-render their glow layers for lighter, continuous animation without reverse-direction pauses.

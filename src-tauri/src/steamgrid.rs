@@ -1,8 +1,5 @@
 use super::*;
 use matrix_cover_core::steamgriddb as api;
-use std::{collections::HashMap, sync::{Mutex, LazyLock}, time::{Instant, Duration}};
-type Cached = HashMap<String,(Instant,Result<matrix_cover_core::Outcome,String>)>;
-static LOOKUPS: LazyLock<Mutex<Cached>> = LazyLock::new(||Mutex::new(HashMap::new()));
 
 #[cfg_attr(feature="desktop",tauri::command)]
 pub(crate) fn steamgrid_save_key(key: String) -> Result<bool,String> {
@@ -11,7 +8,6 @@ pub(crate) fn steamgrid_save_key(key: String) -> Result<bool,String> {
         return Err("Paste a valid SteamGridDB API key.".into());
     }
     let enabled=update_settings(|settings|{settings.steamgriddb_api_key=key.into();Ok(!key.is_empty())})?;
-    if let Ok(mut cache)=LOOKUPS.lock(){cache.clear();}
     Ok(enabled)
 }
 #[cfg_attr(feature="desktop",tauri::command)]
@@ -41,10 +37,9 @@ pub(crate) async fn steamgrid_save(kind:String,uid:String,game_id:u64,grid_id:u6
     tauri::async_runtime::spawn_blocking(move||save_grid(&kind,&uid,&load_settings()?.steamgriddb_api_key,game_id,grid_id)).await.map_err(|e|e.to_string())?
 }
 pub(crate) fn automatic(kind:&str,uid:&str,title:&str,key:&str)->Result<matrix_cover_core::Outcome,String> {
-    let cache_key=format!("{:x}\0{kind}\0{uid}\0{title}", Sha256::digest(key.as_bytes()));
-    if let Ok(cache)=LOOKUPS.lock(){if let Some((at,result))=cache.get(&cache_key){if at.elapsed()<Duration::from_secs(900){return result.clone();}}}
+    // Never cache failures or successful saves: Retry must recover immediately,
+    // and a deleted image must be downloaded again.
     let result=automatic_lookup(kind,uid,title,key);
-    if let Ok(mut cache)=LOOKUPS.lock(){if cache.len()>=4096{cache.clear();}cache.insert(cache_key,(Instant::now(),result.clone()));}
     result
 }
 fn automatic_lookup(kind:&str,uid:&str,title:&str,key:&str)->Result<matrix_cover_core::Outcome,String> {
@@ -56,6 +51,13 @@ fn automatic_lookup(kind:&str,uid:&str,title:&str,key:&str)->Result<matrix_cover
     let grids=api::grids(key,matches[0].id)?;
     let Some(grid)=grids.first() else {return Ok(matrix_cover_core::Outcome{status:"not-found".into(),message:"SteamGridDB has no static portrait covers for this game.".into(),..Default::default()});};
     let bytes=api::download(grid)?;
-    artwork::run_cover_operation(||save_cover(kind.into(),uid.into(),bytes))?;
+    artwork::run_cover_operation(|| {
+        let game=validate_game(kind,uid)?;
+        if read_local_cover_bytes(kind,uid,&game)?.is_none() {
+            let (extension,_) = cover_format(&bytes).ok_or("Invalid downloaded cover")?;
+            artwork::save_without_replacing(&stored_cover_path(kind,uid,extension)?, &bytes)?;
+        }
+        Ok(())
+    })?;
     Ok(matrix_cover_core::Outcome{status:"downloaded".into(),message:"SteamGridDB cover saved in this console’s Covers folder.".into(),source:Some("SteamGridDB".into()),..Default::default()})
 }

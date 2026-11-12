@@ -6,6 +6,7 @@
 mod appimage_environment;
 mod artwork;
 mod steamgrid;
+mod library_tools;
 mod bounded_io;
 #[cfg(feature = "desktop")]
 mod desktop_commands;
@@ -224,6 +225,10 @@ impl Default for ArtworkSettings {
 #[derive(Clone, Serialize, Deserialize, Default)]
 struct Settings {
     #[serde(default)]
+    recent: Vec<library_tools::Recent>,
+    #[serde(default)]
+    game_options: BTreeMap<String,library_tools::GameOptions>,
+    #[serde(default)]
     steamgriddb_api_key: String,
     #[serde(default)]
     steam_libraries: Vec<steam_libraries::RegisteredLibrary>,
@@ -244,6 +249,8 @@ struct Settings {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Bootstrap {
+    recent: Vec<library_tools::Recent>,
+    ready_profiles: BTreeMap<String,bool>,
     steamgrid_enabled: bool,
     emulator_discovery: discovery::Report,
     favorites: BTreeMap<String, Vec<String>>,
@@ -476,7 +483,10 @@ fn bootstrap() -> Result<Bootstrap, String> {
     for s in SPECS {
         library_folders.insert(s.id.into(), libraries::folders(s.id)?);
     }
+    let ready_profiles=settings.profiles.iter().map(|(id,p)|(id.clone(),if p.launcher==emulators::Launcher::Flatpak {emulator_discovery.flatpak_inventory.as_ref().is_some_and(|apps|apps.iter().any(|a|a.app_id==p.flatpak_id&&a.installation==p.flatpak_installation))} else {emulators::executable_file(Path::new(&p.emulator_path))})).collect();
     Ok(Bootstrap {
+        ready_profiles,
+        recent: settings.recent,
         steamgrid_enabled: !settings.steamgriddb_api_key.is_empty(),
         library_folders,
         emulator_discovery,
@@ -1134,15 +1144,16 @@ fn launch_console_impl(id: String, uid: String) -> Result<launches::Info, String
         .find(|g| g.uid == uid)
         .ok_or("Game is no longer present in this console's library")?;
     let settings = load_settings()?;
-    let profile = settings
-        .profiles
-        .get(&id)
-        .ok_or("Configure an emulator for this console first")?;
+    let mut selected=settings.profiles.get(&id).ok_or("Configure an emulator for this console first")?.clone();
+    if let Some(options)=settings.game_options.get(&cover_key(&id,&uid)){selected.launch_args=options.args.clone();}
+    let profile=&selected;
     launches::preflight(profile)?;
     let mut command = emulators::command(profile, &id, Some(Path::new(&game.path)))?;
     command.args(console_launch_args(profile, &id, Path::new(&game.path))?);
     command.current_dir(Path::new(&game.path).parent().ok_or("Invalid game path")?);
-    launches::start(command, &id)
+    let info=launches::start(command, &id)?;
+    let _=library_tools::record(&game);
+    Ok(info)
 }
 
 #[cfg(feature = "desktop")]
@@ -1181,10 +1192,9 @@ fn launch_steam_impl(uid: String) -> Result<launches::Info, String> {
         .find(|g| g.game.uid == uid)
         .ok_or("Steam app not found in installed libraries")?;
     // Never silently switch installations: their libraries and settings differ.
-    launches::start(
-        steam_libraries::command_for_launch(&uid, game.launcher)?,
-        "steam",
-    )
+    let info=launches::start(steam_libraries::command_for_launch(&uid, game.launcher)?, "steam")?;
+    let _=library_tools::record(&game.game);
+    Ok(info)
 }
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -1222,7 +1232,10 @@ fn launch_windows_impl(uid: String) -> Result<launches::Info, String> {
         .iter()
         .find(|g| g.uid == uid)
         .ok_or("Windows game not registered")?;
-    launches::start(windows_command(game)?, "windows")
+    let info=launches::start(windows_command(game)?, "windows")?;
+    let record=Game{uid:game.uid.clone(),title:game.title.clone(),path:game.target.clone(),kind:"windows".into(),app_id:None};
+    let _=library_tools::record(&record);
+    Ok(info)
 }
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -1752,6 +1765,9 @@ fn main() {
             download_cover,
             save_artwork_settings,
             open_cover_project,
+            library_tools::save_game_options,
+            library_tools::game_options,
+            library_tools::backup_library,
             steamgrid::steamgrid_save_key,
             steamgrid::steamgrid_search,
             steamgrid::steamgrid_grids,

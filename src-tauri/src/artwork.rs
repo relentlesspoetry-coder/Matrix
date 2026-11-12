@@ -44,6 +44,12 @@ fn private_options() -> OpenOptions {
 }
 
 pub(super) fn save(target: &Path, bytes: &[u8]) -> Result<(), String> {
+    save_with_policy(target, bytes, true)
+}
+pub(super) fn save_without_replacing(target: &Path, bytes: &[u8]) -> Result<(), String> {
+    save_with_policy(target, bytes, false)
+}
+fn save_with_policy(target: &Path, bytes: &[u8], replace: bool) -> Result<(), String> {
     let extension = target.extension().and_then(|e| e.to_str());
     if !extension.is_some_and(|e| FORMATS.contains(&e)) {
         return Err("Unsupported artwork extension".into());
@@ -58,6 +64,9 @@ pub(super) fn save(target: &Path, bytes: &[u8]) -> Result<(), String> {
         .map_err(|e| format!("Could not open artwork lock: {e}"))?;
     lock.lock()
         .map_err(|e| format!("Could not lock artwork: {e}"))?;
+    if !replace && FORMATS.iter().any(|ext| target.with_extension(ext).is_file()) {
+        return Ok(());
+    }
     let (temporary, mut file) = loop {
         let next = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
         let path = target.with_extension(format!("{}.{next}.tmp", std::process::id()));
@@ -101,6 +110,14 @@ mod tests {
     use std::process::{Child, Command};
     use std::time::{Duration, Instant};
 
+    #[test]
+    fn automatic_writer_keeps_a_newer_manual_format() {
+        let dir=tempfile::tempdir().unwrap();let manual=dir.path().join("game.png");
+        save(&manual,b"manual cover").unwrap();
+        save_without_replacing(&dir.path().join("game.jpg"),b"late automatic cover").unwrap();
+        assert_eq!(fs::read(&manual).unwrap(),b"manual cover");
+        assert!(!dir.path().join("game.jpg").exists());
+    }
     #[test]
     fn concurrent_cover_operations_have_one_shared_memory_limit() {
         use std::sync::{atomic::AtomicUsize, Barrier};

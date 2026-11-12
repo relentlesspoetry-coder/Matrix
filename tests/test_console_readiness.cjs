@@ -19,6 +19,7 @@ test('green console status requires both emulator setup and real imported games'
   assert.equal(ready(),true,'emulator plus imported game is green');
   delete state.configs.ps2;
   assert.equal(ready(),false,'games without an emulator remain grey');
-  state.native=true;state.configs.ps2={launcher:'flatpak',flatpakId:'org.test.Emulator'};
+  state.native=true;state.readyProfiles.ps2=true;state.configs.ps2={launcher:'flatpak',flatpakId:'org.test.Emulator'};
   assert.equal(ready(),true,'Flatpak profiles count');
+  state.readyProfiles.ps2=false;assert.equal(ready(),false,'unavailable saved installation is grey');
 });
