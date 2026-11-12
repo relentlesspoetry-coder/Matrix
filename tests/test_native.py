@@ -80,7 +80,7 @@ def main():
         manifest.write_text('"AppState"\n{\n"appid" "12345"\n"name" "Native Steam Fixture"\n}\n')
         launcher = '#!/bin/sh\nprintf "%s\\n" "$@" > "$MATRIX_NATIVE_TEST_LAUNCH_LOG"\n'
         launcher += 'printf "%s" "$XDG_CACHE_HOME" > "$MATRIX_NATIVE_TEST_CACHE_LOG"\n'
-        for target in [library/'PS2/TestEmulator.AppImage', home/'bin/steam', home/'bin/gio']:
+        for target in [library/'PS2/TestEmulator.sh', home/'bin/steam', home/'bin/gio']:
             target.write_text(launcher)
             target.chmod(0o755)
         flatpak=home/'bin/flatpak'
@@ -290,7 +290,7 @@ def main():
                     .catch(error=>window.__olderSave={done:true,error:String(error)});""",slow_profile)
                 wait_for(lambda: inventory_started.exists(),timeout=5)
                 fast_profile={'id':'ps2','emulatorName':'Newer executable choice',
-                    'emulatorPath':str(library/'PS2/TestEmulator.AppImage'),
+                    'emulatorPath':str(library/'PS2/TestEmulator.sh'),
                     'launchArgs':['{game}'],'launcher':'executable'}
                 invoke('save_emulator',fast_profile)
                 assert not js('return window.__olderSave.done'), 'Older inventory must still be waiting'
@@ -757,7 +757,7 @@ def main():
             invoke('save_artwork_settings', {'enabled':False,'style':'3d'})
             boot=invoke('bootstrap')
             assert boot['artwork'] == {'enabled':False,'style':'3d','titleEnabled':False}
-            assert boot['profiles']['ps2']['emulatorPath'].endswith('TestEmulator.AppImage')
+            assert boot['profiles']['ps2']['emulatorPath'].endswith('TestEmulator.sh')
             assert boot['favorites']['ps2']==[str(ps2game)]
             apps=invoke('list_flatpaks')
             assert {a['installation'] for a in apps}=={'user','system'}
