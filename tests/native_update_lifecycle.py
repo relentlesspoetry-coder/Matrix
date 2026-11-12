@@ -194,6 +194,7 @@ def _exercise(binary, env, home, invoke, js, wait_for, coordinator_tests):
     saved = (home/'config/matrix/frontend.json').read_bytes()
     game_bytes = game.read_bytes()
     covers = {p.relative_to(home):p.read_bytes() for p in (home/'.local/share/matrix/covers').rglob('*') if p.is_file()}
+    covers.update({p.relative_to(home):p.read_bytes() for folder in (home/'Games').glob('*/*/Covers') for p in folder.rglob('*') if p.is_file()})
     second_log = (home/'second-matrix.log').open('w+')
     second = subprocess.Popen([str(binary)], env=env, cwd=home, stdout=second_log, stderr=subprocess.STDOUT)
     # Reproduce the user's blocked update: an unrelated same-user application

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.3
+
+- Create a Covers folder beside the games folder for all 24 consoles, including existing installations. Save new cover imports and downloaded cover images in the matching console folder.
+- Recognize manually placed covers whose filenames match the game filename. Preserve old imports, sidecar covers and downloads, keeping shared provider rate limits and offline cache behavior.
+
 ## 0.6.2
 
 - Replace console artwork across all 24 libraries with the newly approved console icons, including NES, SNES, Genesis, Saturn, Xbox and Xbox 360.

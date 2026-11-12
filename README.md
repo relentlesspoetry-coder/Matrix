@@ -25,6 +25,19 @@ chmod +x Matrix-Play_0.6.2_amd64.AppImage
 
 For future releases, open **Settings → Check for updates**.
 
+## Console covers
+
+Every console folder contains its game folder and a `Covers` folder. Existing installations receive missing folders automatically at startup. For example:
+
+- `~/Games/Matrix/PS2/PS2 Games/`
+- `~/Games/Matrix/PS2/Covers/`
+
+New installations use `~/Games/Matrix Play/`; existing `~/Games/Matrix/` libraries stay in place.
+
+Place manual covers in the console's `Covers` folder with the same filename stem as the game: `Example Game.iso` uses `Example Game.png`, `.jpg`, `.jpeg` or `.webp`. Matching is case sensitive for the game name. This also works for games in registered external folders. Games sharing the same filename stem in one console share that manually named cover; use the in-app cover importer to assign separate covers.
+
+In-app imports and automatic downloads save their images directly in that console's `Covers` folder using managed filenames to preserve game identity and cover styles. Existing imported covers, sidecar images and downloaded caches remain readable; reusing an old download copies it to the new folder without deleting the original. Manual artwork takes priority over downloads.
+
 ## Features
 
 - 24 console libraries, plus separate Steam and Windows collections.

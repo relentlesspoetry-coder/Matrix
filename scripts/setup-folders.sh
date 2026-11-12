@@ -9,7 +9,7 @@ else
   root="$HOME/Games/Matrix Play"
 fi
 while IFS='|' read -r console library; do
-  mkdir -p -- "$root/$console/$library"
+  mkdir -p -- "$root/$console/$library" "$root/$console/Covers"
 done <<'LIBRARIES'
 Switch|Switch Games
 PS1|PS1 Games

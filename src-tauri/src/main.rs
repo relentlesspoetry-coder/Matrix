@@ -308,6 +308,10 @@ fn games_dir(id: &str) -> Result<PathBuf, String> {
     Ok(matrix_root()?.join(s.dir).join(s.games))
 }
 
+fn console_covers_dir(id: &str) -> Result<PathBuf, String> {
+    Ok(matrix_root()?.join(spec(id)?.dir).join("Covers"))
+}
+
 fn custom_emulator_only(id: &str) -> bool {
     matches!(id, "ps5" | "switch2" | "xbox360")
 }
@@ -429,6 +433,9 @@ fn create_layout() -> Result<(), String> {
     for s in SPECS {
         let path = matrix_root()?.join(s.dir).join(s.games);
         fs::create_dir_all(&path).map_err(|e| format!("Cannot create {}: {e}", path.display()))?;
+        let covers = console_covers_dir(s.id)?;
+        fs::create_dir_all(&covers)
+            .map_err(|e| format!("Cannot create {}: {e}", covers.display()))?;
     }
     Ok(())
 }
@@ -1290,6 +1297,14 @@ fn validate_game(kind: &str, uid: &str) -> Result<Game, String> {
 }
 
 fn stored_cover_path(kind: &str, uid: &str, extension: &str) -> Result<PathBuf, String> {
+    if spec(kind).is_ok() {
+        return Ok(console_covers_dir(kind)?
+            .join(format!("{}.{}", cover_key(kind, uid), extension)));
+    }
+    legacy_stored_cover_path(kind, uid, extension)
+}
+
+fn legacy_stored_cover_path(kind: &str, uid: &str, extension: &str) -> Result<PathBuf, String> {
     Ok(artwork_root()?
         .join(kind)
         .join(format!("{}.{}", cover_key(kind, uid), extension)))
@@ -1348,6 +1363,17 @@ fn read_local_cover_bytes(kind: &str, uid: &str, game: &Game) -> Result<Option<V
     for extension in ["png", "jpg", "webp"] {
         candidates.push(stored_cover_path(kind, uid, extension)?);
     }
+    if spec(kind).is_ok() {
+        if let Some(stem) = Path::new(&game.path).file_stem().and_then(|s| s.to_str()) {
+            for extension in ["png", "jpg", "jpeg", "webp", "PNG", "JPG", "JPEG", "WEBP"] {
+                candidates.push(console_covers_dir(kind)?.join(format!("{stem}.{extension}")));
+            }
+        }
+        // Keep pre-upgrade imports readable without moving or deleting them.
+        for extension in ["png", "jpg", "webp"] {
+            candidates.push(legacy_stored_cover_path(kind, uid, extension)?);
+        }
+    }
     candidates.extend(candidate_cover_paths(game));
     for candidate in candidates {
         let Ok(meta) = fs::metadata(&candidate) else {
@@ -1371,12 +1397,17 @@ fn read_cover_bytes(kind: &str, uid: &str, game: &Game) -> Result<Option<Vec<u8>
         return Ok(Some(bytes));
     }
     let settings = load_settings()?;
-    if let Some(path) = matrix_cover_core::cached_cover(
-        &artwork_root()?.join("online"),
-        kind,
-        Path::new(&game.path),
-        &settings.artwork.style,
-    ) {
+    let cache = artwork_root()?.join("online");
+    let mut downloaded = Vec::new();
+    if spec(kind).is_ok() {
+        downloaded.extend(matrix_cover_core::cached_cover_in(
+            &cache, &console_covers_dir(kind)?, kind, Path::new(&game.path), &settings.artwork.style,
+        ));
+    }
+    downloaded.extend(matrix_cover_core::cached_cover(
+        &cache, kind, Path::new(&game.path), &settings.artwork.style,
+    ));
+    for path in downloaded {
         if let Ok(meta) = fs::metadata(&path) {
             if meta.len() <= MAX_COVER_BYTES as u64 {
                 let bytes = fs::read(path).map_err(|e| e.to_string())?;
@@ -1444,8 +1475,9 @@ fn download_cover_impl(
             ..Default::default()
         });
     }
-    matrix_cover_core::fetch(
+    matrix_cover_core::fetch_into(
         &artwork_root()?.join("online"),
+        &console_covers_dir(&kind)?,
         &kind,
         Path::new(&game.path),
         &settings.artwork.style,
@@ -2177,6 +2209,12 @@ mod tests {
         std::env::set_var("XDG_DATA_HOME", temp.path().join("data"));
         create_layout().unwrap();
         assert_eq!(SPECS.len(), 24);
+        for s in SPECS {
+            let covers = console_covers_dir(s.id).unwrap();
+            let games = games_dir(s.id).unwrap();
+            assert!(covers.is_dir());
+            assert_eq!(covers.parent(), games.parent());
+        }
         let root = games_dir("ps2").unwrap();
         let path = root.join("SLUS-20312.chd");
         fs::write(&path, b"synthetic fixture").unwrap();
@@ -2347,6 +2385,27 @@ mod tests {
         );
         assert!(save_artwork_settings(true, "bad-style".into(), None).is_err());
         let bytes = include_bytes!("../../tests/fixtures/demo-cover.png").to_vec();
+        let game = validate_game("ps2", &uid).unwrap();
+        let covers = console_covers_dir("ps2").unwrap();
+        let named = covers.join("SLUS-20312.PNG");
+        fs::write(&named, &bytes).unwrap();
+        assert_eq!(read_local_cover_bytes("ps2", &uid, &game).unwrap(), Some(bytes.clone()));
+        assert!(scan_console_impl("ps2").unwrap().iter().all(|g| !Path::new(&g.path).starts_with(&covers)));
+        fs::remove_file(&named).unwrap();
+        let legacy = legacy_stored_cover_path("ps2", &uid, "png").unwrap();
+        fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        fs::write(&legacy, &bytes).unwrap();
+        assert_eq!(read_local_cover_bytes("ps2", &uid, &game).unwrap(), Some(bytes.clone()));
+        let mut replacement = bytes.clone();
+        replacement.extend(b"replacement");
+        save_cover("ps2".into(), uid.clone(), replacement.clone()).unwrap();
+        let saved = stored_cover_path("ps2", &uid, "png").unwrap();
+        assert_eq!(saved.parent(), Some(covers.as_path()));
+        assert_eq!(read_local_cover_bytes("ps2", &uid, &game).unwrap(), Some(replacement));
+        assert_eq!(fs::read(&legacy).unwrap(), bytes);
+        fs::remove_file(saved).unwrap();
+        fs::remove_file(legacy).unwrap();
+        create_layout().unwrap();
         // A generic image in the shared library must not label every game.
         fs::write(root.join("cover.png"), &bytes).unwrap();
         assert!(get_cover("ps2".into(), uid.clone()).unwrap().is_none());

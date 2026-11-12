@@ -259,6 +259,11 @@ fn valid_identity<'a>(index: &'a Index, kind: &str, path: &Path) -> Option<&'a I
 }
 /// Lookup only: never performs networking, even while online artwork is disabled.
 pub fn cached_cover(root: &Path, kind: &str, path: &Path, style: &str) -> Option<PathBuf> {
+    cached_cover_in(root, root, kind, path, style)
+}
+
+/// Use the shared identity index while keeping images in a console's Covers folder.
+pub fn cached_cover_in(root: &Path, images: &Path, kind: &str, path: &Path, style: &str) -> Option<PathBuf> {
     let kind = title::platform(kind, path).ok()?;
     let style = effective_style(kind, style);
     let index = load(root).ok()?;
@@ -270,7 +275,7 @@ pub fn cached_cover(root: &Path, kind: &str, path: &Path, style: &str) -> Option
     if !["png", "jpg", "webp"].contains(&ext) {
         return None;
     }
-    let path = image_path(root, &key, ext);
+    let path = image_path(images, &key, ext);
     if path.is_file() {
         Some(path)
     } else {
@@ -292,6 +297,19 @@ fn effective_style<'a>(kind: &str, style: &'a str) -> &'a str {
 
 pub fn fetch(
     root: &Path,
+    kind: &str,
+    path: &Path,
+    style: &str,
+    confirmed: Option<&str>,
+    transport: &mut impl Transport,
+) -> Result<Outcome, String> {
+    fetch_into(root, root, kind, path, style, confirmed, transport)
+}
+
+/// Keep provider throttling, locks and identity metadata shared across consoles.
+pub fn fetch_into(
+    root: &Path,
+    images: &Path,
     kind: &str,
     path: &Path,
     style: &str,
@@ -363,8 +381,16 @@ pub fn fetch(
     let key = entry_key(kind, &serial, style);
     if let Some(cached) = index.entries.get(&key) {
         if let Some(ext) = &cached.extension {
-            if ["png", "jpg", "webp"].contains(&ext.as_str())
+            // Reuse a verified pre-upgrade download without another network request.
+            if ["png", "jpg", "webp"].contains(&ext.as_str()) && images != root
+                && !valid_cached_image(&image_path(images, &key, ext))
                 && valid_cached_image(&image_path(root, &key, ext))
+            {
+                let bytes = fs::read(image_path(root, &key, ext)).map_err(|e| e.to_string())?;
+                atomic(&image_path(images, &key, ext), &bytes)?;
+            }
+            if ["png", "jpg", "webp"].contains(&ext.as_str())
+                && valid_cached_image(&image_path(images, &key, ext))
             {
                 let outcome = Outcome {
                     status: "cached".into(),
@@ -419,7 +445,7 @@ pub fn fetch(
     match response {
         Ok(reply) if reply.status == 200 => match validate_image(&reply.bytes) {
             Ok(ext) => {
-                atomic(&image_path(root, &key, ext), &reply.bytes)?;
+                atomic(&image_path(images, &key, ext), &reply.bytes)?;
                 extension = Some(ext.into());
                 retry_at = 0;
             }
@@ -511,6 +537,40 @@ mod tests {
         let mut index = load(root).unwrap();
         index.next_request = 0;
         save(root, &index).unwrap();
+    }
+    #[test]
+    fn console_cover_images_use_separate_folders_with_shared_throttling() {
+        let tmp = tempfile::tempdir().unwrap();
+        let index = tmp.path().join("shared-index");
+        let covers = tmp.path().join("PS2/Covers");
+        let path = game(tmp.path(), "Game [SLUS-20312].chd");
+        let mut http = fake(200);
+        assert_eq!(fetch_into(&index, &covers, "ps2", &path, "default", None, &mut http).unwrap().status, "downloaded");
+        let image = cached_cover_in(&index, &covers, "ps2", &path, "default").unwrap();
+        assert_eq!(image.parent(), Some(covers.as_path()));
+        assert_eq!(fs::read(image).unwrap(), include_bytes!("../../tests/fixtures/demo-cover.png"));
+        assert!(cached_cover(&index, "ps2", &path, "default").is_none());
+        assert!(cached_cover_in(&index, &tmp.path().join("PS1/Covers"), "ps1", &path, "default").is_none());
+        assert!(load(&index).unwrap().next_request > 0);
+        assert_eq!(fetch_into(&index, &covers, "ps2", &path, "default", None, &mut http).unwrap().status, "cached");
+        assert_eq!(http.urls.len(), 1);
+        assert!(!covers.join("index.json").exists());
+    }
+
+    #[test]
+    fn legacy_download_is_copied_to_console_covers_without_network_or_deletion() {
+        let tmp = tempfile::tempdir().unwrap();
+        let index = tmp.path().join("legacy");
+        let covers = tmp.path().join("PS2/Covers");
+        let path = game(tmp.path(), "Game [SLUS-20312].chd");
+        let mut http = fake(200);
+        fetch(&index, "ps2", &path, "default", None, &mut http).unwrap();
+        let original = cached_cover(&index, "ps2", &path, "default").unwrap();
+        assert_eq!(fetch_into(&index, &covers, "ps2", &path, "default", None, &mut http).unwrap().status, "cached");
+        let migrated = cached_cover_in(&index, &covers, "ps2", &path, "default").unwrap();
+        assert_eq!(fs::read(&original).unwrap(), fs::read(&migrated).unwrap());
+        assert!(original.is_file());
+        assert_eq!(http.urls.len(), 1);
     }
     #[test]
     fn title_catalogs_are_explicit_and_separate() {
