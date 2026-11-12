@@ -123,6 +123,52 @@ pub(crate) async fn library_snapshot() -> Result<Snapshot, String> {
         .await
         .map_err(|e| e.to_string())?
 }
+pub(crate) fn offline_cover(id: &str, uid: &str) -> Result<Option<String>, String> {
+    use std::io::Read;
+    spec(id)?;
+    let settings = load_settings()?;
+    let game = settings
+        .library_index
+        .get(id)
+        .into_iter()
+        .flatten()
+        .find(|g| g.uid == uid)
+        .ok_or("Game is not in the library index")?;
+    if !libraries::folders(id)?
+        .iter()
+        .any(|f| !f.available && Path::new(&game.path).starts_with(&f.path))
+    {
+        return Err("Game is not on a registered offline drive".into());
+    }
+    let mut paths = console_cover_candidates(id, uid)?;
+    for ext in ["png", "jpg", "webp"] {
+        paths.push(legacy_stored_cover_path(id, uid, ext)?);
+    }
+    for path in paths {
+        let Ok(file) = fs::File::open(path) else {
+            continue;
+        };
+        if !file
+            .metadata()
+            .is_ok_and(|m| m.is_file() && m.len() <= MAX_COVER_BYTES as u64)
+        {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        if file
+            .take(MAX_COVER_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .is_err()
+            || bytes.len() > MAX_COVER_BYTES
+        {
+            continue;
+        }
+        if let Some((_, mime)) = cover_format(&bytes) {
+            return Ok(Some(format!("data:{mime};base64,{}", BASE64.encode(bytes))));
+        }
+    }
+    Ok(None)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,8 +223,15 @@ mod tests {
             .iter()
             .any(|g| g.path == game.to_str().unwrap()));
         let unplugged = external.with_extension("unplugged");
+        let png = include_bytes!("../../tests/fixtures/demo-cover.png");
+        let uid = game.to_str().unwrap();
+        save_cover("ps2".into(), uid.into(), png.to_vec()).unwrap();
         fs::rename(&external, &unplugged).unwrap();
         let offline = snapshot_impl().unwrap();
+        assert!(get_cover("ps2".into(), uid.into())
+            .unwrap()
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
         assert!(offline.folders["ps2"]
             .iter()
             .any(|f| !f.managed && !f.available));
