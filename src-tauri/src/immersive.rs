@@ -53,13 +53,13 @@ pub(crate) fn validate_profile_paths(
 /// or applying gameplay-only fullscreen/headless options. Do not call game_args:
 /// its injected options deliberately hide the configuration interface.
 pub(crate) fn setup_args(profile: &EmulatorProfile, console: &str) -> Vec<String> {
+    let engine = discovery::identity(profile, console).unwrap_or("");
     // A custom PS5/Switch 2 command has no verified setup CLI. Game arguments
     // may include arbitrary option/value pairs, so never guess which to retain.
     // Open the chosen program with no arguments; explain this in setup.
-    if custom_emulator_only(console) {
+    if custom_emulator_only(console) && engine != "Lichii" {
         return Vec::new();
     }
-    let engine = discovery::identity(profile, console).unwrap_or("");
     // Mednafen is configured through its own files/hotkeys. Do not pass a game
     // or module on an "Open emulator" request; xemu keeps its normal setup UI.
 
@@ -106,7 +106,7 @@ pub(crate) fn setup_args(profile: &EmulatorProfile, console: &str) -> Vec<String
         ),
         "Dolphin" => (&["-b", "--batch"], &["-e", "--exec", "-n", "--nand_title"]),
         "Cemu" => (&["-f", "--fullscreen"], &["-g"]),
-        "Eden" => (&["-f", "--fullscreen"], &["-g", "--game"]),
+        "Eden" | "Lichii" => (&["-f", "--fullscreen"], &["-g", "--game"]),
         "SameBoy" | "mGBA" | "melonDS" | "Ryujinx" | "Azahar" => {
             (&["-f", "--fullscreen", "--windowed"], &[])
         }
@@ -153,7 +153,7 @@ pub(crate) fn setup_args(profile: &EmulatorProfile, console: &str) -> Vec<String
         // happens to look like an option. These select the settings being edited.
         if matches!(
             arg.as_str(),
-            "-datapath" | "--config" | "--configdir" | "--config-dir" | "--user" | "-u"
+            "-datapath" | "--config" | "-c" | "--configdir" | "--config-dir" | "--user" | "-u"
         ) {
             result.push(arg.clone());
             if let Some(value) = args.next() {
@@ -234,7 +234,7 @@ pub(crate) fn game_args(profile: &EmulatorProfile, console: &str) -> Vec<String>
             &["-f", "--fullscreen", "--windowed"],
             &[],
         ),
-        "Eden" => (&["-f"], &["-f", "--fullscreen"], &[]),
+        "Eden" | "Lichii" => (&["-f"], &["-f", "--fullscreen"], &[]),
         "Vita3K" => (
             &["--frontend", "sdl", "--fullscreen", "--keep-config"],
             &["--fullscreen", "-F", "--keep-config", "-w"],
@@ -291,7 +291,7 @@ pub(crate) fn game_args(profile: &EmulatorProfile, console: &str) -> Vec<String>
             kept.insert(index, "-e".into());
         }
     }
-    if engine == "Eden" && !kept.iter().any(|s| s == "-g" || s == "--game") {
+    if matches!(engine, "Eden" | "Lichii") && !kept.iter().any(|s| s == "-g" || s == "--game") {
         let index = kept
             .iter()
             .position(|s| s == "{game}")
@@ -354,6 +354,17 @@ fn shad_launcher(mut args: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn lichii_switch2_gets_fullscreen_without_touching_custom_or_original_switch() {
+        for file in ["/tmp/Lichii-nx2.AppImage", "/tmp/Fritchii-130.AppImage"] {
+            let p = profile(file, &["--config", "/tmp/user config", "{game}"]);
+            assert_eq!(game_args(&p,"switch2"), ["-f","--config","/tmp/user config","-g","{game}"]);
+            assert_eq!(setup_args(&p,"switch2"),["--config","/tmp/user config"]);
+            assert_eq!(game_args(&p,"switch"),p.launch_args);
+        }
+        let custom=profile("/tmp/CustomSwitch2.AppImage",&["--own","{game}"]);
+        assert_eq!(game_args(&custom,"switch2"),custom.launch_args);
+    }
     fn profile(path: &str, args: &[&str]) -> EmulatorProfile {
         EmulatorProfile {
             emulator_path: path.into(),

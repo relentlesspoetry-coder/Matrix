@@ -193,6 +193,35 @@ def main():
             session=result['sessionId']
             request('POST', f'/session/{session}/timeouts', {'script':60000})
             wait_for(lambda: js('return document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelectorAll(".console-card").length === 24'))
+            wait_for(lambda: js('return state.nativeInitialized === true'))
+            wait_for(lambda: js('return Boolean(document.querySelector(".emulator-import-dialog"))'))
+            assert js('return document.querySelectorAll("#import-console option").length') == 25
+            if not cfg.shutdown_only:
+                incoming=home/'Flycast-onboarding.sh'
+                incoming.write_text(launcher);incoming.chmod(0o700)
+                js('document.querySelector("#import-console").value="dreamcast";document.querySelector("#import-console").dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#import-path").value=arguments[0]',str(incoming))
+                click('[data-action="import-emulator-save"]')
+                wait_for(lambda: js('return document.querySelector("#import-status")?.textContent.includes("configured")'))
+                managed=library/'Dreamcast/Flycast-onboarding.sh'
+                assert not incoming.exists() and managed.read_text()==launcher
+                assert invoke('bootstrap')['profiles']['dreamcast']['emulatorPath']==str(managed)
+            click('[data-action="emulator-setup-done"]')
+            wait_for(lambda: js('return state.overlay === null && state.libraryPrefs.setupCompleted === true'))
+            assert invoke('bootstrap')['libraryPreferences']['hideUnconfigured'] is True
+            assert js('return !document.querySelector(".console-card[data-id=nes]")')
+            if not cfg.shutdown_only:
+                assert js('return Boolean(document.querySelector(".console-card[data-id=dreamcast]"))'), 'Configured empty consoles stay visible'
+                assert not js('return Boolean(document.querySelector(".console-card[data-id=dreamcast] .connection-dot.ready"))')
+                dropped=library/'Nintendo NES/mednafen-folder.sh';dropped.write_text(launcher);dropped.chmod(0o700)
+                added_game=library/'Nintendo NES/Nintendo NES Games/Detected.nes';added_game.write_bytes(b'Synthetic non-playable game')
+                js('void refreshManagedAndGames()')
+                wait_for(lambda: js('return state.readyProfiles.nes === true && state.imported.nes?.length === 1'))
+                assert js('return Boolean(document.querySelector(".console-card[data-id=nes] .connection-dot.ready"))')
+                screenshot('matrix-linux-emulator-onboarding.png')
+            # Other regression cases intentionally exercise all 24 libraries.
+            prefs=invoke('set_library_preference',{'section':'hideUnconfigured','key':'','value':False})
+            js('state.libraryPrefs=arguments[0];render()',prefs)
+            assert js('return document.querySelectorAll(".console-card").length') == 24
             assert len([p for p in library.iterdir() if p.is_dir()]) == 24
             assert js('return document.title').startswith('Matrix-Play')
             if cfg.shutdown_only:
@@ -424,6 +453,21 @@ def main():
             prefs=invoke('set_library_preference',{'section':'grouping','key':'','value':False})
             js('state.libraryPrefs=arguments[0];renderConsole()',prefs)
             screenshot('matrix-linux-switch2-extracted-library.png')
+            # Real native import and dispatch through the recognized Lichii
+            # adapter. This harmless shell fixture is not a real emulator/game.
+            saved_switch2=invoke('bootstrap')['profiles']['switch2']
+            lichii=home/'Lichii-nx2-fixture.sh';lichii.write_text(launcher);lichii.chmod(0o700)
+            added=invoke('import_emulator',{'id':'switch2','path':str(lichii)})
+            assert added['moved'] and not lichii.exists()
+            lichii_boot=extracted[0][0]
+            log.unlink(missing_ok=True)
+            invoke('launch_console_game',{'id':'switch2','uid':lichii_boot})
+            wait_for(lambda: log.exists() and log.read_text().splitlines()==['-f','-g',lichii_boot])
+            log.unlink()
+            invoke('open_emulator',{'id':'switch2'})
+            wait_for(lambda: log.exists() and log.read_text()=='')
+            invoke('save_emulator',{'id':'switch2',**saved_switch2})
+            print('PASS: recognized Lichii managed import and exact fullscreen game argv, with plain Open emulator (synthetic launcher only)')
             print('PASS: extracted Switch 2 base/update names, exact native launch argv, local covers and refreshed library; synthetic fixtures only')
             click('[data-action="home"]')
 

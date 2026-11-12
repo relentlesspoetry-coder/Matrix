@@ -1,5 +1,9 @@
 # Console game launch presets — checked 2026-11-05
 
+Version 0.6.14 adds recognized Lichii/Fritchii file launchers for Switch 2. Their documented `-f -g {game}` preset is applied on game launches, including existing profiles identified by filename; configuration options are retained. Open emulator removes game/fullscreen flags. Unknown custom engines retain their literal arguments. No real Lichii game compatibility or fullscreen rendering is certified by argv fixture tests.
+
+First-launch setup and Add emulator can move portable files into the chosen console folder and create profiles. Folder polling detects new emulators and games every 30 seconds while idle. Existing working manual selections are retained; files deliberately placed in experimental-console folders may be linked, without borrowing the original Switch/PS4 engines. The following dated notes describe earlier versions.
+
 Matrix Play v0.5.6 identifies a known engine by its exact Flatpak ID or an anchored executable/AppImage basename, restricted to that engine's console capabilities. A user-editable emulator display name is never enough. Game launches add the options below; Open emulator sends none of these game-only arguments. Emulator versions, setup/firmware requirements, errors and in-game overlays can still affect what is displayed. Matrix Play does not edit emulator configuration files to force fullscreen.
 
 Custom/unknown launchers keep their advanced literal argv. They need their own documented fullscreen/menu-hiding options. Steam and Windows retain their existing launch behavior; those games/runners control fullscreen themselves.

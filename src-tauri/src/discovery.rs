@@ -9,6 +9,7 @@ struct Engine {
     consoles: &'static [&'static str],
 }
 const ENGINES: &[Engine] = &[
+    Engine { name: "Lichii", flatpak: "", prefixes: &["lichii", "fritchii"], consoles: &["switch2"] },
     Engine { name: "Mednafen", flatpak: "", prefixes: &["mednafen"], consoles: &["nes", "snes", "genesis", "saturn"] },
     Engine { name: "xemu", flatpak: "app.xemu.xemu", prefixes: &["xemu"], consoles: &["xbox"] },
 
@@ -146,6 +147,9 @@ fn engine_for_name(name: &str) -> Option<&'static Engine> {
         })
     })
 }
+pub(crate) fn supports_filename(name: &str, id: &str) -> bool {
+    engine_for_name(name).is_some_and(|e|e.consoles.contains(&id))
+}
 pub(crate) fn identity(profile: &EmulatorProfile, console: &str) -> Option<&'static str> {
     let engine = if profile.launcher == Launcher::Flatpak {
         ENGINES
@@ -165,6 +169,40 @@ fn args(engine: &Engine, id: &str) -> Vec<String> {
     } else {
         default_args(id)
     }
+}
+pub(crate) fn profile_for_file(id: &str, path: &Path) -> Result<EmulatorProfile, String> {
+    spec(id)?;
+    let name = path.file_name().and_then(|n| n.to_str()).ok_or("Invalid emulator filename")?;
+    let engine = engine_for_name(name);
+    if engine.is_some_and(|e| !e.consoles.contains(&id)) {
+        return Err("This emulator belongs to a different console. Choose its supported console.".into());
+    }
+    Ok(EmulatorProfile {
+        emulator_name: engine.map(|e| e.name).unwrap_or(name).into(),
+        emulator_path: actionable_path(path)?,
+        launcher: if appimage(path) { Launcher::Appimage } else { Launcher::Executable },
+        launch_args: engine.map(|e| args(e, id)).unwrap_or_else(|| default_args(id)),
+        ..Default::default()
+    })
+}
+
+/// Frequent polling inspects only the managed console folders, not Downloads.
+pub(crate) fn discover_managed() -> Result<Report, String> {
+    let mut report = Report::default();
+    report.flatpak_inventory = emulators::list_flatpaks().ok();
+    let mut map = BTreeMap::new();
+    for s in SPECS {
+        // Read-only visibility for downloaded AppImages without execute permission.
+        for entry in fs::read_dir(matrix_root()?.join(s.dir)).into_iter().flatten().flatten().take(100) {
+            if entry.path().is_file() { add_image(&mut map, &entry.path()); }
+        }
+        for path in detect_emulators(s) {
+            add_image(&mut map, &path);
+            add_native(&mut map, s, path);
+        }
+    }
+    report.candidates = map.into_values().collect();
+    Ok(report)
 }
 fn appimage(path: &Path) -> bool {
     use std::io::Read;
@@ -328,10 +366,8 @@ fn confirmed_unavailable(profile: &EmulatorProfile, report: &Report) -> bool {
 
 pub(crate) fn auto_link(settings: &mut Settings, report: &mut Report) {
     for spec in SPECS {
-        // Experimental successor platforms require an explicit manual choice.
-        if custom_emulator_only(spec.id) {
-            continue;
-        }
+        // Successor consoles only receive candidates whose engine explicitly
+        // supports them, or files deliberately placed in that console folder.
         // Manual choices win. Replace a missing auto-link only when a single
         // ready replacement exists; never change a working selected install.
         if let Some(profile) = settings.profiles.get(spec.id) {
@@ -356,7 +392,10 @@ pub(crate) fn auto_link(settings: &mut Settings, report: &mut Report) {
         let choices: Vec<_> = report
             .candidates
             .iter()
-            .filter(|c| c.ready && c.console_ids.iter().any(|id| id == spec.id))
+            .filter(|c| c.ready && c.console_ids.iter().any(|id| id == spec.id)
+                && (!custom_emulator_only(spec.id)
+                    || identity(&c.profile, spec.id) == Some("Lichii")
+                    || matrix_root().is_ok_and(|root| Path::new(&c.profile.emulator_path).starts_with(root.join(spec.dir)))))
             .collect();
         if choices.len() == 1 {
             let mut profile = choices[0].profile.clone();
@@ -389,7 +428,7 @@ fn add_native(map: &mut BTreeMap<String, Candidate>, spec: &ConsoleSpec, path: P
     let image_ext = path
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("appimage"));
-    if image_ext && known.is_some() && !appimage(&path) {
+    if image_ext && !appimage(&path) {
         return;
     }
     let path = path.canonicalize().unwrap_or(path);
@@ -484,9 +523,6 @@ pub(crate) fn discover() -> Result<Report, String> {
         }
     }
     for spec in SPECS {
-        if custom_emulator_only(spec.id) {
-            continue;
-        }
         let dir = matrix_root()?.join(spec.dir);
         for entry in fs::read_dir(&dir).into_iter().flatten().flatten().take(100) {
             if entry.path().is_file() {

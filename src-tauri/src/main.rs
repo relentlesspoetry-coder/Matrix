@@ -16,6 +16,7 @@ mod desktop_commands;
 mod console_library_tests;
 mod discovery;
 mod emulators;
+mod emulator_import;
 mod favorites;
 mod immersive;
 mod installed_titles;
@@ -243,6 +244,7 @@ struct Settings {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Bootstrap {
+    needs_emulator_setup: bool,
     library_preferences: library_features::Preferences,
     recent: Vec<library_tools::Recent>,
     ready_profiles: BTreeMap<String,bool>,
@@ -372,6 +374,7 @@ fn detect_emulators_in(s: &ConsoleSpec, dir: &Path) -> Vec<PathBuf> {
         let name = name.to_lowercase();
         let recognized = name.ends_with(".appimage")
             || name.ends_with(".sh")
+            || discovery::supports_filename(&name, s.id)
             || name.contains(&guessed_emulator(s.id).to_lowercase().replace(' ', ""));
         if !recognized {
             continue;
@@ -457,11 +460,19 @@ fn update_settings<T>(
 }
 
 fn bootstrap() -> Result<Bootstrap, String> {
+    bootstrap_inventory(false)
+}
+fn bootstrap_inventory(managed_only: bool) -> Result<Bootstrap, String> {
     create_layout()?;
     // Discovery may be slow. Merge its candidates into the latest settings only
     // after it finishes, so another window's saves and manual choices win.
-    let mut emulator_discovery = discovery::discover()?;
+    let mut emulator_discovery = if managed_only { discovery::discover_managed()? } else { discovery::discover()? };
     let settings = update_settings(|settings| {
+        // Existing configured users are migrated without interrupting startup.
+        if settings.library_preferences.setup_completed.is_none() && !settings.profiles.is_empty() {
+            settings.library_preferences.setup_completed = Some(true);
+            settings.library_preferences.hide_unconfigured = Some(true);
+        }
         discovery::auto_link(settings, &mut emulator_discovery);
         Ok(settings.clone())
     })?;
@@ -479,6 +490,7 @@ fn bootstrap() -> Result<Bootstrap, String> {
     }
     let ready_profiles=settings.profiles.iter().map(|(id,p)|(id.clone(),if p.launcher==emulators::Launcher::Flatpak {emulator_discovery.flatpak_inventory.as_ref().is_some_and(|apps|apps.iter().any(|a|a.app_id==p.flatpak_id&&a.installation==p.flatpak_installation))} else {emulators::executable_file(Path::new(&p.emulator_path))})).collect();
     Ok(Bootstrap {
+        needs_emulator_setup: settings.library_preferences.setup_completed != Some(true),
         library_preferences: settings.library_preferences,
         ready_profiles,
         recent: settings.recent.into_iter().filter(|r|spec(&r.kind).is_ok()).collect(),
@@ -1353,6 +1365,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             desktop_commands::bootstrap,
+            desktop_commands::refresh_managed_emulators,
+            desktop_commands::import_emulator,
             updates::update_status,
             updates::check_updates,
             updates::download_update,

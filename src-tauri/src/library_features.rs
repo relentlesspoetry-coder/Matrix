@@ -3,6 +3,8 @@ use super::*;
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct Preferences {
+    pub setup_completed: Option<bool>,
+    pub hide_unconfigured: Option<bool>,
     pub theme: Option<String>,
     pub ready_only: bool,
     pub hidden: Vec<String>,
@@ -44,6 +46,8 @@ pub(crate) fn set_library_preference(
                 p.theme = Some(theme.into());
             }
             "readyOnly" => p.ready_only = value.as_bool().ok_or("Invalid filter")?,
+            "setupCompleted" => p.setup_completed = Some(value.as_bool().ok_or("Invalid setup state")?),
+            "hideUnconfigured" => p.hide_unconfigured = Some(value.as_bool().ok_or("Invalid emulator filter")?),
             "autoRefresh" => {
                 p.auto_refresh = Some(value.as_bool().ok_or("Invalid refresh setting")?)
             }

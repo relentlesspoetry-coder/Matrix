@@ -13,17 +13,25 @@ Download the **DEB** or **AppImage** from [Releases](https://github.com/relentle
 For Zorin or Ubuntu, install the DEB from your download folder:
 
 ```bash
-sudo apt install ./Matrix-Play_0.6.13_amd64.deb
+sudo apt install ./Matrix-Play_0.6.14_amd64.deb
 ```
 
 For the portable AppImage:
 
 ```bash
-chmod +x Matrix-Play_0.6.13_amd64.AppImage
-./Matrix-Play_0.6.13_amd64.AppImage
+chmod +x Matrix-Play_0.6.14_amd64.AppImage
+./Matrix-Play_0.6.14_amd64.AppImage
 ```
 
 For future releases, open **Settings → Check for updates**.
+
+## Add emulators
+
+First launch opens emulator setup. Choose the console and a downloaded Linux AppImage or standalone executable, then select **Move file and set up**. Matrix Play moves it into that console's managed folder and configures its launcher. **Add emulator** remains available on the console menu and in Settings.
+
+Use **Link installed emulator** for Flatpaks, system-installed programs or emulator distributions that need adjacent resources; those remain in place. Firmware, BIOS, keys and game compatibility are configured in the emulator itself. Existing files are never overwritten by import.
+
+After setup, consoles without a working emulator are hidden. Configured consoles remain visible without games, and their dot turns green once games are present. To show all libraries, disable **Settings → Console visibility & order → Hide consoles without a working emulator**. Newly added emulators and games in managed folders are detected every 30 seconds while the interface is idle; Settings provides an opt-out.
 
 ## Console covers
 

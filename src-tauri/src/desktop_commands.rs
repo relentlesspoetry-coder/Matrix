@@ -14,6 +14,15 @@ async fn blocking<T: Send + 'static>(
 pub(crate) async fn bootstrap() -> Result<Bootstrap, String> {
     blocking(super::bootstrap).await
 }
+#[tauri::command]
+pub(crate) async fn refresh_managed_emulators() -> Result<Bootstrap, String> {
+    blocking(|| super::bootstrap_inventory(true)).await
+}
+#[tauri::command]
+pub(crate) async fn import_emulator(id: String, path: String) -> Result<super::emulator_import::Imported, String> {
+    let request = profile_saves::begin()?;
+    blocking(move || super::emulator_import::import(request, &id, &path)).await
+}
 
 #[tauri::command]
 pub(crate) async fn scan_console(id: String) -> Result<Vec<Game>, String> {

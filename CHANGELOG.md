@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.14
+
+- Add first-launch emulator setup and Add emulator buttons on the console menu and in Settings. Choose a console and a portable Linux emulator; Matrix Play moves it into that console's managed folder, allows a valid AppImage to run, and saves the matching launcher profile without executing it.
+- Keep original files until the copy and settings are durable; reject filename collisions, symlink sources, system-installed files, invalid downloads and wrong-console matches. Preserve launch/configuration options when re-adding the same emulator engine. Installed Flatpaks and dependent executable distributions can still be linked in place.
+- Hide consoles without a working emulator after setup, while keeping configured empty consoles visible. Allow this filter to be changed in Settings, retain all 24 libraries, and keep green status limited to working emulators with games.
+- Detect newly added emulators and games in managed folders every 30 seconds while idle. Keep manual selections, refresh actual emulator readiness, and preserve Settings drafts and the refresh opt-out.
+- Recognize Lichii/Fritchii Switch 2 launchers and apply their documented fullscreen game arguments automatically. Keep configuration arguments for Open emulator and retain unknown custom launchers' literal arguments.
+
 ## 0.6.13
 
 - Apply the approved larger, bold Sora typography across Arctic Current and White Frost Current: 40px page headings, bold navigation and game titles, larger controls, and clearer supporting text in Settings, dialogs and library tools.

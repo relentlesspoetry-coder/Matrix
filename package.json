@@ -1,6 +1,6 @@
 {
   "name": "matrix-linux-frontend",
-  "version": "0.6.13",
+  "version": "0.6.14",
   "private": true,
   "description": "Matrix Play Linux desktop build tools",
   "scripts": {

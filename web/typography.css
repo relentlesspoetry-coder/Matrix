@@ -90,3 +90,9 @@ html[data-theme="white-frost"] body .sidebar { height:auto; min-height:62px }
   html[data-theme="white-frost"] body .console-preview h2 { font-size:18px }
   html[data-theme="white-frost"] body .console-preview p { font-size:14px }
 }
+/* Managed emulator setup uses the same Sora controls and readable path text. */
+.emulator-import-dialog { width:min(760px,100%) }
+.emulator-import-dialog .field { margin-top:18px }
+.emulator-import-dialog .muted { margin-top:16px }
+#import-destination,#import-status { overflow-wrap:anywhere }
+#import-status { margin-top:18px }
