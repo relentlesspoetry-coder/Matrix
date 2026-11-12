@@ -17,7 +17,7 @@ pub(crate) struct Recent {
 pub(crate) fn record(game: &Game) -> Result<(), String> {
     update_settings(|s| {
         s.recent
-            .retain(|r| r.kind != game.kind || r.uid != game.uid);
+            .retain(|r| spec(&r.kind).is_ok() && (r.kind != game.kind || r.uid != game.uid));
         s.recent.insert(
             0,
             Recent {

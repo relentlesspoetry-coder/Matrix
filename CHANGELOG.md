@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.12
+
+- Make Matrix Play console-only: remove Steam and Windows game navigation, pages, registration forms, discovery, library management, cover scanning and native launch commands. Background refresh scans only console libraries.
+- Keep all 24 console libraries, both themes, favorites, launch settings, save backups, cover queues and SteamGridDB console artwork. Hide retired PC entries from recent launches and reject retired IPC commands.
+- Preserve installed games, desktop shortcuts, existing artwork and inactive legacy registration data during settings updates and backup/restore. Remove obsolete integration code and replace its tests with console-only navigation/IPC/scan checks.
+
 ## 0.6.11
 
 - Refine White Frost Current from native screenshots: enlarge console illustrations within each tile, strengthen the sticky selection bar and footer contrast, and keep theme-preview tiles within their thumbnail.

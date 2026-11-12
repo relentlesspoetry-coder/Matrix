@@ -14,6 +14,7 @@ for name in ['matrix-play-logo.png','matrix-play-icon.png']:
 APP = (WEB / 'app.js').read_text()
 for asset in (WEB/'assets/consoles').glob('*.webp'):
     APP = APP.replace('./assets/consoles/'+asset.name, 'data:image/webp;base64,'+base64.b64encode(asset.read_bytes()).decode())
+HTML = HTML.replace('<link rel="stylesheet" href="./themes.css">','<style>'+(WEB/'themes.css').read_text()+'</style>')
 HTML = HTML.replace('</body>', '<script>' + (WEB / 'startup.js').read_text() + '</script>' + '<script>' + (WEB / 'data.js').read_text() + '</script><script>' + APP + '</script><script>' + (WEB / 'gamepad.js').read_text() + '</script></body>')
 SCREENS = ROOT / 'screenshots'
 SCREENS.mkdir(exist_ok=True)
@@ -25,7 +26,6 @@ window.__failLaunch=false;window.__lastLaunch=null;
 window.__discovery={linked:[],ambiguous:[],notices:[],candidates:[{id:'flatpak|net.pcsx2.PCSX2|system',consoleIds:['ps2'],ready:true,source:'Flatpak (system)',profile:{emulatorName:'PCSX2',launcher:'flatpak',flatpakId:'net.pcsx2.PCSX2',flatpakInstallation:'system',launchArgs:['--','{game}']}}]};
 window.__artSaved = false;
 window.__artOptions={enabled:true,style:"default"};
-window.__windows = [{uid:'/games/My Windows Game.desktop',title:'My Windows Game',target:'/games/My Windows Game.desktop',runner:'desktop'}];
 window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   window.__calls.push([name,args]);
   const ids = ['switch','ps1','ps2','ps3','psp','n64','gamecube','dreamcast','wii','wiiu','gb','gba','nds','3ds','ps4','ps5','vita','switch2'];
@@ -34,13 +34,9 @@ window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   if(name==='download_update') return (window.__update={...window.__update,phase:'downloaded',message:'Verified update downloaded.'});
   if(name==='install_update') return (window.__update={...window.__update,phase:'installing',message:'Closing Matrix Play to install the update…'});
   if(name==='discover_emulators') return window.__discovery;
-  if(name==='bootstrap') return {emulatorDiscovery:window.__discovery,favorites:window.__favorites,favoritesMigrated:window.__migrated,artwork:window.__artOptions,root:'/home/example/Games/Matrix',folders:Object.fromEntries(ids.map(id=>[id,`/home/example/Games/Matrix/${id}/${id} Games`])),profiles:{ps2:{emulatorName:'PCSX2',emulatorPath:'/usr/bin/pcsx2',launchArgs:['{game}']}},windows:window.__windows};
+  if(name==='bootstrap') return {emulatorDiscovery:window.__discovery,favorites:window.__favorites,favoritesMigrated:window.__migrated,artwork:window.__artOptions,root:'/home/example/Games/Matrix',folders:Object.fromEntries(ids.map(id=>[id,`/home/example/Games/Matrix/${id}/${id} Games`])),profiles:{ps2:{emulatorName:'PCSX2',emulatorPath:'/usr/bin/pcsx2',launchArgs:['{game}']}}};
   if(name==='scan_console' && args.id==='ps5') return [{uid:'/collection/PS5/Collection.pkg',title:'PS5 Collection',path:'/collection/PS5/Collection.pkg',kind:'ps5'}];
   if(name==='scan_console') return args.id==='ps2' ? [{uid:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',title:'Test Game',path:'/home/example/Games/Matrix/PS2/PS2 Games/Test.iso',kind:'ps2'}] : [];
-  if(name==='scan_steam') return [{uid:'12345',title:'Test Steam Game',kind:'steam',appId:'12345'}];
-  if(name==='list_windows_games') return window.__windows;
-  if(name==='add_windows_game') { const row={uid:args.target,title:args.title,target:args.target,runner:args.runner};window.__windows.push(row);return row;}
-  if(name==='remove_windows_game'){window.__windows=window.__windows.filter(x=>x.uid!==args.uid);return;}
   if(name==='save_artwork_settings') {window.__artOptions={enabled:args.enabled,style:args.style};return window.__artOptions;}
   if(name==='download_cover') return args.serial ? {status:'downloaded',message:'Cover saved for offline use',serial:args.serial,source:'user-confirmed',url:'https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/default/SLUS-20312.jpg'} : {status:'needs-serial',message:'No serial found; confirm a serial in game details'};
   if(name==='get_cover') return args.kind==='ps2' ? 'data:image/png;base64,__COVER__' : null;
@@ -48,7 +44,6 @@ window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   if(name==='import_favorites') {window.__migrated=true;return window.__favorites;}
   if(name==='set_favorite') {const set=new Set(window.__favorites[args.id] || []);if(args.favorite)set.add(args.uid);else set.delete(args.uid);return window.__favorites[args.id]=[...set];}
   if(name==='list_flatpaks') return [{appId:'org.example.Emulator',name:'Example Emulator',installation:'user'},{appId:'net.pcsx2.PCSX2',name:'PCSX2',installation:'system'}];
-  if(name==='launch_windows_game' || name==='launch_steam_game') return window.__lastLaunch={consoleId:name==='launch_steam_game'?'steam':'windows',phase:window.__failLaunch?'error':'exited',message:window.__failLaunch?'Game launcher exited with exit status 17.':'Game launcher completed.',log:window.__failLaunch?'Launcher runtime missing <script>bad()</script>':'',logPath:'/tmp/test-external-launch.log'};
   if(name==='get_launch_status') return window.__lastLaunch;
   if(name==='launch_console_game' || name==='open_emulator') return window.__lastLaunch={consoleId:args.id,phase:window.__failLaunch && name==='launch_console_game'?'error':'exited',message:window.__failLaunch && name==='launch_console_game'?'Emulator exited with exit status 17.':'Emulator launcher completed.',log:window.__failLaunch && name==='launch_console_game'?'bwrap: missing runtime <script>bad()</script>':'',logPath:'/tmp/test-launch.log'};
   if(name==='browse_emulator') return '/home/example/Apps/Example.AppImage';
@@ -74,13 +69,7 @@ with sync_playwright() as p:
     assert preview.get_by_role('button',name='Matrix-Play home').count()==1
     assert preview.locator('.brand-logo').get_attribute('alt')=='Matrix-Play'
     preview.wait_for_function('document.querySelector(".brand-logo").naturalWidth > 0')
-    preview.get_by_role('button', name='Steam Games').click()
-    assert 'No steam games detected' in preview.locator('.external-empty').inner_text()
-    preview.get_by_role('button', name='Windows Games').click()
-    preview.get_by_role('button', name='Add Windows game').click()
-    assert preview.locator('#windows-form').count()==1
-    preview.keyboard.press('Escape')
-    preview.get_by_role('button', name='Consoles').click()
+    assert preview.locator('#nav-steam,#nav-windows').count()==0
     screenshot(preview,'matrix-console-preview.png')
 
     failed = browser.new_page(viewport={'width':1000,'height':800})
@@ -198,27 +187,7 @@ with sync_playwright() as p:
     native.locator('#art-input').set_input_files(str(ROOT/'tests/fixtures/demo-cover.png'))
     native.wait_for_function("typeof window.__finishCover==='function'")
     native.keyboard.press('Escape')
-    native.get_by_role('button',name='Steam Games').click()
-    native.evaluate("window.__finishCover(); window.__TAURI__.core.invoke=window.__originalInvoke")
-    native.wait_for_function('window.__artSaved === true')
-    assert native.locator('.detail-panel').count()==0
-    assert native.locator('.page-title').inner_text()=='Steam Games'
-    assert native.locator('.game-item').count()==1
-    screenshot(native,'matrix-native-steam.png')
-    native.locator('.game-card').first.click()
-    native.wait_for_function('window.__calls.some(x=>x[0]==="launch_steam_game")')
-    native.get_by_role('button',name='Windows Games').click()
-    assert native.locator('.game-item').count()==1
-    native.locator('.game-card').first.click()
-    native.wait_for_function('window.__calls.some(x=>x[0]==="launch_windows_game")')
-    screenshot(native,'matrix-native-windows.png')
-    native.get_by_role('button',name='Add Windows game').click()
-    native.locator('#windows-name').fill('Second Windows Game')
-    native.locator('#windows-target').fill('/games/Second Game.desktop')
-    assert native.locator('#windows-runner').count() == 0
-    native.get_by_role('button',name='Add game').click()
-    native.wait_for_function('window.__windows.length === 2')
-    assert native.locator('.game-item').count()==2
+    assert native.locator('#nav-steam,#nav-windows').count()==0
     native.locator('#nav-settings').click()
     assert native.locator('.settings-row [data-action="library-folders"]').count()==24
     screenshot(native,'matrix-cover-settings.png')

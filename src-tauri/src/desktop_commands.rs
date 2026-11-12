@@ -21,11 +21,6 @@ pub(crate) async fn scan_console(id: String) -> Result<Vec<Game>, String> {
 }
 
 #[tauri::command]
-pub(crate) async fn scan_steam() -> Result<Vec<Game>, String> {
-    blocking(super::scan_steam).await
-}
-
-#[tauri::command]
 pub(crate) async fn list_flatpaks() -> Result<Vec<emulators::FlatpakApp>, String> {
     blocking(emulators::list_flatpaks).await
 }

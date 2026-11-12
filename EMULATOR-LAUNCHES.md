@@ -130,7 +130,7 @@ with rustc and checks process lifetime, late diagnostics, short EOF flushing, an
 disk-write failure. It explicitly skips if rustc is unavailable. The GUI and IPC
 remain outside this standalone test's coverage.
 
-## Save files, Steam provenance and external diagnostics
+## Save files and diagnostics
 
 Flatpak launches remain read-only for the managed console library by default.
 For the recognized SameBoy Game Boy, mGBA Game Boy/GBA and melonDS Nintendo DS
@@ -143,21 +143,6 @@ library; escaped symlinks and unrelated paths are rejected. Matrix does not move
 rewrite or delete any ROMs or existing saves. Filesystem mount flags are covered
 by synthetic tests; actual SameBoy/mGBA/melonDS saving still needs an installed-emulator
 check.
-
-Steam discovery retains the native, Flatpak or Snap origin of primary libraries and
-libraries referenced by `libraryfolders.vdf`, including native aliases pointing
-into Flatpak or Snap data. Launch uses that origin instead of whichever `steam` binary is
-on PATH. A missing client is reported, never silently replaced with the other
-installation. Duplicate app IDs remain one library entry and existing IDs,
-favorites and artwork keys are unchanged.
-
-Steam and `gio launch` now use the same bounded diagnostics and exit-status
-monitoring as console emulators. Their library pages provide Launch details and
-show launcher errors, including errors after the initial spawn. Polling slows
-after startup and continues while Matrix is open. A successful launcher exit is
-not proof of game startup: Steam or a desktop launcher can forward a request or
-start another process. Matrix reports that distinction and retains captured
-output, but cannot infer an unreported descendant process's exit status.
 
 PS3 EBOOT titles use the directory above `USRDIR` for digital layouts, or above
 `PS3_GAME/USRDIR` for disc layouts. Scan, favorite validation and artwork lookup
@@ -172,30 +157,6 @@ Game Boy also offers mGBA when installed. Multiple ready choices remain unlinked
 until the user chooses; existing working or manually configured profiles are
 preserved. Unit fixtures cover enumeration, alias deduplication and ambiguous
 selection. They do not certify emulator installation or gameplay.
-
-## Custom Steam libraries and Snap
-
-Snap Steam is discovered under `~/snap/steam/common/.local/share/Steam/steamapps`
-and `~/snap/steam/common/.steam/steam/steamapps`. Its external VDF library roots
-retain Snap provenance and launch through `snap run steam -applaunch APP_ID`.
-Native Steam skips Snap aliases on PATH rather than switching client installations.
-
-Up to 32 custom Steam roots can be registered as a `steamapps` folder or its
-parent, with an explicit native, Flatpak or Snap client. The saved path is
-canonical; registering it again updates its selected client. Explicit roots take
-precedence over automatic duplicates. A disconnected root remains registered and
-is reported unavailable until mounted again. Removing a registration only edits
-Matrix settings: it never deletes games, Steam files, artwork or favorites.
-Duplicate app IDs keep their existing identity, using the first registered or
-discovered library. The primary and VDF scan is capped at 128 roots and each
-root at 10,000 directory entries, with a 1 MiB limit per metadata file.
-
-Custom-root and Snap changes are covered by synthetic filesystem/argv tests,
-including origin retention, offline registrations, alias deduplication, bounded
-reads and settings preservation. These are not real Snap/Flatpak Steam gameplay
-checks. Matrix does not change client sandbox permissions; external-drive access
-must already work in the selected Steam client.
-
 
 ## Additional image formats and installed display titles — checked 2026-11-07
 

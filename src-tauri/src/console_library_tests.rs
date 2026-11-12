@@ -360,7 +360,6 @@ fn fifo_case_completes(mode: &str) {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let fifo = match mode {
-        "steam" => root.join(".local/share/Steam/steamapps/appmanifest_42.acf"),
         "discovery" => root.join(".local/share/applications/fixture.desktop"),
         _ => root.join(".var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini"),
     };
@@ -410,10 +409,6 @@ fn fifo_case_completes(mode: &str) {
     );
 }
 #[test]
-fn steam_manifest_fifo_does_not_hang_scan() {
-    fifo_case_completes("steam");
-}
-#[test]
 fn desktop_metadata_fifo_does_not_hang_discovery() {
     fifo_case_completes("discovery");
 }
@@ -430,9 +425,6 @@ fn fifo_reader_fixture() {
     let root = PathBuf::from(std::env::var_os("MATRIX_FIFO_ROOT").unwrap());
     fs::write(root.join("ready"), b"ready").unwrap();
     match mode.as_str() {
-        "steam" => {
-            assert!(scan_steam_in(&root, &[]).is_empty());
-        }
         "discovery" => {
             let _ = discovery::discover();
         }

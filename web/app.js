@@ -1,4 +1,4 @@
-/* Matrix-Play v0.6.11 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.12 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -10,7 +10,6 @@ const state = {
   overlay: null, selectedGame: null, lastFocus: null,
   configs: {}, imported: {}, favorites: new Set(), art: new Map(),
   native: Boolean(window.__TAURI__?.core?.invoke), root: '', folders: {},
-  steam: [], windows: [],
   discovery:{candidates:[],linked:[],ambiguous:[],notices:[]}, launches:{},launchBusy:{},launchGeneration:{},
   missingArt: new Set(), pendingArt: new Map(),
   readyProfiles: {}, recent: [], coverQueue: {paused:false,items:[]},
@@ -235,7 +234,7 @@ async function storeArt(key, blob) {
 }
 
 function renderNav() {
-  const names = ['consoles','steam','windows','settings'];
+  const names = ['consoles','settings'];
   const active = state.page === 'home' || state.page === 'console' ? 'consoles' : state.page;
   for (const name of names) {
     const node = $(`#nav-${name}`);
@@ -245,8 +244,6 @@ function renderNav() {
   const name = state.page === 'console' ? byId[state.consoleId]?.abbrev : null;
   $('#breadcrumbs').innerHTML = state.page === 'settings'
     ? 'LIBRARY <span>/</span> SETTINGS'
-    : state.page === 'steam' ? 'LIBRARY <span>/</span> STEAM GAMES'
-    : state.page === 'windows' ? 'LIBRARY <span>/</span> WINDOWS GAMES'
     : name ? `LIBRARY <span>/</span> CONSOLES <span>/</span> ${escapeHtml(name)}`
     : 'LIBRARY <span>/</span> CONSOLES';
 }
@@ -284,7 +281,7 @@ function gameCover(consoleInfo, game, index) {
 let coverObserver = null;
 
 // Only fetch artwork as a game card becomes visible. Avoid transferring a whole
-// Steam library of multi-megabyte images across Tauri IPC on every refresh.
+// library of multi-megabyte images across Tauri IPC on every refresh.
 function updateVisibleCover(key, uri) {
   document.querySelectorAll('.game-cover[data-art-key]').forEach(container => {
     if (container.dataset.artKey !== key) return;
@@ -436,7 +433,7 @@ function restoreLibraryFocus(saved) {
       || controls.find(node => node.dataset?.action === 'filter-games' && node.dataset?.value === state.gameFilter)
       || (state.page === 'settings' ? controls.find(node => !node.disabled && node.dataset?.action === 'configure' && node.dataset?.id === key.consoleId)
         || controls.find(node => !node.disabled && node.dataset?.action === 'configure') : null)
-      || $('#external-search') || $('#game-search');
+      || $('#game-search');
   };
   if (saved.opener) state.lastFocus = resolve(saved.opener);
   if (saved.active && !state.overlay) {
@@ -525,7 +522,6 @@ function render() {
   if (state.page === 'home') renderHome();
   if (state.page === 'console') renderConsole();
   if (state.page === 'settings') renderSettings();
-  if (state.page === 'steam' || state.page === 'windows') renderExternal(state.page);
 }
 function goHome() {
   rememberLibrary();dismissOverlay(); state.page = 'home'; state.consoleId = null; state.query = ''; render(); window.scrollTo(0,0);
@@ -538,55 +534,6 @@ function goConsole(id) {
 function goSettings() {
   rememberLibrary();dismissOverlay(); state.page = 'settings'; state.consoleId = null; render(); window.scrollTo(0,0);
 }
-function goExternal(page) {
-  rememberLibrary();dismissOverlay(); state.page = page; state.consoleId = null;
-  state.query = ''; state.gameFilter = 'All'; state.sort = 'default';
-  render(); window.scrollTo(0,0);
-}
-function externalList(page) { return page === 'steam' ? state.steam : state.windows; }
-function windowsShortcutSupported(game) { return game?.runner === 'desktop' && /\.desktop$/i.test(game.target || ''); }
-function renderExternal(page) {
-  const focus = captureLibraryFocus($('#screen'), page);
-  const steam = page === 'steam';
-  const title = steam ? 'Steam Games' : 'Windows Games';
-  const games = externalList(page).filter(g => g.title.toLowerCase().includes(state.query.toLowerCase()));
-  $('#screen').innerHTML = `<div class="title-row"><div><h1 class="page-title">${title}</h1><p class="page-subtitle">${externalList(page).length} games</p></div>
-      <div class="stats"><div class="stat"><strong>${externalList(page).length}</strong><span>Games</span></div></div></div>
-    <div class="library-tools"><label class="search">${glyph('search')}<input type="search" id="external-search" placeholder="Search ${title}" value="${escapeHtml(state.query)}"></label>
-    ${!steam ? `<button type="button" class="button button-primary" data-action="add-windows">${glyph('plus')} Add Windows game</button>` : state.native ? '<button type="button" class="button button-ghost" data-action="library-folders" data-id="steam">Manage Steam libraries</button>' : ''}</div>
-    <div id="launch-status"></div>
-    ${games.length ? `<div class="game-grid">${games.map((game,index) => {
-      const cover = gameCover({ id: page, abbrev: steam ? 'STEAM' : 'WINDOWS' }, game, index);
-      return `<div class="game-item"><button class="game-card" type="button" data-action="quick-external" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="${state.native && (steam || windowsShortcutSupported(game)) ? 'Launch' : 'View'} ${escapeHtml(game.title)}">${cover}<span class="game-title">${escapeHtml(game.title)}</span><span class="game-meta">${steam ? 'Steam · App ' + escapeHtml(game.appId || game.uid) : windowsShortcutSupported(game) ? 'Windows · Desktop shortcut' : 'Windows · Shortcut required'}</span></button><button class="game-info" type="button" data-action="external-game" data-kind="${page}" data-uid="${escapeHtml(game.uid)}" aria-label="Details for ${escapeHtml(game.title)}" title="Game details">${glyph('info')}</button></div>`;
-    }).join('')}</div>` : `<div class="empty external-empty"><strong>${state.query ? 'No matching games' : `No ${title.toLowerCase()} detected`}</strong><p>${state.query ? 'Try a different search term.' : steam ? 'Install and sign into Steam, then click Refresh.' : 'Choose Add Windows game to register an existing .desktop shortcut.'}</p></div>`}
-    `;
-  renderLaunchStatus();
-  hydrateNativeCovers();
-  restoreLibraryFocus(focus);
-}
-function openExternalGame(kind, uid) {
-  const game = externalList(kind).find(g => g.uid === uid); if (!game) return;
-  const supported = kind === 'steam' || windowsShortcutSupported(game);
-  state.lastFocus = document.activeElement; state.overlay = 'external'; state.selectedGame = {id:kind,uid};
-  $('#overlay-root').innerHTML = `<div class="overlay detail-overlay" data-backdrop="true"><aside class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detail-title"><button class="close" data-action="close" aria-label="Close details">${glyph('close')}</button>
-    <div class="detail-cover">${gameCover({id:kind,abbrev:kind.toUpperCase()},game,0)}</div><div class="eyebrow">${kind.toUpperCase()} LIBRARY</div><h2 id="detail-title">${escapeHtml(game.title)}</h2>
-    <p class="detail-sub">${escapeHtml(game.target || `Steam app ID ${game.appId || game.uid}`)}</p><p class="detail-description">${kind === 'steam' ? 'Matrix-Play asks your existing Steam client to start this game.' : supported ? 'Matrix-Play opens your existing desktop shortcut. Any external software it uses is managed outside Matrix-Play.' : 'Direct .exe launching is unavailable. This saved entry and its artwork are retained. Add a working .desktop shortcut, then remove this old entry if you no longer need it. Your installed game files are unchanged.'}</p>
-    <button class="button button-primary launch-button" data-action="launch-external" data-kind="${kind}" data-uid="${escapeHtml(uid)}" ${supported ? '' : 'disabled'}>${glyph('play')} ${supported ? 'Play game' : 'Desktop shortcut required'}</button>
-    <div class="detail-actions"><button class="button button-ghost" type="button" data-action="pick-cover">${glyph('image')} Choose cover</button></div>
-    ${kind === 'windows' ? `<div class="detail-actions"><button class="button button-ghost" data-action="remove-windows" data-uid="${escapeHtml(uid)}">${glyph('trash')} Remove from Matrix-Play</button></div>` : ''}
-    <p class="detail-hint">${state.native ? 'Launching uses your installed Steam client or existing desktop shortcut.' : 'Browser preview cannot launch games.'}</p></aside></div>`;
-  $('.detail-panel .close').focus();
-  hydrateNativeCovers();
-}
-function openAddWindows() {
-  state.lastFocus = document.activeElement; state.overlay = 'windows-add';
-  $('#overlay-root').innerHTML = `<div class="overlay" data-backdrop="true"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="windows-title"><button type="button" class="close" data-action="close" aria-label="Close add game">${glyph('close')}</button>
-   <div class="eyebrow">WINDOWS LIBRARY</div><h2 id="windows-title">Add existing game.</h2><p class="muted">Register a .desktop shortcut that already works on Linux. No files are moved or copied.</p>
-   <form id="windows-form"><div class="field"><label for="windows-name">Game title</label><input id="windows-name" name="title" required maxlength="150" placeholder="Game title"></div>
-   <div class="field"><label for="windows-target">Existing desktop shortcut</label><input id="windows-target" name="target" required placeholder="/home/you/.local/share/applications/My Game.desktop"><small>Only .desktop shortcuts are supported. Direct .exe launching is unavailable. Matrix-Play does not provide or configure a Windows compatibility runtime.</small></div>
-   <div class="dialog-actions"><button class="button button-ghost" type="button" data-action="close">Cancel</button><button class="button button-primary" type="submit">Add game</button></div></form></section></div>`;
-  $('#windows-name').focus();
-}
 function dismissOverlay() {
   if (state.overlay === null) return;
   state.overlay = null;
@@ -596,7 +543,7 @@ function dismissOverlay() {
   if (state.lastFocus?.isConnected) state.lastFocus.focus();
   state.lastFocus = null;
 }
-function activeLaunchId() { return state.page === 'console' ? state.consoleId : ['steam','windows'].includes(state.page) ? state.page : null; }
+function activeLaunchId() { return state.page === 'console' ? state.consoleId : null; }
 function renderLaunchStatus() {
   const target=$('#launch-status');if (!target) return;
   const id=activeLaunchId(), info=state.launches[id], emulator=!!byId[id];
@@ -609,7 +556,7 @@ let launchDetailsRequest = 0;
 async function showLaunchDetails(id) {
   const info=state.launches[id];if (!info) return;
   const request=++launchDetailsRequest, generation=state.launchGeneration[id];
-  const emulator=!!byId[id], name=byId[id]?.name || (id==='steam' ? 'Steam Games' : 'Windows Games');
+  const emulator=!!byId[id], name=byId[id]?.name || 'Console';
   state.lastFocus=document.activeElement;state.overlay='launch-details';
   $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog launch-dialog" role="dialog" aria-modal="true" aria-labelledby="launch-title"><button class="close" type="button" data-action="close" aria-label="Close launch details">${glyph('close')}</button><div class="eyebrow">${escapeHtml(name)}</div><h2 id="launch-title">${emulator ? 'Emulator' : 'Game'} launch</h2><p class="muted" id="launch-message">${escapeHtml(info.message)}</p><pre class="launch-output">${escapeHtml(info.log || 'No output was captured.')}</pre><p class="muted" id="launch-log-path" ${info.logPath ? '' : 'hidden'}>${info.logPath ? `Saved log: ${escapeHtml(info.logPath)}` : ''}</p>${emulator ? `<div class="dialog-actions"><button type="button" class="button button-primary" data-action="open-emulator" data-id="${id}">Open emulator</button></div>`:''}</section></div>`;
   const dialog=$('.launch-dialog');
@@ -633,9 +580,9 @@ async function launchTracked(id,command,args) {
   try {
     const info=await nativeInvoke(command,args);
     state.launches[id]=info || {phase:'started',message:'Game launch requested.'};
-    if (['game','external','launch-details'].includes(overlay) && state.overlay===overlay && $('#overlay-root').firstElementChild===dialog) dismissOverlay();
+    if (['game','launch-details'].includes(overlay) && state.overlay===overlay && $('#overlay-root').firstElementChild===dialog) dismissOverlay();
     if (activeLaunchId()===id) renderLaunchStatus();
-    if(args.uid&&['launch_console_game','launch_steam_game','launch_windows_game'].includes(command)&&info?.phase!=='error'){const game=(byId[id]?gamesFor(id):id==='steam'?state.steam:state.windows).find(g=>g.uid===args.uid);if(game){state.recent=[{kind:id,uid:args.uid,title:game.title},...state.recent.filter(g=>g.kind!==id||g.uid!==args.uid)].slice(0,20);}}
+    if(args.uid&&command==='launch_console_game'&&info?.phase!=='error'){const game=gamesFor(id).find(g=>g.uid===args.uid);if(game){state.recent=[{kind:id,uid:args.uid,title:game.title},...state.recent.filter(g=>g.kind!==id||g.uid!==args.uid)].slice(0,20);}}
     toast(state.launches[id].message);
     let attempts=0;
     const poll=async()=>{
@@ -661,10 +608,6 @@ async function launchConsole(id,uid=null) {
   if (byId[id]?.libraryOnly) {if (uid) openGame(id,uid);else toast(byId[id].supportNote);return;}
   if (!state.native) {toast('Open the Linux app to launch an emulator.');return;}
   await launchTracked(id,uid ? 'launch_console_game':'open_emulator',uid ? {id,uid}:{id});
-}
-async function launchExternal(kind,uid) {
-  if (!state.native) {toast('Browser preview cannot launch games.');return;}
-  await launchTracked(kind,kind==='steam' ? 'launch_steam_game' : 'launch_windows_game',{uid});
 }
 function discoverySummary() {
   const report=state.discovery, total=report.candidates.length;
@@ -774,16 +717,15 @@ let libraryFolderBusy = false;
 function showLibraryFolderRows(owner, folders) {
   if ($('#library-folder-dialog') !== owner) return;
   const list=owner.querySelector('.library-folder-list');
-  list.innerHTML=folders.length ? folders.map(folder=>`<li><div><strong>${escapeHtml(folder.path)}</strong><small>${folder.managed ? 'Managed folder' : owner.dataset.id==='steam' ? `${escapeHtml(folder.launcher)} Steam` : 'External folder'}${folder.available ? '' : ' · Unavailable or disconnected'}</small></div>${folder.managed ? '' : `<button type="button" class="button button-ghost" data-action="remove-library-folder" data-path="${escapeHtml(folder.path)}" aria-label="Remove folder ${escapeHtml(folder.path)}">Remove</button>`}</li>`).join('') : '<li>No custom libraries registered. Standard Steam installations are detected automatically.</li>';
+  list.innerHTML=folders.length ? folders.map(folder=>`<li><div><strong>${escapeHtml(folder.path)}</strong><small>${folder.managed ? 'Managed folder' : 'External folder'}${folder.available ? '' : ' · Unavailable or disconnected'}</small></div>${folder.managed ? '' : `<button type="button" class="button button-ghost" data-action="remove-library-folder" data-path="${escapeHtml(folder.path)}" aria-label="Remove folder ${escapeHtml(folder.path)}">Remove</button>`}</li>`).join('') : '<li>No custom folders registered.</li>';
 }
 async function openLibraryFolders(id) {
-  if (!state.native || (id!=='steam' && !byId[id])) return;
-  const steam=id==='steam';
+  if (!state.native || !byId[id]) return;
   state.lastFocus=document.activeElement;state.overlay='library-folders';
-  $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog library-folder-dialog" id="library-folder-dialog" data-id="${escapeHtml(id)}" role="dialog" aria-modal="true" aria-labelledby="library-folder-title"><button type="button" class="close" data-action="close" aria-label="Close library folders">${glyph('close')}</button><div class="eyebrow">YOUR FILES STAY IN PLACE</div><h2 id="library-folder-title">${escapeHtml(steam ? 'Steam libraries' : byId[id].name+' folders')}</h2><p>${steam ? 'Standard native, Flatpak and Snap installations are detected automatically. Add another Steam folder or steamapps directory and choose the installation that owns it.' : 'Add a folder containing this console’s games. The managed folder remains available. Removing a folder only removes its registration; games, saves and artwork are not deleted.'}</p><ul class="library-folder-list" aria-label="Registered library folders"><li>Loading folders…</li></ul><div class="field"><label for="external-library-path">Existing library folder</label><div class="file-choice"><input id="external-library-path" placeholder="/media/drive/Games"><button type="button" class="button button-ghost" data-action="browse-library-folder">Browse…</button></div></div>${steam ? '<div class="field"><label for="steam-library-launcher">Owning Steam installation</label><select id="steam-library-launcher"><option value="native">Native Steam</option><option value="flatpak">Flatpak Steam</option><option value="snap">Snap Steam</option></select></div>' : ''}<p class="config-error library-folder-error" role="alert"></p><div class="dialog-actions"><button type="button" class="button button-ghost" data-action="close">Done</button><button type="button" class="button button-primary" data-action="add-library-folder">Add folder</button></div></section></div>`;
+  $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog library-folder-dialog" id="library-folder-dialog" data-id="${escapeHtml(id)}" role="dialog" aria-modal="true" aria-labelledby="library-folder-title"><button type="button" class="close" data-action="close" aria-label="Close library folders">${glyph('close')}</button><div class="eyebrow">YOUR FILES STAY IN PLACE</div><h2 id="library-folder-title">${escapeHtml(byId[id].name+' folders')}</h2><p>${'Add a folder containing this console’s games. The managed folder remains available. Removing a folder only removes its registration; games, saves and artwork are not deleted.'}</p><ul class="library-folder-list" aria-label="Registered library folders"><li>Loading folders…</li></ul><div class="field"><label for="external-library-path">Existing library folder</label><div class="file-choice"><input id="external-library-path" placeholder="/media/drive/Games"><button type="button" class="button button-ghost" data-action="browse-library-folder">Browse…</button></div></div><p class="config-error library-folder-error" role="alert"></p><div class="dialog-actions"><button type="button" class="button button-ghost" data-action="close">Done</button><button type="button" class="button button-primary" data-action="add-library-folder">Add folder</button></div></section></div>`;
   const owner=$('#library-folder-dialog');owner.querySelector('input').focus();
   const request=owner.folderRequest=1;
-  try {const folders=await nativeInvoke(steam ? 'list_steam_libraries' : 'list_library_folders',steam ? {} : {id});if (owner.folderRequest===request) showLibraryFolderRows(owner,folders);}
+  try {const folders=await nativeInvoke('list_library_folders',{id});if (owner.folderRequest===request) showLibraryFolderRows(owner,folders);}
   catch(error) {if ($('#library-folder-dialog')===owner && owner.folderRequest===request) owner.querySelector('.library-folder-error').textContent=String(error);}
 }
 async function browseLibraryFolder(button) {
@@ -795,7 +737,7 @@ async function browseLibraryFolder(button) {
 }
 async function changeLibraryFolder(button) {
   const owner=$('#library-folder-dialog');if (!owner || libraryFolderBusy) return;
-  const id=owner.dataset.id, steam=id==='steam', remove=button.dataset.action==='remove-library-folder';
+  const id=owner.dataset.id, remove=button.dataset.action==='remove-library-folder';
   const input=owner.querySelector('input'), draft=input.value, path=remove ? button.dataset.path : draft.trim();
   const errorNode=owner.querySelector('.library-folder-error');
   if (!path) {errorNode.textContent='Choose an existing folder first.';input.focus();return;}
@@ -806,8 +748,8 @@ async function changeLibraryFolder(button) {
   button.disabled=true;errorNode.textContent='';
   ++owner.folderRequest; // An older initial list must not roll back this mutation.
   try {
-    const args=steam ? {path,...(remove ? {} : {launcher:owner.querySelector('select').value})} : {id,path};
-    const command=steam ? (remove ? 'remove_steam_library' : 'add_steam_library') : (remove ? 'remove_library_folder' : 'add_library_folder');
+    const args={id,path};
+    const command=remove ? 'remove_library_folder' : 'add_library_folder';
     const folders=await nativeInvoke(command,args);
     if ($('#library-folder-dialog')===owner) {
       showLibraryFolderRows(owner,folders);
@@ -821,7 +763,7 @@ async function changeLibraryFolder(button) {
     // current rows without clearing the failure or a path edited meanwhile.
     const request=++owner.folderRequest;
     try {
-      const folders=await nativeInvoke(steam ? 'list_steam_libraries' : 'list_library_folders',steam ? {} : {id});
+      const folders=await nativeInvoke('list_library_folders',{id});
       if ($('#library-folder-dialog')===owner && owner.folderRequest===request) {
         showLibraryFolderRows(owner,folders);
       }
@@ -1100,13 +1042,10 @@ async function refreshNative() {
     const snapshot=state.librarySnapshotSupported?await nativeInvoke('library_snapshot'):null;
     const results = await Promise.all([
       ...consoles.map(c => snapshot?Promise.resolve(snapshot.games[c.id]||[]):nativeInvoke('scan_console', {id:c.id})),
-      nativeInvoke('scan_steam'), nativeInvoke('list_windows_games'),
     ]);
     if (generation!==nativeRefreshGeneration) return;
     if(snapshot)state.libraryFolders=snapshot.folders||{};
     consoles.forEach((c,index) => { state.imported[c.id] = results[index].map(g => ({...g, demo:false,offline:snapshot?offlineGame(c.id,g):Boolean(g.offline)})); });
-    state.steam = results[consoles.length];
-    state.windows = results[consoles.length+1];
     state.missingArt.clear(); // Rescan can introduce matching .jpg files next to ROMs.
     state.artRevision++;clearCoverCache();
     render();
@@ -1129,7 +1068,7 @@ async function bootstrapNative() {
     for (const [id,profile] of Object.entries(state.configs)) {
       if (emulatorSavedRequests.get(id)!==profileRevisions.get(id)) profiles[id]=profile;readiness[id]=state.readyProfiles[id];
     }
-    state.librarySnapshotSupported=Boolean(config.libraryPreferences);if(config.libraryPreferences&&libraryRevision===libraryPrefRevision)state.libraryPrefs=normalizeLibraryPrefs(config.libraryPreferences);state.recent=config.recent||state.recent;state.configs=profiles;state.readyProfiles=readiness;
+    state.librarySnapshotSupported=Boolean(config.libraryPreferences);if(config.libraryPreferences&&libraryRevision===libraryPrefRevision)state.libraryPrefs=normalizeLibraryPrefs(config.libraryPreferences);state.recent=(config.recent||state.recent).filter(g=>byId[g.kind]);state.configs=profiles;state.readyProfiles=readiness;
     state.root=config.root;state.folders=config.folders;state.steamgridEnabled=Boolean(config.steamgridEnabled);
     state.discovery=config.emulatorDiscovery || state.discovery;
     if (artworkWriteRevision===artworkRevision) state.artwork=config.artwork || state.artwork;
@@ -1261,7 +1200,6 @@ async function handleAction(button) {
   else if (action === 'update-releases') { try { await nativeInvoke('open_update_releases'); } catch(error) { toast(String(error)); } }
   else if (action === 'home') goHome();
   else if (action === 'settings') goSettings();
-  else if (action === 'steam' || action === 'windows') goExternal(action);
   else if (action === 'refresh') {
     if (!state.native) { toast('Browser preview — no filesystem access.'); return; }
     try { if (await bootstrapNative()) await refreshNative(); }
@@ -1287,25 +1225,6 @@ async function handleAction(button) {
   else if (action === 'launch-details') void showLaunchDetails(id);
   else if (action === 'find-emulators') void findEmulators(button);
   else if (action === 'refresh-detected') void loadDetectedEmulators();
-  else if (action === 'external-game') openExternalGame(button.dataset.kind,uid);
-  else if (action === 'quick-external') {
-    const kind = button.dataset.kind;
-    if (!state.native || (kind === 'windows' && !windowsShortcutSupported(externalList(kind).find(game => game.uid === uid)))) { openExternalGame(kind,uid); return; }
-    void launchExternal(kind,uid);
-  }
-  else if (action === 'add-windows') openAddWindows();
-  else if (action === 'launch-external') {
-    void launchExternal(button.dataset.kind,uid);
-  }
-  else if (action === 'remove-windows') {
-    if (!state.native) { toast('Native Matrix-Play required.'); return; }
-    const dialog=$('#overlay-root').firstElementChild;
-    if (button.disabled) return;
-    button.disabled=true;
-    try { await nativeInvoke('remove_windows_game', {uid}); if (dialog===$('#overlay-root').firstElementChild) dismissOverlay(); await refreshNative(); toast('Removed library entry only. Installed files were preserved.'); }
-    catch(error) { toast(String(error)); }
-    finally {button.disabled=false;}
-  }
   else if (action === 'console-favorites') { state.gameFilter='Favorites';state.query='';renderConsole(); }
   else if (action === 'reload-flatpaks') void loadFlatpakChoices();
   else if (action === 'browse-emulator') {
@@ -1342,7 +1261,7 @@ async function handleAction(button) {
   }
   else if (action === 'queue-pause') {state.coverQueue.paused=true;++state.coverGeneration;renderCoverQueue();toast('Cover queue paused.');}
   else if (action === 'queue-resume') {state.coverQueue.paused=false;void scanArtwork(true);}
-  else if (action === 'recent-game') {if(byId[id]){goConsole(id);if(state.native)await launchConsole(id,uid);}else{goExternal(id);if(state.native)await launchExternal(id,uid);}}
+  else if (action === 'recent-game') {if(byId[id]){goConsole(id);if(state.native)await launchConsole(id,uid);}}
   else if (action === 'backup-library' || action === 'restore-library') {
     button.disabled=true;
     try {const result=await nativeInvoke('backup_library',{restoreBackup:action==='restore-library'});toast(result);if(action==='restore-library'&&result!=='Cancelled'){await bootstrapNative();await refreshNative();}}catch(e){toast(String(e));}finally{button.disabled=false;}
@@ -1414,30 +1333,10 @@ function setupEvents() {
       state.query = event.target.value;
       renderGameResults(); // Don't rerender the focused input on each keystroke.
     }
-    if (event.target.id === 'external-search') {
-      state.query = event.target.value;
-      const selection = event.target.selectionStart;
-      renderExternal(state.page);
-      const input = $('#external-search'); input.focus(); input.setSelectionRange(selection,selection);
-    }
-  });
-  document.addEventListener('change', event => {
-    if (event.target.id === 'sort-games') { state.sort = event.target.value; rememberLibrary();renderGameResults(); }
     if (event.target.id === 'folder-input') importFolder(event.target.files);
     if (event.target.id === 'art-input') void loadCover(event.target.files?.[0]);
   });
   document.addEventListener('submit', event => {
-    if (event.target.id === 'windows-form') {
-      event.preventDefault();
-      if (!state.native) { toast('Windows game registration requires native Matrix-Play.'); return; }
-      const owner=event.target; if (owner.dataset.saving==='true') return;owner.dataset.saving='true';
-      const form = new FormData(owner);
-      void nativeInvoke('add_windows_game', {
-        title:String(form.get('title') || '').trim(), target:String(form.get('target') || '').trim(), runner:'desktop'
-      }).then(async () => { if (owner===$('#windows-form')) dismissOverlay(); await refreshNative(); toast('Game added to Windows library.'); })
-        .catch(error => toast(String(error))).finally(()=>{delete owner.dataset.saving;});
-      return;
-    }
     if (event.target.id !== 'config-form') return;
     event.preventDefault();
     const owner=event.target; if (owner.dataset.saving==='true') return;
@@ -1504,7 +1403,7 @@ const THEMES=[{id:'arctic-current',name:'Arctic Current',description:'Frosted ca
 function activeTheme(){return THEMES.some(t=>t.id===libraryPrefs().theme)?libraryPrefs().theme:'arctic-current';}
 function applyTheme(){const theme=activeTheme();if(document.documentElement?.dataset)document.documentElement.dataset.theme=theme;try{localStorage.setItem('matrix-theme',theme);}catch{}}
 function settingsTabs(){return `<nav class="settings-tabs" aria-label="Settings sections"><button type="button" class="${state.settingsTab!=='themes'?'active':''}" data-action="settings-tab" data-value="general" aria-current="${state.settingsTab!=='themes'?'page':'false'}">General</button><button type="button" class="${state.settingsTab==='themes'?'active':''}" data-action="settings-tab" data-value="themes" aria-current="${state.settingsTab==='themes'?'page':'false'}">Themes</button></nav>`;}
-function renderThemes(focus){$('#screen').innerHTML=`<div class="settings-header"><h1 class="page-title">Settings</h1></div>${settingsTabs()}<section aria-labelledby="themes-title"><h2 id="themes-title">Themes</h2><p class="theme-intro">Choose a layout and atmosphere for your libraries. Your selection is saved automatically.</p><div class="theme-choices">${THEMES.map(t=>`<article class="theme-choice ${activeTheme()===t.id?'selected':''}"><div class="theme-swatch swatch-${t.id}" aria-hidden="true"><span class="swatch-nav"></span><div class="swatch-tiles">${Array.from({length:12},()=>'<i></i>').join('')}</div><span class="swatch-preview"></span></div><h3>${t.name}</h3><p>${t.description}</p><button type="button" class="button ${activeTheme()===t.id?'button-primary':'button-ghost'}" data-action="select-theme" data-value="${t.id}" aria-pressed="${activeTheme()===t.id}" ${state.themeSaving?'disabled':''}>${activeTheme()===t.id?'Selected':'Apply theme'}</button></article>`).join('')}</div><p class="theme-intro">Themes apply across console, Steam and Windows libraries, Settings and dialogs. Reduced-motion preferences are respected.</p></section>`;restoreLibraryFocus(focus);}
+function renderThemes(focus){$('#screen').innerHTML=`<div class="settings-header"><h1 class="page-title">Settings</h1></div>${settingsTabs()}<section aria-labelledby="themes-title"><h2 id="themes-title">Themes</h2><p class="theme-intro">Choose a layout and atmosphere for your libraries. Your selection is saved automatically.</p><div class="theme-choices">${THEMES.map(t=>`<article class="theme-choice ${activeTheme()===t.id?'selected':''}"><div class="theme-swatch swatch-${t.id}" aria-hidden="true"><span class="swatch-nav"></span><div class="swatch-tiles">${Array.from({length:12},()=>'<i></i>').join('')}</div><span class="swatch-preview"></span></div><h3>${t.name}</h3><p>${t.description}</p><button type="button" class="button ${activeTheme()===t.id?'button-primary':'button-ghost'}" data-action="select-theme" data-value="${t.id}" aria-pressed="${activeTheme()===t.id}" ${state.themeSaving?'disabled':''}>${activeTheme()===t.id?'Selected':'Apply theme'}</button></article>`).join('')}</div><p class="theme-intro">Themes apply across console libraries, Settings and dialogs. Reduced-motion preferences are respected.</p></section>`;restoreLibraryFocus(focus);}
 
 // Library organization is additive; identities and on-disk names stay unchanged.
 let libraryWrites=Promise.resolve(), libraryPolling=false,libraryPrefRevision=0;
@@ -1535,7 +1434,7 @@ function queueDiscoveredGames(previous){
 }
 async function pollLibraries(force=false){
  if(!state.native||libraryPolling||!force&&(libraryPrefs().autoRefresh===false||libraryUiBusy()))return;
- libraryPolling=true;const generation=nativeRefreshGeneration;try{await libraryWrites;const [result,steam,windows]=await Promise.all([nativeInvoke('library_snapshot'),nativeInvoke('scan_steam'),nativeInvoke('list_windows_games')]);if(!result?.games||!force&&libraryUiBusy()||generation!==nativeRefreshGeneration)return;const previous=state.imported;state.imported={...previous};const before=JSON.stringify([previous,state.libraryFolders,state.steam,state.windows]);if(Array.isArray(steam))state.steam=steam;if(Array.isArray(windows))state.windows=windows;state.libraryFolders=result.folders||{};for(const c of consoles)state.imported[c.id]=(result.games[c.id]||[]).map(g=>({...g,demo:false,offline:offlineGame(c.id,g)}));if(before!==JSON.stringify([state.imported,state.libraryFolders,state.steam,state.windows])){state.missingArt.clear();if(!state.overlay)render();queueDiscoveredGames(previous);}}catch(e){if(force)toast('Library refresh failed: '+e);}finally{libraryPolling=false;}
+ libraryPolling=true;const generation=nativeRefreshGeneration;try{await libraryWrites;const result=await nativeInvoke('library_snapshot');if(!result?.games||!force&&libraryUiBusy()||generation!==nativeRefreshGeneration)return;const previous=state.imported;state.imported={...previous};const before=JSON.stringify([previous,state.libraryFolders]);state.libraryFolders=result.folders||{};for(const c of consoles)state.imported[c.id]=(result.games[c.id]||[]).map(g=>({...g,demo:false,offline:offlineGame(c.id,g)}));if(before!==JSON.stringify([state.imported,state.libraryFolders])){state.missingArt.clear();if(!state.overlay)render();queueDiscoveredGames(previous);}}catch(e){if(force)toast('Library refresh failed: '+e);}finally{libraryPolling=false;}
 }
 async function saveDataFlow(id,restore){
  const result=await nativeInvoke('save_data_dialog',{id,restore});if(result.cancelled)return;if(result.message){toast(result.message);return;}

@@ -25,7 +25,6 @@ mod libraries;
 mod local_artwork;
 mod profile_saves;
 mod settings;
-mod steam_libraries;
 mod update_lifecycle;
 mod update_worker;
 mod updates;
@@ -195,15 +194,6 @@ struct EmulatorProfile {
     launch_args: Vec<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct WindowsGame {
-    uid: String,
-    title: String,
-    target: String,
-    // Retain unknown legacy values for settings compatibility; only desktop is launchable.
-    runner: String,
-}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -236,8 +226,8 @@ struct Settings {
     game_options: BTreeMap<String,library_tools::GameOptions>,
     #[serde(default)]
     steamgriddb_api_key: String,
-    #[serde(default)]
-    steam_libraries: Vec<steam_libraries::RegisteredLibrary>,
+    #[serde(flatten)]
+    legacy_fields: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     favorites: BTreeMap<String, Vec<String>>,
     #[serde(default)]
@@ -248,8 +238,6 @@ struct Settings {
     artwork: ArtworkSettings,
     #[serde(default)]
     profiles: BTreeMap<String, EmulatorProfile>,
-    #[serde(default)]
-    windows: Vec<WindowsGame>,
 }
 
 #[derive(Serialize)]
@@ -267,7 +255,6 @@ struct Bootstrap {
     folders: BTreeMap<String, String>,
     library_folders: BTreeMap<String, Vec<libraries::Folder>>,
     profiles: BTreeMap<String, EmulatorProfile>,
-    windows: Vec<WindowsGame>,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
@@ -494,7 +481,7 @@ fn bootstrap() -> Result<Bootstrap, String> {
     Ok(Bootstrap {
         library_preferences: settings.library_preferences,
         ready_profiles,
-        recent: settings.recent,
+        recent: settings.recent.into_iter().filter(|r|spec(&r.kind).is_ok()).collect(),
         steamgrid_enabled: !settings.steamgriddb_api_key.is_empty(),
         library_folders,
         emulator_discovery,
@@ -503,7 +490,6 @@ fn bootstrap() -> Result<Bootstrap, String> {
         root: root.to_string_lossy().into(),
         folders,
         profiles: settings.profiles,
-        windows: settings.windows,
         artwork: settings.artwork,
     })
 }
@@ -788,225 +774,6 @@ fn scan_console(id: String) -> Result<Vec<Game>, String> {
     scan_console_impl(&id)
 }
 
-fn quoted_tokens(line: &str) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut current = String::new();
-    let mut inside = false;
-    let mut escape = false;
-    for ch in line.chars() {
-        if !inside {
-            if ch == '"' {
-                inside = true;
-                current.clear();
-            }
-            continue;
-        }
-        if escape {
-            current.push(ch);
-            escape = false;
-            continue;
-        }
-        match ch {
-            '\\' => escape = true,
-            '"' => {
-                result.push(current.clone());
-                inside = false;
-            }
-            _ => current.push(ch),
-        }
-    }
-    result
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum SteamLauncher {
-    Native,
-    Flatpak,
-    Snap,
-}
-#[derive(Debug)]
-struct SteamLibrary {
-    path: PathBuf,
-    launcher: SteamLauncher,
-}
-struct SteamGame {
-    game: Game,
-    launcher: SteamLauncher,
-}
-fn steam_locations_in(
-    home: &Path,
-    registered: &[steam_libraries::RegisteredLibrary],
-) -> Vec<SteamLibrary> {
-    let flatpak_root = home.join(".var/app/com.valvesoftware.Steam");
-    let flatpak_root = flatpak_root.canonicalize().unwrap_or(flatpak_root);
-    let snap_root = home.join("snap/steam");
-    let snap_root = snap_root.canonicalize().unwrap_or(snap_root);
-    let candidates = [
-        (home.join(".steam/steam/steamapps"), SteamLauncher::Native),
-        (home.join(".steam/root/steamapps"), SteamLauncher::Native),
-        (
-            home.join(".local/share/Steam/steamapps"),
-            SteamLauncher::Native,
-        ),
-        (
-            home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps"),
-            SteamLauncher::Flatpak,
-        ),
-        (
-            home.join("snap/steam/common/.local/share/Steam/steamapps"),
-            SteamLauncher::Snap,
-        ),
-        (
-            home.join("snap/steam/common/.steam/steam/steamapps"),
-            SteamLauncher::Snap,
-        ),
-    ];
-    let mut paths = Vec::new();
-    let mut seen = HashSet::new();
-    // Explicit choices win over automatic roots, including different clients
-    // sharing a library. Keep saved registrations even while a drive is offline.
-    for entry in registered.iter().take(32) {
-        let original = PathBuf::from(&entry.path);
-        if let Ok(canonical) = original.canonicalize() {
-            if canonical.is_dir() && seen.insert(canonical.clone()) {
-                paths.push(SteamLibrary {
-                    path: canonical,
-                    launcher: entry.launcher,
-                });
-            }
-        }
-    }
-    for (original, mut launcher) in candidates {
-        if !original.is_dir() {
-            continue;
-        }
-        let canonical = original.canonicalize().unwrap_or(original);
-        // A legacy ~/.steam alias can point into Flatpak's data directory.
-        if canonical.starts_with(&flatpak_root) {
-            launcher = SteamLauncher::Flatpak;
-        } else if canonical.starts_with(&snap_root) {
-            launcher = SteamLauncher::Snap;
-        }
-        if seen.insert(canonical.clone()) {
-            paths.push(SteamLibrary {
-                path: canonical,
-                launcher,
-            });
-        }
-    }
-    let mut additional = Vec::new();
-    for base in &paths {
-        if let Some(contents) = steam_libraries::bounded_text(&base.path.join("libraryfolders.vdf"))
-        {
-            for line in contents.lines() {
-                let fields = quoted_tokens(line);
-                if fields.len() != 2 || fields[0] != "path" {
-                    continue;
-                }
-                if paths.len() + additional.len() >= steam_libraries::MAX_LIBRARIES {
-                    break;
-                }
-                let library_path = Path::new(&fields[1]);
-                if !library_path.is_absolute() {
-                    continue;
-                }
-                let next = library_path.join("steamapps");
-                if next.is_dir() {
-                    let real = next.canonicalize().unwrap_or(next);
-                    if seen.insert(real.clone()) {
-                        additional.push(SteamLibrary {
-                            path: real,
-                            launcher: base.launcher,
-                        });
-                    }
-                }
-            }
-        }
-    }
-    paths.extend(additional);
-    paths
-}
-fn scan_steam_in(home: &Path, registered: &[steam_libraries::RegisteredLibrary]) -> Vec<SteamGame> {
-    let mut results = Vec::new();
-    let mut seen = HashSet::new();
-    for library in steam_locations_in(home, registered) {
-        let entries = match fs::read_dir(&library.path) {
-            Ok(items) => items,
-            Err(_) => continue,
-        };
-        for entry in entries.flatten().take(10_000) {
-            let path = entry.path();
-            let filename = path.file_name().and_then(|v| v.to_str()).unwrap_or("");
-            if !filename.starts_with("appmanifest_") || !filename.ends_with(".acf") {
-                continue;
-            }
-            let Some(contents) = steam_libraries::bounded_text(&path) else {
-                continue;
-            };
-            let mut app_id = None;
-            let mut title = None;
-            for line in contents.lines() {
-                let fields = quoted_tokens(line);
-                if fields.len() != 2 {
-                    continue;
-                }
-                match fields[0].as_str() {
-                    "appid" => app_id = Some(fields[1].clone()),
-                    "name" if title.is_none() => title = Some(fields[1].clone()),
-                    _ => (),
-                }
-            }
-            if let Some(id) =
-                app_id.filter(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
-            {
-                if seen.insert(id.clone()) {
-                    results.push(SteamGame {
-                        game: Game {
-                            uid: id.clone(),
-                            title: title.unwrap_or_else(|| format!("Steam App {id}")),
-                            path: path.to_string_lossy().into(),
-                            kind: "steam".into(),
-                            app_id: Some(id),
-                        },
-                        launcher: library.launcher,
-                    });
-                }
-            }
-        }
-    }
-    results.sort_by(|a, b| {
-        a.game
-            .title
-            .to_lowercase()
-            .cmp(&b.game.title.to_lowercase())
-    });
-    results
-}
-fn scan_steam() -> Result<Vec<Game>, String> {
-    Ok(scan_steam_in(&home()?, &load_settings()?.steam_libraries)
-        .into_iter()
-        .map(|g| g.game)
-        .collect())
-}
-fn steam_command(uid: &str, launcher: SteamLauncher) -> Command {
-    let mut command = match launcher {
-        SteamLauncher::Native => launch_command("steam"),
-        SteamLauncher::Flatpak => {
-            let mut c = launch_command("flatpak");
-            c.args(["run", "com.valvesoftware.Steam"]);
-            c
-        }
-        SteamLauncher::Snap => {
-            let mut c = launch_command("snap");
-            c.args(["run", "steam"]);
-            c
-        }
-    };
-    command.args(["-applaunch", uid]);
-    command
-}
-
 // Setup refresh is read-only: unlike bootstrap, it must never auto-link or
 // rewrite a profile while the user is editing another choice.
 #[cfg(feature = "desktop")]
@@ -1063,47 +830,6 @@ fn save_emulator(
             settings.profiles.insert(id.clone(), profile);
             Ok(())
         })
-    })
-}
-
-#[cfg_attr(feature = "desktop", tauri::command)]
-fn add_windows_game(title: String, target: String, runner: String) -> Result<WindowsGame, String> {
-    if title.trim().is_empty() {
-        return Err("Game title is required".into());
-    }
-    let path = Path::new(&target);
-    if !path.is_file() {
-        return Err("Game or launcher file does not exist".into());
-    }
-    validate_windows_shortcut(path, &runner)?;
-    let canonical = path.canonicalize().map_err(|e| e.to_string())?;
-    validate_windows_shortcut(&canonical, &runner)?;
-    let uid = actionable_path(&canonical)?;
-    let game = WindowsGame {
-        uid: uid.clone(),
-        title: title.trim().into(),
-        target: uid,
-        runner,
-    };
-    update_settings(|settings| {
-        if settings.windows.iter().any(|g| g.uid == game.uid) {
-            return Err("Game already in Windows library".into());
-        }
-        settings.windows.push(game.clone());
-        Ok(game)
-    })
-}
-
-#[cfg_attr(feature = "desktop", tauri::command)]
-fn list_windows_games() -> Result<Vec<WindowsGame>, String> {
-    Ok(load_settings()?.windows)
-}
-
-#[cfg_attr(feature = "desktop", tauri::command)]
-fn remove_windows_game(uid: String) -> Result<(), String> {
-    update_settings(|settings| {
-        settings.windows.retain(|entry| entry.uid != uid);
-        Ok(())
     })
 }
 
@@ -1191,68 +917,6 @@ async fn open_emulator(id: String) -> Result<launches::Info, String> {
         .map_err(|e| e.to_string())?
 }
 
-fn launch_steam_impl(uid: String) -> Result<launches::Info, String> {
-    if !uid.bytes().all(|b| b.is_ascii_digit()) || uid.is_empty() {
-        return Err("Invalid Steam app ID".into());
-    }
-    let game = scan_steam_in(&home()?, &load_settings()?.steam_libraries)
-        .into_iter()
-        .find(|g| g.game.uid == uid)
-        .ok_or("Steam app not found in installed libraries")?;
-    // Never silently switch installations: their libraries and settings differ.
-    let info=launches::start(steam_libraries::command_for_launch(&uid, game.launcher)?, "steam")?;
-    let _=library_tools::record(&game.game);
-    Ok(info)
-}
-#[cfg(feature = "desktop")]
-#[tauri::command]
-async fn launch_steam_game(uid: String) -> Result<launches::Info, String> {
-    tauri::async_runtime::spawn_blocking(move || launch_steam_impl(uid))
-        .await
-        .map_err(|e| e.to_string())?
-}
-fn validate_windows_shortcut(path: &Path, runner: &str) -> Result<(), String> {
-    if runner != "desktop"
-        || !path
-            .extension()
-            .and_then(|value| value.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("desktop"))
-    {
-        return Err("Only existing .desktop shortcuts are supported. Direct .exe launching is unavailable. Add a working desktop shortcut instead; your installed game files are unchanged.".into());
-    }
-    Ok(())
-}
-fn windows_command(game: &WindowsGame) -> Result<Command, String> {
-    let path = Path::new(&game.target);
-    // Validate saved entries too, including registrations made by older versions.
-    validate_windows_shortcut(path, &game.runner)?;
-    if !path.is_file() {
-        return Err("Windows desktop shortcut is missing".into());
-    }
-    let mut command = launch_command("gio");
-    command.arg("launch").arg(path);
-    Ok(command)
-}
-fn launch_windows_impl(uid: String) -> Result<launches::Info, String> {
-    let settings = load_settings()?;
-    let game = settings
-        .windows
-        .iter()
-        .find(|g| g.uid == uid)
-        .ok_or("Windows game not registered")?;
-    let info=launches::start(windows_command(game)?, "windows")?;
-    let record=Game{uid:game.uid.clone(),title:game.title.clone(),path:game.target.clone(),kind:"windows".into(),app_id:None};
-    let _=library_tools::record(&record);
-    Ok(info)
-}
-#[cfg(feature = "desktop")]
-#[tauri::command]
-async fn launch_windows_game(uid: String) -> Result<launches::Info, String> {
-    tauri::async_runtime::spawn_blocking(move || launch_windows_impl(uid))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
 // Console artwork is stored in managed Covers folders, separately from game files.
 // Titles have stable IDs and SHA-256 filenames to prevent traversal or name collisions.
 const MAX_COVER_BYTES: usize = 4 * 1024 * 1024;
@@ -1275,26 +939,6 @@ fn cover_key(kind: &str, uid: &str) -> String {
 }
 
 fn validate_game(kind: &str, uid: &str) -> Result<Game, String> {
-    if kind == "steam" {
-        return scan_steam()?
-            .into_iter()
-            .find(|g| g.uid == uid)
-            .ok_or_else(|| "Steam game is no longer installed".into());
-    }
-    if kind == "windows" {
-        let game = load_settings()?
-            .windows
-            .into_iter()
-            .find(|g| g.uid == uid)
-            .ok_or("Windows game no longer registered")?;
-        return Ok(Game {
-            uid: game.uid,
-            title: game.title,
-            path: game.target,
-            kind: "windows".into(),
-            app_id: None,
-        });
-    }
     // Validate console paths directly instead of rescanning thousands of ROM files
     // for each cover requested as the user scrolls the library.
     let s = spec(kind)?;
@@ -1351,34 +995,6 @@ fn console_cover_candidates(kind: &str, uid: &str) -> Result<Vec<PathBuf>, Strin
 }
 
 fn candidate_cover_paths(game: &Game) -> Vec<PathBuf> {
-    if game.kind == "steam" {
-        let id = game.app_id.as_deref().unwrap_or("");
-        let Ok(home) = home() else {
-            return Vec::new();
-        };
-        let mut roots = vec![
-            home.join(".steam/steam/appcache/librarycache"),
-            home.join(".local/share/Steam/appcache/librarycache"),
-            home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam/appcache/librarycache"),
-            home.join("snap/steam/common/.local/share/Steam/appcache/librarycache"),
-            home.join("snap/steam/common/.steam/steam/appcache/librarycache"),
-        ];
-        if let Ok(settings) = load_settings() {
-            for library in steam_locations_in(&home, &settings.steam_libraries) {
-                if let Some(parent) = library.path.parent() {
-                    roots.push(parent.join("appcache/librarycache"));
-                }
-            }
-        }
-        let mut candidates = Vec::new();
-        for root in roots {
-            candidates.push(root.join(format!("{id}_library_600x900.jpg")));
-            candidates.push(root.join(format!("{id}_library_600x900.png")));
-            candidates.push(root.join(id).join("library_600x900.jpg"));
-            candidates.push(root.join(id).join("library_600x900.png"));
-        }
-        return candidates;
-    }
     let path = Path::new(&game.path);
     let Some(parent) = path.parent() else {
         return Vec::new();
@@ -1751,25 +1367,16 @@ fn main() {
             libraries::add_library_folder,
             libraries::remove_library_folder,
             libraries::browse_library_folder,
-            desktop_commands::scan_steam,
-            steam_libraries::list_steam_libraries,
-            steam_libraries::add_steam_library,
-            steam_libraries::remove_steam_library,
             desktop_commands::save_emulator,
             discover_emulators,
             desktop_commands::list_flatpaks,
             emulators::browse_emulator,
             favorites::set_favorite,
             favorites::import_favorites,
-            add_windows_game,
-            list_windows_games,
-            remove_windows_game,
             open_console_folder,
             launch_console_game,
             open_emulator,
             launches::get_launch_status,
-            launch_steam_game,
-            launch_windows_game,
             desktop_commands::get_cover,
             desktop_commands::save_cover,
             download_cover,
@@ -1831,22 +1438,6 @@ mod tests {
         assert!(scan_console_in("ps2", &[invalid_parent]).unwrap().is_empty());
     }
 
-    #[test]
-    fn windows_shortcut_rejects_non_utf8_canonical_symlink_target() {
-        use std::os::unix::ffi::OsStringExt;
-        let temp = tempfile::tempdir().unwrap();
-        let target = temp.path().join(std::ffi::OsString::from_vec(b"Game-\xff.desktop".to_vec()));
-        fs::write(&target, b"original shortcut").unwrap();
-        let alias = temp.path().join("alias.desktop");
-        std::os::unix::fs::symlink(&target, &alias).unwrap();
-        let lookalike = temp.path().join("Game-\u{fffd}.desktop");
-        fs::write(&lookalike, b"different shortcut").unwrap();
-        let error = add_windows_game("Game".into(), alias.to_str().unwrap().into(), "desktop".into())
-            .err().expect("must reject before changing settings");
-        assert!(error.contains("non-UTF-8"));
-        assert_eq!(fs::read(target).unwrap(), b"original shortcut");
-        assert_eq!(fs::read(lookalike).unwrap(), b"different shortcut");
-    }
 
     #[test]
     fn all_console_paths_are_unique_and_valid() {
@@ -1858,67 +1449,6 @@ mod tests {
             assert!(s.games.ends_with(" Games"));
         }
         assert_eq!(SPECS.len(), 24);
-    }
-    #[test]
-    fn steam_preserves_launcher_for_primary_and_external_libraries() {
-        let root = tempfile::tempdir().unwrap();
-        let native = root.path().join(".local/share/Steam/steamapps");
-        let flatpak = root
-            .path()
-            .join(".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps");
-        let external = root.path().join("External Steam Library/steamapps");
-        for (directory, id) in [(&native, "11"), (&flatpak, "22"), (&external, "33")] {
-            fs::create_dir_all(directory).unwrap();
-            fs::write(
-                directory.join(format!("appmanifest_{id}.acf")),
-                format!("\"appid\" \"{id}\"\n\"name\" \"Game {id}\"\n"),
-            )
-            .unwrap();
-        }
-        fs::write(
-            flatpak.join("libraryfolders.vdf"),
-            format!("\"path\" \"{}\"\n", external.parent().unwrap().display()),
-        )
-        .unwrap();
-        let games = scan_steam_in(root.path(), &[]);
-        assert_eq!(games.len(), 3);
-        for game in games {
-            let flat = game.game.uid != "11";
-            assert_eq!(
-                game.launcher,
-                if flat {
-                    SteamLauncher::Flatpak
-                } else {
-                    SteamLauncher::Native
-                }
-            );
-            let command = steam_command(&game.game.uid, game.launcher);
-            assert_eq!(
-                command.get_program(),
-                if flat { "flatpak" } else { "steam" }
-            );
-            let args: Vec<_> = command
-                .get_args()
-                .map(|arg| arg.to_string_lossy().into_owned())
-                .collect();
-            let mut expected: Vec<String> = if flat {
-                vec!["run".into(), "com.valvesoftware.Steam".into()]
-            } else {
-                vec![]
-            };
-            expected.extend(["-applaunch".into(), game.game.uid]);
-            assert_eq!(args, expected);
-        }
-        // Legacy native aliases into the Flatpak root must not lose provenance.
-        fs::create_dir_all(root.path().join(".steam")).unwrap();
-        std::os::unix::fs::symlink(flatpak.parent().unwrap(), root.path().join(".steam/root"))
-            .unwrap();
-        let games = scan_steam_in(root.path(), &[]);
-        assert_eq!(games.len(), 3);
-        assert_eq!(
-            games.iter().find(|g| g.game.uid == "22").unwrap().launcher,
-            SteamLauncher::Flatpak
-        );
     }
     #[test]
     fn ps3_titles_support_disc_and_digital_layouts() {
@@ -1938,142 +1468,6 @@ mod tests {
             )),
             "Disc Title"
         );
-    }
-    #[test]
-    fn windows_shortcuts_reject_direct_executables_and_unknown_runners() {
-        let root = tempfile::tempdir().unwrap();
-        let target = root.path().join("Game with spaces.exe");
-        fs::write(&target, b"synthetic game fixture").unwrap();
-        for runner in ["desktop", "legacy-runtime", ""] {
-            let error = add_windows_game(
-                "Unsupported entry".into(),
-                target.to_string_lossy().into(),
-                runner.into(),
-            )
-            .err()
-            .expect("direct executable registration must fail");
-            assert!(error.contains("Direct .exe launching is unavailable"));
-            let game = WindowsGame {
-                uid: "legacy".into(),
-                title: "Legacy game".into(),
-                target: target.to_string_lossy().into(),
-                runner: runner.into(),
-            };
-            assert!(windows_command(&game).is_err());
-        }
-        let disguised = root.path().join("Disguised.desktop");
-        std::os::unix::fs::symlink(&target, &disguised).unwrap();
-        assert!(add_windows_game(
-            "Disguised executable".into(),
-            disguised.to_string_lossy().into(),
-            "desktop".into()
-        )
-        .is_err());
-        let desktop = root.path().join("Game.DESKTOP");
-        fs::write(&desktop, b"[Desktop Entry]\nType=Application\nExec=true\n").unwrap();
-        let game = WindowsGame {
-            uid: "shortcut".into(),
-            title: "Shortcut game".into(),
-            target: desktop.to_string_lossy().into(),
-            runner: "desktop".into(),
-        };
-        let command = windows_command(&game).unwrap();
-        assert_eq!(command.get_program(), "gio");
-        assert_eq!(
-            command.get_args().collect::<Vec<_>>(),
-            [std::ffi::OsStr::new("launch"), desktop.as_os_str()]
-        );
-        assert!(validate_windows_shortcut(&desktop, "legacy-runtime").is_err());
-    }
-    #[test]
-    fn legacy_windows_entries_are_preserved_but_not_launchable() {
-        let value = serde_json::json!({
-            "uid": "/games/Legacy.exe", "title": "Legacy", "target": "/games/Legacy.exe",
-            "runner": "legacy-runtime"
-        });
-        let game: WindowsGame = serde_json::from_value(value.clone()).unwrap();
-        assert!(windows_command(&game)
-            .unwrap_err()
-            .contains("Direct .exe launching is unavailable"));
-        assert_eq!(serde_json::to_value(game).unwrap(), value);
-    }
-    #[test]
-    fn external_launch_fixture() {
-        let Some(root) = std::env::var_os("MATRIX_EXTERNAL_FIXTURE") else {
-            return;
-        };
-        use std::os::unix::fs::PermissionsExt;
-        let root = PathBuf::from(root);
-        fs::create_dir_all(root.join("bin")).unwrap();
-        {
-            let (program, ext, runner) = ("gio", "desktop", "desktop");
-            let script = root.join("bin").join(program);
-            fs::write(&script, format!("#!/bin/sh\nprintf 'early {program} diagnostic\\n' >&2\nsleep 0.7\nprintf 'late {program} diagnostic\\n' >&2\nexit 17\n")).unwrap();
-            fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
-            let target = root.join(format!("Game with spaces.{ext}"));
-            fs::write(&target, b"synthetic fixture, not executable game data").unwrap();
-            let game = add_windows_game(
-                "Fixture".into(),
-                target.to_string_lossy().into(),
-                runner.into(),
-            )
-            .unwrap();
-            let command = windows_command(&game).unwrap();
-            let args: Vec<_> = command.get_args().collect();
-            assert_eq!(args.last().unwrap(), &target.as_os_str());
-            assert_eq!(args.len(), 2);
-            assert_eq!(args[0], "launch");
-            assert_eq!(command.get_program(), "gio");
-            let info = launch_windows_impl(game.uid).unwrap();
-            assert_eq!(info.phase, "started");
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-            loop {
-                let info = launches::get_launch_status("windows".into())
-                    .unwrap()
-                    .unwrap();
-                if info.phase == "error" {
-                    assert!(info.message.contains("17"));
-                    assert!(info.message.contains("Windows launcher"));
-                    assert!(info.log.contains(&format!("early {program} diagnostic")));
-                    assert!(info.log.contains(&format!("late {program} diagnostic")));
-                    assert!(Path::new(&info.log_path).is_file());
-                    break;
-                }
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "launcher failure was not reported"
-                );
-                std::thread::sleep(std::time::Duration::from_millis(20));
-            }
-        }
-        assert!(launches::get_launch_status("../escape".into()).is_err());
-    }
-    #[test]
-    fn desktop_shortcut_failures_are_captured_after_spawn() {
-        let root = tempfile::tempdir().unwrap();
-        let (_, module) = module_path!().split_once("::").unwrap_or(("", "tests"));
-        let fixture = format!("{module}::external_launch_fixture");
-        let path = std::env::join_paths(std::iter::once(root.path().join("bin")).chain(
-            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
-        ))
-        .unwrap();
-        let output = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", &fixture, "--nocapture"])
-            .env("MATRIX_EXTERNAL_FIXTURE", root.path())
-            .env("HOME", root.path())
-            .env("XDG_CONFIG_HOME", root.path().join("config"))
-            .env("XDG_DATA_HOME", root.path().join("data"))
-            .env("PATH", path)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
-        assert!(root.path().join("data/matrix/launches").is_dir());
     }
     #[test]
     fn custom_nextgen_launch_arguments_are_literal_and_console_scoped() {
@@ -2178,17 +1572,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn parse_vdf_tokens() {
-        assert_eq!(
-            quoted_tokens("  \"path\" \"/home/bless/Games/Steam\""),
-            vec!["path", "/home/bless/Games/Steam"]
-        );
-        assert_eq!(
-            quoted_tokens("\"appid\" \"123456\""),
-            vec!["appid", "123456"]
-        );
-    }
     #[test]
     fn cover_validation_is_content_based() {
         assert!(cover_format(b"\x89PNG\r\n\x1a\nhello").is_none());

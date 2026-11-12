@@ -857,12 +857,7 @@ mod tests {
                 .favorites
                 .insert("ps2".into(), vec!["/games/keep.iso".into()]);
             current.artwork.enabled = false;
-            current.windows.push(WindowsGame {
-                uid: "keep".into(),
-                title: "Keep this game".into(),
-                target: "/games/keep.desktop".into(),
-                runner: "desktop".into(),
-            });
+            current.legacy_fields.insert("windows".into(),serde_json::json!([{"uid":"keep","title":"Keep this game","target":"/games/keep.desktop","runner":"desktop"}]));
             Ok(())
         })
         .unwrap();
@@ -875,7 +870,7 @@ mod tests {
         assert_eq!(saved.profiles["ps2"].emulator_name, "Manual selection");
         assert_eq!(saved.favorites["ps2"], ["/games/keep.iso"]);
         assert!(!saved.artwork.enabled);
-        assert_eq!(saved.windows[0].uid, "keep");
+        assert_eq!(saved.legacy_fields["windows"][0]["uid"], "keep");
         assert!(report.linked.is_empty());
     }
 

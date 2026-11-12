@@ -36,7 +36,7 @@ function fixture() {
   let source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
   source=source.replace('readPrefs(); setupEvents(); render(); window.matrixStartup?.complete(); void initializeArt(); void initializeNative();','');
   vm.runInContext(source+`;hydrateNativeCovers=()=>{};renderLaunchStatus=()=>{};toast=()=>{};gameCover=()=>'';
-    globalThis.api={state,renderHome,renderConsole,renderGameResults,renderSettings,renderExternal,dismissOverlay,toggleFavorite,handleAction};`,context);
+    globalThis.api={state,renderHome,renderConsole,renderGameResults,renderSettings,dismissOverlay,toggleFavorite,handleAction};`,context);
   const api=context.api;api.state.page='console';api.state.consoleId='ps2';api.state.imported.ps2=[{uid:'game-1',title:'First'},{uid:'game-2',title:'Second'}];
   api.renderConsole();
   const find=(action,value,uid)=>[...groups.screen,...groups.results].find(n=>n.dataset.action===action&&(value===undefined||n.dataset.value===value)&&(uid===undefined||n.dataset.uid===uid));
@@ -133,24 +133,6 @@ test('settings save dismissal followed by rerender retains configure opener',()=
  f.dismissOverlay();f.renderSettings();
  assert.equal(f.document.activeElement,f.groups.screen.find(n=>n.dataset.action==='configure'&&n.dataset.id==='ps2'));
 });
-for(const kind of ['steam','windows']) test(`${kind} refresh remaps details opener without stealing modal focus`,()=>{
- const f=fixture();f.state.page=kind;f.state.consoleId=null;f.state[kind]=[{uid:'external-1',title:'External'}];f.renderExternal(kind);
- const opener=f.find('external-game',undefined,'external-1');opener.focus();f.state.lastFocus=opener;f.state.overlay='external';const modal=f.modal();
- f.renderExternal(kind);assert.equal(f.document.activeElement,modal);
- f.dismissOverlay();assert.equal(f.document.activeElement,f.find('external-game',undefined,'external-1'));
-});
-
-for(const kind of ['steam','windows']) test(`${kind} missing details target returns to search`,()=>{
- const f=fixture();f.state.page=kind;f.state.consoleId=null;f.state[kind]=[{uid:'external-1',title:'External'}];f.renderExternal(kind);
- const opener=f.find('external-game',undefined,'external-1');opener.focus();f.state.lastFocus=opener;f.state.overlay='external';const modal=f.modal();
- f.state[kind]=[];f.renderExternal(kind);assert.equal(f.document.activeElement,modal);
- f.dismissOverlay();assert.equal(f.document.activeElement,f.groups.screen.find(n=>n.id==='external-search'));
-});
-test('switching external pages does not transfer focus to a coincidentally matching UID',()=>{
- const f=fixture();f.state.page='steam';f.state.steam=[{uid:'shared',title:'Steam'}];f.renderExternal('steam');f.find('external-game',undefined,'shared').focus();
- f.state.page='windows';f.state.windows=[{uid:'shared',title:'Windows'}];f.renderExternal('windows');
- assert.equal(f.document.activeElement,f.document.body);
-});
 test('returning from an unrelated screen does not restore its control into settings',()=>{
  const f=fixture();f.state.page='settings';f.renderSettings();
  // Model Home replacing the screen outside these focused render functions.
@@ -163,9 +145,4 @@ test('settings refresh remaps configure opener without stealing modal focus',()=
  f.state.lastFocus=opener;f.state.overlay='configure';const modal=f.modal();f.renderSettings();
  assert.equal(f.document.activeElement,modal);f.dismissOverlay();
  assert.equal(f.document.activeElement,f.groups.screen.find(n=>n.dataset.action==='configure'&&n.dataset.id==='ps2'));
-});
-test('unrelated navigation control keeps focus during same-page external refresh',()=>{
- const f=fixture();f.state.page='steam';f.renderExternal('steam');
- const navigation={isConnected:true};f.document.activeElement=navigation;f.renderExternal('steam');
- assert.equal(f.document.activeElement,navigation);
 });

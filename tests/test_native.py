@@ -686,117 +686,21 @@ def main():
             except RuntimeError as e:
                 assert "outside" in str(e)
             click('[data-action="close"]')
-            log.unlink()
-            click('[data-action="steam"]')
-            wait_for(lambda: js('return document.querySelectorAll(".game-item").length === 1'))
-            click('.game-card')
-            wait_for(log.exists)
-            assert log.read_text().splitlines() == ['-applaunch', '12345']
-            wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
-            # Direct executables and retired runner values cannot be registered or launched.
-            for runner in ['desktop', 'retired-runtime']:
+            assert not js('return Boolean(document.querySelector("#nav-steam,#nav-windows,[data-action=add-windows]"))')
+            assert 'windows' not in invoke('bootstrap')
+            for command,args in [('scan_steam',{}),('list_windows_games',{}),('launch_steam_game',{'uid':'12345'}),('launch_windows_game',{'uid':legacy['uid']}),('add_windows_game',{'title':'No','target':str(desktop),'runner':'desktop'}),('list_steam_libraries',{})]:
                 try:
-                    invoke('add_windows_game', {'title':'Rejected executable','target':str(exe),'runner':runner})
-                    raise AssertionError('Direct executable registration was accepted')
+                    invoke(command,args)
+                    raise AssertionError('Retired IPC is still callable: '+command)
                 except RuntimeError as error:
-                    assert 'Direct .exe launching is unavailable' in str(error)
-            try:
-                invoke('launch_windows_game', {'uid':legacy['uid']})
-                raise AssertionError('Legacy direct executable was launched')
-            except RuntimeError as error:
-                assert 'Direct .exe launching is unavailable' in str(error)
-            assert legacy in invoke('list_windows_games')
-            assert exe.read_text() == 'Synthetic registration fixture.'
-            invoke('add_windows_game', {'title':'Native Windows Fixture','target':str(desktop),'runner':'desktop'})
-            click('[data-action="refresh"]')
-            click('[data-action="windows"]')
-            wait_for(lambda: js('return document.querySelectorAll(".game-item").length === 2'))
-            click('.game-card[aria-label="View Legacy Windows Fixture"]')
-            assert js('return document.querySelector(".launch-button").disabled')
-            assert 'Direct .exe launching is unavailable' in js('return document.querySelector(".detail-description").textContent')
-            click('[data-action="close"]')
-            click('[data-action="add-windows"]')
-            assert not js('return Boolean(document.querySelector("#windows-runner"))')
-            assert '.desktop' in js('return document.querySelector("#windows-target").placeholder')
-            click('[data-action="close"]')
-            log.unlink()
-            click('.game-card[aria-label="Launch Native Windows Fixture"]')
-            wait_for(log.exists)
-            assert log.read_text().splitlines() == ['launch', str(desktop)]
-            wait_for(lambda: (home/'child-cache.log').read_text() == expected_child_cache)
-            screenshot('matrix-linux-windows.png')
-            # A native Steam binary is present, but this title belongs to Flatpak.
-            flat_steam = home/'.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps'
-            flat_steam.mkdir(parents=True)
-            external_steam = home/'External Steam Library/steamapps'
-            external_steam.mkdir(parents=True)
-            (flat_steam/'libraryfolders.vdf').write_text('"path" "'+str(external_steam.parent)+'"\n')
-            (external_steam/'appmanifest_23456.acf').write_text('"appid" "23456"\n"name" "Flatpak Steam Fixture"\n')
-            invoke('launch_steam_game', {'uid':'23456'})
-            wait_for(lambda: log.read_text().splitlines() == ['run','com.valvesoftware.Steam','-applaunch','23456'])
-            # Synthetic Snap client and custom Steam root IPC; no real gameplay.
-            snap = home/'bin/snap'
-            snap.write_text((home/'bin/steam').read_text())
-            snap.chmod(0o755)
-            snap_steam = home/'snap/steam/common/.local/share/Steam/steamapps'
-            snap_steam.mkdir(parents=True)
-            (snap_steam/'appmanifest_34567.acf').write_text('"appid" "34567"\n"name" "Snap Steam Fixture"\n')
-            invoke('launch_steam_game', {'uid':'34567'})
-            wait_for(lambda: log.read_text().splitlines() == ['run','steam','-applaunch','34567'])
-            custom_steam = home/'Custom Steam Library/steamapps'
-            custom_steam.mkdir(parents=True)
-            custom_manifest = custom_steam/'appmanifest_45678.acf'
-            custom_manifest.write_text('"appid" "45678"\n"name" "Custom Steam Fixture"\n')
-            roots = invoke('add_steam_library', {'path':str(custom_steam.parent),'launcher':'native'})
-            assert roots == [{'path':str(custom_steam),'launcher':'native','available':True}], roots
-            invoke('launch_steam_game', {'uid':'45678'})
-            wait_for(lambda: log.read_text().splitlines() == ['-applaunch','45678'])
-            roots = invoke('add_steam_library', {'path':str(custom_steam),'launcher':'snap'})
-            assert len(roots)==1 and roots[0]['launcher']=='snap', roots
-            invoke('launch_steam_game', {'uid':'45678'})
-            wait_for(lambda: log.read_text().splitlines() == ['run','steam','-applaunch','45678'])
-            offline = custom_steam.with_name('unmounted')
-            custom_steam.rename(offline)
-            roots = invoke('list_steam_libraries')
-            assert len(roots)==1 and not roots[0]['available'] and roots[0]['launcher']=='snap', roots
-            assert invoke('remove_steam_library', {'path':str(custom_steam)}) == []
-            offline.rename(custom_steam)
-            assert custom_manifest.is_file(), 'Removing a registration must preserve Steam files'
-            # Delayed runner failures must remain visible after successful spawn.
-            wait_for(lambda: js('return !state.launchBusy.windows'))
-            gio = home/'bin/gio'
-            gio.write_text('#!/bin/sh\nsleep 0.7\necho "Desktop shortcut fixture could not launch" >&2\nexit 17\n')
-            click('.game-card[aria-label="Launch Native Windows Fixture"]')
-            wait_for(lambda: js('return state.launches.windows?.phase === "error"'))
-            failure = js('return state.launches.windows')
-            assert '17' in failure['message'] and 'Windows launcher' in failure['message'], failure
-            # Rust formats ExitStatus as "exit status: 17". Check the actual
-            # backend message in the error UI instead of inventing its wording.
-            assert js('return document.querySelector("#launch-status .launch-error p")?.textContent') == failure['message']
-            click('[data-action="launch-details"][data-id="windows"]')
-            assert 'Desktop shortcut fixture could not launch' in js('return document.querySelector(".launch-output").textContent')
-            assert not js('return Boolean(document.querySelector(".launch-dialog [data-action=open-emulator]"))')
-            click('[data-action="close"]')
-            gio.write_text(launcher)
-            # gio dispatch is also monitored; this is a shim, not a GTK desktop launch.
-            desktop = home/'Failed Launcher.desktop'
-            desktop.write_text('[Desktop Entry]\nType=Application\nName=Fixture\nExec=missing-fixture\n')
-            gio = home/'bin/gio'
-            gio.write_text('#!/bin/sh\nsleep 0.7\necho "gio fixture failed to launch" >&2\nexit 19\n')
-            gio.chmod(0o755)
-            registered = invoke('add_windows_game', {'title':'Desktop failure','target':str(desktop),'runner':'desktop'})
-            info = invoke('launch_windows_game', {'uid':registered['uid']})
-            assert info['phase'] == 'started', info
-            wait_for(lambda: invoke('get_launch_status', {'id':'windows'})['phase'] == 'error')
-            info = invoke('get_launch_status', {'id':'windows'})
-            assert '19' in info['message'] and 'gio fixture failed to launch' in info['log'], info
-            invoke('remove_windows_game', {'uid':registered['uid']})
+                    assert 'not found' in str(error).lower(), str(error)
+            assert manifest.is_file() and exe.read_text() == 'Synthetic registration fixture.'
+            assert legacy in json.loads((home/'config/matrix/frontend.json').read_text())['windows']
+            print('PASS: console-only navigation, retired scan/launch IPC removed and installed files/legacy settings preserved')
             invoke('save_artwork_settings', {'enabled':False,'style':'3d'})
             boot=invoke('bootstrap')
             assert boot['artwork'] == {'enabled':False,'style':'3d','titleEnabled':False}
             assert boot['profiles']['ps2']['emulatorPath'].endswith('TestEmulator.AppImage')
-            assert len(boot['windows']) == 2
-            assert legacy in boot['windows']
             assert boot['favorites']['ps2']==[str(ps2game)]
             apps=invoke('list_flatpaks')
             assert {a['installation'] for a in apps}=={'user','system'}
@@ -870,7 +774,7 @@ def main():
             # Exercise real WebKit focus/layout and the production polling loop,
             # with a synthetic standard Gamepad API device. This is NOT physical
             # controller, driver mapping, or platform Gamepad API verification.
-            assert js('return ["nav-consoles","nav-steam","nav-windows","nav-settings"].every(id=>document.getElementById(id).getAttribute("aria-label"))')
+            assert js('return ["nav-consoles","nav-settings"].every(id=>document.getElementById(id).getAttribute("aria-label"))')
             assert js('return document.hasFocus()'), 'Native window must own focus for controller checks'
             js('''window.__originalGamepads=Object.getOwnPropertyDescriptor(navigator,'getGamepads');
                 window.__testPad={index:0,id:'Matrix synthetic controller',mapping:'standard',connected:true,
@@ -1060,10 +964,9 @@ def main():
             wait_for(lambda: js('return document.querySelector(".favorite")?.getAttribute("aria-pressed") === "true"'))
             assert invoke('bootstrap')['profiles']['ps2']['launcher']=='flatpak'
             assert set(invoke('bootstrap')['favorites'].get('ps1', [])) == ps1_favorite_baseline
-            assert legacy in invoke('list_windows_games')
+            assert legacy in json.loads((home/'config/matrix/frontend.json').read_text())['windows']
             assert exe.read_text() == 'Synthetic registration fixture.'
-            print('PASS: desktop-only registration, direct executable rejection and legacy entry preservation')
-            print('PASS: scoped sidecar-save Flatpak argv, native/Flatpak Steam provenance, and delayed Windows runner diagnostics (synthetic fixtures)')
+            print('PASS: scoped sidecar-save Flatpak argv and console-only IPC (synthetic fixtures)')
             print('PASS: automatic Flatpak/AppImage linking, canonical duplicate removal, execute-permission preservation, Open emulator and captured startup errors')
             print('PASS: native favorites survive process restart and webview reload, remain console-scoped, and preserve profiles; Flatpak discovery/setup/launch argv use harmless fixtures')
             print('PASS: real Tauri/WebKit window, native IPC, 24 libraries, PS1/PS2 scanning, manual/cache artwork, console boundaries, persisted settings, three launcher argument paths')

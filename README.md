@@ -2,7 +2,7 @@
 
 # Matrix-Play
 
-A Linux game-library frontend for your console games, Steam library and Windows Games.
+A Linux console-game library and emulator frontend.
 
 [Download](https://github.com/relentlesspoetry-coder/Matrix-Play/releases) · [Setup guide](EMULATOR-LAUNCHES.md) · [Report a problem](https://github.com/relentlesspoetry-coder/Matrix-Play/issues)
 
@@ -13,14 +13,14 @@ Download the **DEB** or **AppImage** from [Releases](https://github.com/relentle
 For Zorin or Ubuntu, install the DEB from your download folder:
 
 ```bash
-sudo apt install ./Matrix-Play_0.6.11_amd64.deb
+sudo apt install ./Matrix-Play_0.6.12_amd64.deb
 ```
 
 For the portable AppImage:
 
 ```bash
-chmod +x Matrix-Play_0.6.11_amd64.AppImage
-./Matrix-Play_0.6.11_amd64.AppImage
+chmod +x Matrix-Play_0.6.12_amd64.AppImage
+./Matrix-Play_0.6.12_amd64.AppImage
 ```
 
 For future releases, open **Settings → Check for updates**.
@@ -40,7 +40,7 @@ In-app imports and automatic downloads save their images directly in that consol
 
 ## Features
 
-- 24 console libraries, plus separate Steam and Windows collections.
+- 24 separate console libraries.
 - Existing game folders and external drives, without moving your files.
 - Native, AppImage and Flatpak emulator setup, with automatic detection for supported emulators.
 - Cover art, favorites, search, grid/list views and controller navigation.
@@ -59,8 +59,6 @@ PS5, Switch 2 and Xbox 360 use manually configured emulators. See the [setup gui
 1. Open a console library, then **··· → Manage folders** to add your games.
 2. Choose **Set up emulator**, select your installed emulator and save.
 3. Click **Refresh**, then select a game to launch it.
-
-Steam detects existing installations. The Windows collection uses working `.desktop` shortcuts.
 
 Emulators, games, firmware and keys are supplied separately.
 
@@ -83,14 +81,14 @@ For ambiguous titles or a different cover, open game details → **Find on Steam
 
 ## Library tools
 
-- **Recently played** on the console menu shows the last eight successful launch requests across consoles, Steam and Windows; the latest 20 are saved. This is launch history, not measured playtime.
-- Open a console game's details → **Launch settings** to override its emulator arguments. Enter one literal argument per line, with `{game}` for the game path. Leave blank to restore console defaults. These overrides do not change Steam or Windows shortcuts.
+- **Recently played** on the console menu shows the last eight successful launch requests across console libraries; the latest 20 are saved. This is launch history, not measured playtime.
+- Open a console game's details → **Launch settings** to override its emulator arguments. Enter one literal argument per line, with `{game}` for the game path. Leave blank to restore console defaults.
 - Settings → **Backup and restore** exports settings, favorites, recent history, launch overrides and managed console cover files. API keys, game files, external sidecar art and old online caches are excluded. Paths remain unchanged; backups are intended for the same library layout. Restore keeps existing covers, fills in missing files and saves `before-restore.json` beside the settings first. Only restore trusted backups: emulator profiles contain executable paths and arguments. A backup is limited to 64 MB, with at most 32 MB of source covers (4 MB per image).
 - Settings → Artwork → **Cover download queue** shows results and errors. Pause stops scheduling further jobs; an in-flight request may finish. Resume retries pending/interrupted/failed jobs and skips completed jobs. Provider rate limits still apply.
 
 ## Library organization and save backups
 
-Settings → **Console visibility & order** controls hidden consoles, pins, order and the ready-only filter. Hidden consoles remain registered and can be shown again there. **Library behavior** enables optional version grouping and automatic refresh (every 30 seconds while visible, outside dialogs). Registered console drives that disconnect retain indexed entries marked Offline; reconnecting reconciles the index. Steam and Windows collections refresh too.
+Settings → **Console visibility & order** controls hidden consoles, pins, order and the ready-only filter. Hidden consoles remain registered and can be shown again there. **Library behavior** enables optional version grouping and automatic refresh (every 30 seconds while visible, outside dialogs). Registered console drives that disconnect retain indexed entries marked Offline; reconnecting reconciles the index.
 
 Game details → **Title & versions** edits the display name, separate SteamGridDB/Libretro cover-search title, and version group. Empty titles use the original filename-derived identity. Automatic grouping recognizes base/update and common region/revision suffixes; other editions can share an explicit group name. Use `-` to keep a title separate. Enable grouping in Settings, then select a version in game details; files, per-version favorites and artwork stay separate. Each console remembers its own view, sorting and last selection.
 
@@ -101,3 +99,5 @@ Save backups are separate JSON files, limited to 128 MB of source files, 32 MB p
 ## Themes
 
 Open **Settings → Themes** to choose **Arctic Current** (the original layout) or **White Frost Current** (the approved open gallery with a compact header, six-column desktop grid and bottom selection bar). Selection is saved in native settings, included in settings backups, and applied across libraries and dialogs. Hover or focus a console to update the bottom strip. Smaller windows use fewer columns. System reduced-motion preferences stop the animated currents.
+
+Steam and Windows game integrations are removed. Existing installations, shortcuts and saved legacy registration data are left untouched. SteamGridDB remains available for console artwork.

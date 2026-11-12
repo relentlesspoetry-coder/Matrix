@@ -81,12 +81,7 @@ test('old mutation failure does not write in replacement dialog',async()=>{
   const request=f.changeLibraryFolder(f.button('add-library-folder'));await f.openLibraryFolders('wii');pending.reject(Error('Old failure'));await request;
   assert.equal(f.owner().error.textContent,'');assert.match(f.messages.at(-1),/Old failure/);
 });
-for(const launcher of ['native','flatpak','snap']) test(`custom Steam folder records ${launcher} routing and removal omits launcher`,async()=>{
-  const f=fixture();await f.openLibraryFolders('steam');f.owner().input.value=' /steamapps ';f.owner().select.value=launcher;
-  await f.changeLibraryFolder(f.button('add-library-folder'));await f.changeLibraryFolder(f.button('remove-library-folder','/steamapps'));
-  const calls=f.calls.filter(call=>/^(add|remove)_steam_library$/.test(call.command));
-  assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{command:'add_steam_library',args:{path:'/steamapps',launcher}},{command:'remove_steam_library',args:{path:'/steamapps'}}]);
-});
+
 test('automatic covers include GameCube and Wii with correct provider messages',async()=>{
   const f=fixture();for(const kind of ['ps1','ps2','gamecube','wii'])f.state.imported[kind]=[{uid:`${kind}.iso`}];
   f.responders.download_cover=()=>Promise.resolve({status:'not-found',message:'Exact lookup',url:'https://example.test/cover'});

@@ -34,7 +34,7 @@ function fixture() {
       focus() { document.activeElement = this; }, querySelectorAll() { return []; } };
   }
   const node = selector => { if (!nodes.has(selector)) nodes.set(selector, makeNode()); return nodes.get(selector); };
-  for (const selector of ['#screen', '#breadcrumbs', '#nav-consoles', '#nav-steam', '#nav-windows', '#nav-settings', '#game-results', '#overlay-root', '.app-shell', '#auto-covers', '#auto-title-covers', '#cover-style', '#config-save-status']) node(selector);
+  for (const selector of ['#screen', '#breadcrumbs', '#nav-consoles', '#nav-settings', '#game-results', '#overlay-root', '.app-shell', '#auto-covers', '#auto-title-covers', '#cover-style', '#config-save-status']) node(selector);
   node('#auto-title-covers').checked=false;
   const root = node('#overlay-root');
   let html = '';
@@ -58,7 +58,7 @@ function fixture() {
     if (name === 'save_artwork_settings') return Promise.resolve(args);
     if (name === 'download_cover') return Promise.resolve({ status: 'downloaded' });
     if (name === 'get_cover') return Promise.resolve(null);
-    if (['scan_console', 'scan_steam', 'list_windows_games'].includes(name)) return Promise.resolve([]);
+    if (['scan_console'].includes(name)) return Promise.resolve([]);
     throw Error(`Unexpected command ${name}`);
   } } }, scrollTo() {} }, document,
   URL: { createObjectURL() { const uri = `blob:${++nextBlob}`; blobs.add(uri); return uri; },
@@ -84,7 +84,7 @@ function fixture() {
 }
 const cover = { type: 'image/png', size: 3, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer };
 
-for (const destination of ['closed', 'n64', 'another-game', 'external']) {
+for (const destination of ['closed', 'n64', 'another-game', 'settings']) {
   test(`cover import preserves ${destination} after async save`, async () => {
     const f = fixture(), saving = deferred();
     f.responders.save_cover = () => saving.promise;
@@ -95,7 +95,7 @@ for (const destination of ['closed', 'n64', 'another-game', 'external']) {
     f.dismissOverlay();
     if (destination === 'n64') f.goConsole('n64');
     if (destination === 'another-game') { f.state.overlay = 'game'; f.state.selectedGame = { id: 'ps2', uid: 'other.iso' }; }
-    if (destination === 'external') { f.state.page = 'steam'; f.state.overlay = 'external'; f.state.selectedGame = { id: 'steam', uid: '1234' }; }
+    if (destination === 'settings') { f.state.page = 'settings'; f.state.overlay = null; f.state.selectedGame = null; }
     const { page, overlay, selectedGame } = f.state;
     const writes = f.overlayWrites(), screen = f.node('#screen').innerHTML;
     saving.resolve(); await pending;
@@ -307,25 +307,6 @@ for (const newestSucceeds of [true, false]) test(`reopened emulator saves retain
   assert.equal(first.dataset.saving,undefined);assert.equal(second.dataset.saving,undefined);
 });
 
-test('completed Windows registration cannot close replacement registration dialog', async () => {
-  const f=fixture(), saving=deferred();f.responders.add_windows_game=()=>saving.promise;
-  const old=f.node('#windows-form');old.id='windows-form';old.values={title:'Game',target:'/test.desktop'};
-  f.state.overlay='windows-add';const event={target:old,preventDefault(){}};
-  f.listeners.submit[0](event);
-  f.nodes.set('#windows-form',{});const writes=f.overlayWrites();saving.resolve();await tick();
-  assert.equal(f.calls.filter(c=>c.name==='add_windows_game').length,1);
-  assert.equal(f.state.overlay,'windows-add');assert.equal(f.overlayWrites(),writes);
-});
-test('completed removal cannot close newer game details', async () => {
-  const f=fixture(), saving=deferred();f.responders.remove_windows_game=()=>saving.promise;
-  f.state.overlay='external';f.root.firstElementChild={};
-  const button={dataset:{action:'remove-windows',uid:'old'},disabled:false};
-  const pending=f.handleAction(button), duplicate=f.handleAction(button);
-  f.root.firstElementChild={};f.state.selectedGame={id:'windows',uid:'new'};
-  const writes=f.overlayWrites();saving.resolve();await Promise.all([pending,duplicate]);
-  assert.equal(f.calls.filter(c=>c.name==='remove_windows_game').length,1);
-  assert.equal(f.state.overlay,'external');assert.equal(f.state.selectedGame.uid,'new');assert.equal(f.overlayWrites(),writes);
-});
 test('favoriting updates details in place without replacing draft serial or focus', async () => {
   const f=fixture();f.responders.set_favorite=()=>Promise.resolve(['test.iso']);
   f.state.page='console';f.state.consoleId='ps2';f.state.overlay='game';f.state.selectedGame={id:'ps2',uid:'test.iso'};
@@ -337,16 +318,16 @@ test('favoriting updates details in place without replacing draft serial or focu
 });
 test('collapsed navigation and topbar buttons have explicit accessible names', () => {
   const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
-  for (const id of ['nav-consoles','nav-steam','nav-windows','nav-settings']) {
+  for (const id of ['nav-consoles','nav-settings']) {
     const button=html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))[0];
     assert.match(button,/aria-label="[^\"]+"/);
   }
   for (const action of ['refresh']) assert.match(html.match(new RegExp(`<button[^>]*data-action="${action}"[^>]*>`))[0],/aria-label="[^\"]+"/);
 });
 
-test('duplicate emulator and Windows submits issue only one pending write per form', async()=>{
-  for (const kind of ['config','windows']) {
-    const f=fixture(),saving=deferred(),command=kind==='config'?'save_emulator':'add_windows_game';
+test('duplicate emulator submits issue only one pending write per form', async()=>{
+  for (const kind of ['config']) {
+    const f=fixture(),saving=deferred(),command='save_emulator';
     f.responders[command]=()=>saving.promise;f.node('#config-error');
     const form=f.node(`#${kind}-form`);form.id=`${kind}-form`;form.dataset.id='ps2';
     form.values={title:'Game',target:'/test.desktop',emulatorName:'PCSX2',emulatorPath:'/test/pcsx2',folderPath:'/games',launcher:'executable'};
@@ -377,11 +358,11 @@ test('an emulator picker result preserves edits typed while its response is pend
 });
 test('late prior refresh cannot restore entries removed by the newer refresh',async()=>{
  const f=fixture(),old=deferred(),recent=deferred();
- let scans=0;f.responders.list_windows_games=()=>++scans===1?old.promise:recent.promise;
+ let scans=0;f.responders.scan_console=()=>++scans===1?old.promise:recent.promise;
  const first=f.refreshNative();const second=f.refreshNative();
  recent.resolve([]);await second;
  old.resolve([{uid:'/old.desktop',title:'Removed title',target:'/old.desktop',runner:'desktop'}]);await first;
- assert.equal(f.state.windows.length,0);
+ assert.equal(f.state.imported.ps2.length,0);
 });
 test('a slow earlier cover-file read cannot overwrite a later selection',async()=>{
  const f=fixture(),old=deferred();f.state.selectedGame={id:'ps2',uid:'test.iso'};
@@ -424,7 +405,7 @@ test('failed earlier cover write does not prevent newer selection saving',async(
   writing.reject(Error('Old failed'));await Promise.all([first,second]);assert.equal(f.messages.some(m=>m.includes('Old failed')),false);assert.equal(f.blobs.size,1);
 });
 test('stale refresh errors do not obscure a newer successful refresh',async()=>{
-  const f=fixture(),old=deferred();let reads=0;f.responders.list_windows_games=()=>++reads===1?old.promise:Promise.resolve([]);
+  const f=fixture(),old=deferred();let reads=0;f.responders.scan_console=()=>++reads===1?old.promise:Promise.resolve([]);
   const first=f.refreshNative();await f.refreshNative();old.reject(Error('Stale scan'));await first;assert.equal(f.messages.some(m=>m.includes('Stale scan')),false);
 });
 

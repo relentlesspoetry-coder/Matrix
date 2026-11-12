@@ -121,18 +121,10 @@ fn refresh_log(record: &mut Record) {
     record.info.log = text[start..].to_owned();
 }
 fn validate_launch_id(id: &str) -> Result<(), String> {
-    if matches!(id, "steam" | "windows") {
-        Ok(())
-    } else {
-        spec(id).map(|_| ())
-    }
+    spec(id).map(|_| ())
 }
-fn launcher_name(id: &str) -> &'static str {
-    match id {
-        "steam" => "Steam launcher",
-        "windows" => "Windows launcher",
-        _ => "Emulator",
-    }
+fn launcher_name(_id: &str) -> &'static str {
+    "Emulator"
 }
 pub(crate) fn start(command: Command, id: &str) -> Result<Info, String> {
     validate_launch_id(id)?;
