@@ -223,6 +223,9 @@ mod tests {
             .iter()
             .any(|g| g.path == game.to_str().unwrap()));
         let unplugged = external.with_extension("unplugged");
+        assert!(get_cover("ps1".into(), game.to_str().unwrap().into())
+            .unwrap_err()
+            .contains("outside"));
         let png = include_bytes!("../../tests/fixtures/demo-cover.png");
         let uid = game.to_str().unwrap();
         save_cover("ps2".into(), uid.into(), png.to_vec()).unwrap();

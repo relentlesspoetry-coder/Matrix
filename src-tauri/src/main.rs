@@ -1546,7 +1546,7 @@ fn open_cover_project() -> Result<(), String> {
 }
 
 fn get_cover(kind: String, uid: String) -> Result<Option<String>, String> {
-    let game = match validate_game(&kind, &uid){Ok(game)=>game,Err(_)=>return library_features::offline_cover(&kind,&uid)};
+    let game = match validate_game(&kind, &uid){Ok(game)=>game,Err(error)=>return library_features::offline_cover(&kind,&uid).map_err(|_|error)};
     let Some(bytes) = read_cover_bytes(&kind, &uid, &game)? else {
         return Ok(None);
     };
