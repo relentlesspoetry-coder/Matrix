@@ -396,11 +396,11 @@ summary:focus-visible { outline:2px solid var(--focus); outline-offset:3px }
 /* Arctic Current: frosted surfaces over two lightweight, compositor-driven currents. */
 :root { color-scheme:light; --bg:#cee4f7; --surface:#edf7ff; --surface-2:#dceeff; --line:#4178a82b; --muted:#48617c; --soft:#274565; --text:#071b3c; --blue:#0056e8; --blue-2:#007eff; --focus:#0054d9 }
 body { background:radial-gradient(ellipse at 75% 15%,#f3fcff 0%,transparent 48%),linear-gradient(125deg,#b4d4f4,#e2f4ff 48%,#a7caed); color:var(--text) }
-body::before,body::after { content:''; position:fixed; inset:-10%; pointer-events:none; z-index:-1; background:url('./assets/arctic-currents.svg') center/cover no-repeat; animation:arctic-flow 32s ease-in-out infinite alternate }
+body::before,body::after { content:''; position:fixed; inset:-3%; pointer-events:none; z-index:-1; background:url('./assets/arctic-currents.svg') center/100% 100% no-repeat; animation:arctic-flow 24s ease-in-out infinite alternate }
 body { isolation:isolate }
-body::after { opacity:.45; transform:rotate(180deg); animation-name:arctic-return; animation-duration:41s }
-@keyframes arctic-flow { from { transform:translate3d(-2%,-1%,0) } to { transform:translate3d(3%,2%,0) } }
-@keyframes arctic-return { from { transform:rotate(180deg) translate3d(-1%,0,0) } to { transform:rotate(180deg) translate3d(2%,3%,0) } }
+body::after { opacity:.75; background-image:url('./assets/arctic-shimmer.svg'); animation-name:arctic-return; animation-duration:18s }
+@keyframes arctic-flow { from { transform:translate3d(-.6%,-.3%,0) scale(1) } to { transform:translate3d(.7%,.5%,0) scale(1.015) } }
+@keyframes arctic-return { from { opacity:.45; transform:translate3d(.3%,-.6%,0) } to { opacity:.85; transform:translate3d(-.6%,.7%,0) } }
 .app-shell { flex-direction:column; background:#effaff12; min-height:100vh }
 .sidebar { position:relative; top:auto; height:auto; width:100%; flex:none; display:grid; grid-template-columns:1fr auto; padding:18px 32px 0; background:linear-gradient(125deg,#ffffff8c,#b9d9f24d); border:0; border-bottom:1px solid #fff; box-shadow:0 3px 16px #4076ad16; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px) }
 .brand { margin:0; padding:0; gap:12px; justify-content:flex-start; width:max-content }.brand-logo { width:42px; height:42px; display:block!important }.brand-wordmark { display:inline; font-size:27px; color:#061a3b; font-weight:750 }.brand-symbol,.sidebar-spacer { display:none!important }

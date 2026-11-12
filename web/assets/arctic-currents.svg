@@ -1,3 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" fill="none">
-<defs><linearGradient id="flow" x1="0" y1="0" x2="1500" y2="800" gradientUnits="userSpaceOnUse"><stop stop-color="#0079ff" stop-opacity="0"/><stop offset=".35" stop-color="#00cfff" stop-opacity=".55"/><stop offset=".55" stop-color="#e8ffff" stop-opacity=".95"/><stop offset=".7" stop-color="#0085ff" stop-opacity=".5"/><stop offset="1" stop-color="#009cff" stop-opacity="0"/></linearGradient></defs>
-<g stroke="url(#flow)"><path stroke-width="65" opacity=".15" d="M-200 120C400 370 300-200 1000 70S1650 350 1800 100M-200 1050C350 590 650 1200 1190 620S1530 260 1800 400"/><path stroke-width="18" opacity=".35" d="M-200 135C400 385 300-185 1000 85S1650 365 1800 115M-200 1065C350 605 650 1215 1190 635S1530 275 1800 415"/><path stroke-width="2" d="M-200 130C400 380 300-190 1000 80S1650 360 1800 110M-200 1060C350 600 650 1210 1190 630S1530 270 1800 410M-200 90C350 300 440-150 1100 120S1550 340 1800 130M-200 1000C450 560 600 1130 1200 570S1600 270 1800 370"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024" preserveAspectRatio="none" fill="none">
+<defs>
+  <linearGradient id="ribbon" x1="100" y1="100" x2="1440" y2="840" gradientUnits="userSpaceOnUse"><stop stop-color="#087eff" stop-opacity=".05"/><stop offset=".25" stop-color="#12bcff" stop-opacity=".3"/><stop offset=".46" stop-color="#ecffff" stop-opacity=".5"/><stop offset=".64" stop-color="#0098ff" stop-opacity=".5"/><stop offset=".8" stop-color="#06dfff" stop-opacity=".42"/><stop offset="1" stop-color="#2184ff" stop-opacity=".05"/></linearGradient>
+  <linearGradient id="edge" x1="50" y1="200" x2="1480" y2="680" gradientUnits="userSpaceOnUse"><stop stop-color="#eaffff" stop-opacity=".05"/><stop offset=".22" stop-color="#69efff"/><stop offset=".4" stop-color="#fff" stop-opacity=".85"/><stop offset=".55" stop-color="#67cfff" stop-opacity=".3"/><stop offset=".75" stop-color="#baffff"/><stop offset="1" stop-color="#fff" stop-opacity=".1"/></linearGradient>
+  <radialGradient id="pool"><stop stop-color="#fff" stop-opacity=".85"/><stop offset=".15" stop-color="#c9ffff" stop-opacity=".6"/><stop offset=".5" stop-color="#00baff" stop-opacity=".22"/><stop offset="1" stop-color="#0096ff" stop-opacity="0"/></radialGradient>
+  <filter id="halo" x="-20%" y="-30%" width="140%" height="160%"><feGaussianBlur stdDeviation="7"/></filter>
+  <g id="edges">
+    <path d="M-80 108C145 152 278 72 430 36S694 9 842 84 1056 228 1265 236 1473 184 1610 149"/>
+    <path d="M-80 135C137 63 252 103 400 140S659 254 860 263 1195 195 1386 143 1526 123 1610 145"/>
+    <path d="M924 5C1096 130 1447 99 1403 255S1142 370 1220 500 1560 596 1608 459"/>
+    <path d="M1601 216C1402 262 1331 384 1399 469S1523 615 1347 726 1104 880 916 914 490 845 249 931 41 1060-70 1051"/>
+    <path d="M1620 338C1435 375 1366 476 1450 540S1497 672 1315 790 1147 956 954 965 634 889 402 951 126 1055-50 1050"/>
+    <path d="M1610 700C1410 726 1319 867 1160 923S912 935 741 917 427 886 267 985 38 1060-70 1054"/>
+  </g>
+</defs>
+<!-- Variable-width, crossing ribbons rather than concentric stroked arcs. -->
+<g fill="url(#ribbon)">
+  <path d="M-80 104C145 148 278 68 430 32S694 5 842 80 1056 224 1265 232 1473 180 1610 145L1610 192C1415 206 1300 296 1109 279S826 178 694 105 455 52 296 112 80 189-80 134Z"/>
+  <path d="M-80 131C137 59 252 99 400 136S659 250 860 259 1195 191 1386 139 1526 119 1610 141L1610 165C1421 150 1257 276 1023 296S684 289 493 203 208 99-80 166Z"/>
+  <path d="M1601 212C1402 258 1331 380 1399 465S1523 611 1347 722 1104 876 916 910 490 841 249 927 41 1056-70 1047L-70 1090C162 1096 304 948 511 930S833 1021 1057 937 1273 836 1456 722 1583 556 1494 481 1410 332 1601 253Z"/>
+  <path d="M1620 332C1435 369 1366 470 1450 534S1497 666 1315 784 1147 950 954 959 634 883 402 945 126 1049-50 1044L-50 1080C187 1076 327 993 503 979S819 1054 1016 1014 1211 902 1407 795 1623 613 1519 531 1477 409 1620 377Z"/>
+</g>
+<g opacity=".8" stroke="#03cfff" stroke-width="9" filter="url(#halo)"><use href="#edges"/></g>
+<g stroke="url(#edge)" stroke-width="1.5"><use href="#edges"/></g>
+<!-- Soft light gathers where the streams cross. -->
+<g fill="url(#pool)"><ellipse cx="414" cy="102" rx="150" ry="27" transform="rotate(-11 414 102)"/><ellipse cx="1323" cy="259" rx="160" ry="80" transform="rotate(-35 1323 259)"/><ellipse cx="1385" cy="645" rx="160" ry="40" transform="rotate(-37 1385 645)"/><ellipse cx="871" cy="938" rx="200" ry="29"/></g>
+</svg>

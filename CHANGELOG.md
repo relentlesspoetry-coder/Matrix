@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.5
+
+- Rebuild the Arctic Current backdrop with layered, variable-width blue ribbons, fine cyan-white edges, soft crossing highlights and delicate light patterns to match the approved concept more closely.
+- Replace the oversized mirrored arcs with subtle independent ribbon drift and shimmer; retain reduced-motion support and the full app-wide theme.
+
 ## 0.6.4
 
 - Apply the Arctic Current theme: frosted glass surfaces, navy typography, cobalt controls, compact console cards, and a console preview beside the menu.
