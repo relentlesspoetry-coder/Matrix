@@ -1,4 +1,4 @@
-/* Matrix-Play v0.6.7 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.8 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -6,7 +6,7 @@ const AUTO_COVER_KINDS = ['ps1','ps2','gamecube','wii','switch',...TITLE_COVER_K
 const byId = Object.fromEntries(consoles.map(consoleInfo => [consoleInfo.id, consoleInfo]));
 const state = {
   page: 'home', consoleId: null, vendor: 'All', query: '',
-  gameFilter: 'All', sort: 'default', view: 'grid',
+  gameFilter: 'All', sort: 'default', view: 'list', previewGame: null,
   overlay: null, selectedGame: null, lastFocus: null,
   configs: {}, imported: {}, favorites: new Set(), art: new Map(),
   native: Boolean(window.__TAURI__?.core?.invoke), root: '', folders: {},
@@ -380,7 +380,7 @@ function toggleFavorite(id,uid,button) {
 
 function gameCard(consoleInfo, game, index) {
   const liked = state.favorites.has(favoriteKey(consoleInfo.id, game.uid));
-  return `<div class="game-item">
+  return `<div class="game-item ${state.previewGame?.id===consoleInfo.id && state.previewGame?.uid===game.uid ? 'is-previewed' : ''}" data-preview-uid="${escapeHtml(game.uid)}">
     <button class="game-card" type="button" data-action="quick-launch" data-id="${consoleInfo.id}" data-uid="${escapeHtml(game.uid)}" aria-label="${state.native && !consoleInfo.libraryOnly ? 'Launch' : 'View'} ${escapeHtml(game.title)}${state.native && !consoleInfo.libraryOnly ? '' : ' details'}">
       ${gameCover(consoleInfo, game, index)}<span class="game-title">${escapeHtml(game.title)}</span><span class="game-meta">${game.year || (game.demo ? 'Sample game' : state.native ? consoleInfo.libraryOnly ? 'Collection file' : 'Installed game' : 'Folder preview')} · ${escapeHtml(consoleInfo.abbrev)}</span></button>
     <button class="game-info" type="button" data-action="game" data-id="${consoleInfo.id}" data-uid="${escapeHtml(game.uid)}" aria-label="Details for ${escapeHtml(game.title)}" title="Game details">${glyph('info')}</button>
@@ -441,14 +441,30 @@ function restoreLibraryFocus(saved) {
     }
   }
 }
+function renderGamePreview(consoleInfo, game) {
+  const preview=$('#game-preview');
+  if (!preview) return;
+  preview.innerHTML=game ? `${gameCover(consoleInfo,game,0)}<h2>${escapeHtml(game.title)}</h2><p>${escapeHtml(consoleInfo.name)}</p><button type="button" class="button button-ghost" data-action="game" data-id="${consoleInfo.id}" data-uid="${escapeHtml(game.uid)}">Game details</button>` : '<div class="preview-empty"><p>Select a game to preview its cover.</p></div>';
+}
+function previewLibraryGame(id, uid) {
+  if(state.page!=='console' || state.consoleId!==id || state.previewGame?.id===id && state.previewGame?.uid===uid)return;
+  const game=visibleGames(id).find(game=>game.uid===uid);
+  if(!game)return;
+  state.previewGame={id,uid};
+  document.querySelectorAll('#game-results .game-item').forEach(item=>item.classList.toggle('is-previewed',item.dataset.previewUid===uid));
+  renderGamePreview(byId[id],game);hydrateNativeCovers();
+}
 function renderGameResults() {
   const focus = captureLibraryFocus($('#game-results'));
   const consoleInfo = byId[state.consoleId];
   const games = visibleGames(consoleInfo.id);
+  const preview=games.find(game=>state.previewGame?.id===consoleInfo.id && game.uid===state.previewGame.uid)||games[0];
+  state.previewGame=preview ? {id:consoleInfo.id,uid:preview.uid} : null;
   const sortControl=$('#sort-games');if (sortControl) sortControl.value=state.sort;
   $('#game-results').innerHTML = games.length
     ? `<div class="${state.view === 'grid' ? 'game-grid' : 'game-list'}">${games.map((game,index) => gameCard(consoleInfo,game,index)).join('')}</div>`
     : state.gameFilter === 'Favorites' ? `<div class="empty empty-library"><strong>${favoriteCount(consoleInfo.id) ? 'No favorites match this search' : `No ${escapeHtml(consoleInfo.name)} favorites yet`}</strong><p>${favoriteCount(consoleInfo.id) ? 'Try another search, or switch to All games.' : 'Select the heart on a game in All games to add it to this console’s favorites list.'}</p><button type="button" class="button button-ghost" data-action="filter-games" data-value="All">Browse all games</button></div>` : `<div class="empty empty-library"><strong>${state.native && !importedFor(consoleInfo.id).length ? 'No games detected yet' : 'No matching games'}</strong><p>${state.native && !importedFor(consoleInfo.id).length ? 'Add a game folder to get started.' : 'Try another search or switch to All games.'}</p>${state.native && !importedFor(consoleInfo.id).length ? `<button type="button" class="button button-primary" data-action="library-folders" data-id="${consoleInfo.id}">Add games</button>` : ''}</div>`;
+  renderGamePreview(consoleInfo,preview);
   hydrateNativeCovers();
   restoreLibraryFocus(focus);
 }
@@ -456,7 +472,7 @@ function renderConsole() {
   const focus=captureLibraryFocus($('#screen'),'console:'+state.consoleId);
   const consoleInfo=byId[state.consoleId]; normalizeGameSort(consoleInfo.id);
   const yearSorting=hasReleaseYears(consoleInfo.id), imported=importedFor(consoleInfo.id), hasImported=imported.length>0;
-  $('#screen').innerHTML=`<button type="button" class="back-link" data-action="home">${glyph('back')} Consoles</button>
+  $('#screen').innerHTML=`<div class="console-library"><div class="console-library-main"><button type="button" class="back-link" data-action="home">${glyph('back')} Consoles</button>
     <div class="library-header" style="--tint:${consoleTone(consoleInfo)}"><div class="library-identity"><span class="library-emblem" aria-hidden="true">${deviceArt(consoleInfo.id)}</span><div><h1 class="page-title">${escapeHtml(consoleInfo.name)}</h1><p class="page-subtitle">${gamesFor(consoleInfo.id).length} ${gamesFor(consoleInfo.id).length===1?'game':'games'}</p></div></div>
     <div class="library-header-actions">${!isConfigured(consoleInfo.id)?`<button type="button" class="button button-primary" data-action="configure" data-id="${consoleInfo.id}">Set up emulator</button>`:''}
       <details class="library-menu"><summary aria-label="Library options" title="Library options">···</summary><div class="menu-items">
@@ -473,7 +489,7 @@ function renderConsole() {
       <select id="sort-games" class="sort-select" aria-label="Sort games" aria-describedby="sort-year-hint"><option value="default" ${state.sort==='default'?'selected':''}>Default</option><option value="az" ${state.sort==='az'?'selected':''}>Name</option><option value="recent" ${state.sort==='recent'?'selected':''} ${yearSorting?'':'disabled'}>Release year</option></select>
       <div class="segmented" role="group" aria-label="Library layout"><button type="button" data-action="view" data-value="grid" aria-label="Grid view" aria-pressed="${state.view==='grid'}" class="${state.view==='grid'?'active':''}">${glyph('grid')}</button><button type="button" data-action="view" data-value="list" aria-label="List view" aria-pressed="${state.view==='list'}" class="${state.view==='list'?'active':''}">${glyph('list')}</button></div></div>
     <p id="sort-year-hint" class="sr-only">${yearSorting?'Titles with unknown years appear last.':'Release-year sorting is unavailable: these titles have no release-year metadata.'}</p><div id="game-results"></div>
-    ${consoleInfo.supportNote?`<details class="library-notes"><summary>Format &amp; emulator notes</summary><p class="platform-notice">${escapeHtml(consoleInfo.supportNote)}</p></details>`:''}`;
+    ${consoleInfo.supportNote?`<details class="library-notes"><summary>Format &amp; emulator notes</summary><p class="platform-notice">${escapeHtml(consoleInfo.supportNote)}</p></details>`:''}</div><aside class="game-preview" id="game-preview" aria-label="Selected game preview"></aside></div>`;
   renderGameResults();renderLaunchStatus();restoreLibraryFocus(focus);
 }
 function renderSettings() {
@@ -1337,6 +1353,13 @@ function setupEvents() {
     preview.dataset.consoleId=card.dataset.id;
     preview.innerHTML=consolePreview(byId[card.dataset.id]);
   };
+  const previewGame = event => {
+    const item=event.target.closest?.('#game-results .game-item');
+    const card=item?.querySelector('.game-card');
+    if(card)previewLibraryGame(card.dataset.id,card.dataset.uid);
+  };
+  document.addEventListener('pointerover', previewGame);
+  document.addEventListener('focusin', previewGame);
   document.addEventListener('pointerover', previewConsole);
   document.addEventListener('focusin', previewConsole);
   document.addEventListener('change', event => {

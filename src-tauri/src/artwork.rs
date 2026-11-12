@@ -44,12 +44,12 @@ fn private_options() -> OpenOptions {
 }
 
 pub(super) fn save(target: &Path, bytes: &[u8]) -> Result<(), String> {
-    save_with_policy(target, bytes, true)
+    save_with_policy(target, bytes, true).map(|_| ())
 }
-pub(super) fn save_without_replacing(target: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(super) fn save_without_replacing(target: &Path, bytes: &[u8]) -> Result<bool, String> {
     save_with_policy(target, bytes, false)
 }
-fn save_with_policy(target: &Path, bytes: &[u8], replace: bool) -> Result<(), String> {
+fn save_with_policy(target: &Path, bytes: &[u8], replace: bool) -> Result<bool, String> {
     let extension = target.extension().and_then(|e| e.to_str());
     if !extension.is_some_and(|e| FORMATS.contains(&e)) {
         return Err("Unsupported artwork extension".into());
@@ -65,7 +65,7 @@ fn save_with_policy(target: &Path, bytes: &[u8], replace: bool) -> Result<(), St
     lock.lock()
         .map_err(|e| format!("Could not lock artwork: {e}"))?;
     if !replace && FORMATS.iter().any(|ext| target.with_extension(ext).is_file()) {
-        return Ok(());
+        return Ok(false);
     }
     let (temporary, mut file) = loop {
         let next = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
@@ -101,7 +101,7 @@ fn save_with_policy(target: &Path, bytes: &[u8], replace: bool) -> Result<(), St
         ));
     }
     // Closing lock releases it on success and on every error path.
-    Ok(())
+    Ok(true)
 }
 
 #[cfg(test)]

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.8
+
+- Match the approved console-library concept across all 24 consoles: frosted game rows, cobalt selection, compact library controls and a large right-hand cover/title preview. Default to rows while retaining the grid toggle and all library actions.
+- Update the preview on pointer hover and keyboard/controller focus. Preserve selection through sorting and favorite changes; show only matching games after filtering and clear the preview for empty results. Use a single pane on narrow displays.
+- Keep newer artwork across image formats when restoring a backup, using the same atomic cover lock as manual and automatic saves.
+
 ## 0.6.7
 
 - Protect manual covers from late automatic downloads and remove stale SteamGridDB success/error caching so missing covers and recovered requests can retry immediately.

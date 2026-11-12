@@ -394,6 +394,11 @@ def main():
             wait_for(lambda: js('return state.imported.switch2?.length === 4'))
             for uid,title in extracted:
                 assert js('return Array.from(document.querySelectorAll(".game-card")).some(c=>c.dataset.uid===arguments[0] && c.textContent.includes(arguments[1]))',uid,title)
+            assert js('return Boolean(document.querySelector(".console-library .game-list"))'), 'Console libraries default to concept rows'
+            js('document.querySelector(".game-card").focus()')
+            wait_for(lambda: js('return document.querySelector("#game-preview h2")?.textContent') == js('return document.querySelector(".game-card .game-title").textContent'))
+            assert js('return document.querySelectorAll("#game-results .is-previewed").length') == 1
+            assert js('return document.documentElement.scrollWidth <= window.innerWidth'), 'Console split pane must not overflow'
             screenshot('matrix-linux-switch2-extracted-library.png')
             print('PASS: extracted Switch 2 base/update names, exact native launch argv, local covers and refreshed library; synthetic fixtures only')
             click('[data-action="home"]')

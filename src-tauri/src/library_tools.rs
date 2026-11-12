@@ -162,7 +162,14 @@ fn restore(bytes: &[u8]) -> Result<String, String> {
         {
             return Err("Unsafe cover filename in backup".into());
         }
-        let target = console_covers_dir(&cover.kind)?.join(&cover.name);
+        let extension = name
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .ok_or("Missing cover extension")?
+            .to_ascii_lowercase();
+        let target = console_covers_dir(&cover.kind)?
+            .join(&cover.name)
+            .with_extension(extension);
         let data = BASE64
             .decode(cover.bytes)
             .map_err(|_| "Invalid cover data")?;
@@ -183,14 +190,8 @@ fn restore(bytes: &[u8]) -> Result<String, String> {
     let mut added = Vec::new();
     let result = (|| -> Result<(), String> {
         for (target, data) in decoded {
-            fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
-            let mut file = tempfile::NamedTempFile::new_in(target.parent().unwrap())
-                .map_err(|e| e.to_string())?;
-            file.write_all(&data).map_err(|e| e.to_string())?;
-            match file.persist_noclobber(&target) {
-                Ok(_) => added.push(target),
-                Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(e) => return Err(e.to_string()),
+            if artwork::save_without_replacing(&target, &data)? {
+                added.push(target);
             }
         }
         update_settings(|current| {
@@ -353,6 +354,15 @@ mod tests {
         fs::write(&cover, &replacement).unwrap();
         restore(&bytes).unwrap();
         assert_eq!(fs::read(&cover).unwrap(), replacement);
+        fs::remove_file(&cover).unwrap();
+        let newer_format = cover.with_extension("jpg");
+        fs::write(&newer_format, &replacement).unwrap();
+        restore(&bytes).unwrap();
+        assert!(
+            !cover.exists(),
+            "A restored PNG must not displace a newer JPG"
+        );
+        assert_eq!(fs::read(&newer_format).unwrap(), replacement);
         assert_eq!(fs::read(&path).unwrap(), b"synthetic game data");
     }
 }
