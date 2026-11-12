@@ -437,3 +437,4 @@ body::after { opacity:.45; transform:rotate(180deg); animation-name:arctic-retur
 .tag { color:#234b70; border-color:#9abbd5; background:#eff8ff }.favorite:hover,.game-info:hover { background:#c9e9ff; color:#004cbf }
 .gamepad-navigation :is(.nav-item,.button,.segmented button,summary):focus { outline:3px solid #0054d9; outline-offset:3px }
 @media(max-width:550px) { .sidebar-version { padding:0; gap:6px }.sidebar-version { font-size:9px } }
+.empty { background:linear-gradient(135deg,#f6fcffbb,#d4eafa8c); border-color:#7faacc; color:#3b5b79 }.empty strong { color:#143757 }
