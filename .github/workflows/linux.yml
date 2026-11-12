@@ -97,17 +97,7 @@ jobs:
         run: cargo test --locked --manifest-path cover-core/Cargo.toml live_libretro_templates -- --ignored
       - name: Verify live Switch GameTDB cover template
         timeout-minutes: 2
-        run: |
-          # Deterministic provider/identity/image tests above remain mandatory.
-          # A third-party connection outage is not an application regression.
-          status=0
-          curl --head --fail --silent --show-error --connect-timeout 5 --max-time 15 \
-            https://art.gametdb.com/switch/coverM/US/AAACA.jpg || status=$?
-          case "$status" in
-            0) cargo test --locked --manifest-path cover-core/Cargo.toml live_switch_gametdb_template -- --ignored ;;
-            6|7|28) echo '::warning::GameTDB connectivity unavailable; live Switch probe could not run. Deterministic provider tests remain required.' ;;
-            *) exit "$status" ;;
-          esac
+        run: cargo test --locked --manifest-path cover-core/Cargo.toml live_switch_gametdb_template -- --ignored
       - name: Verify private root-owned update staging
         run: |
           # Only this exact fixture runs as root. It creates disposable staging,
