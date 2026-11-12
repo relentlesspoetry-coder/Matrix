@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.11
+
+- Refine White Frost Current from native screenshots: enlarge console illustrations within each tile, strengthen the sticky selection bar and footer contrast, and keep theme-preview tiles within their thumbnail.
+
 ## 0.6.10
 
 - Add General and Themes sections inside Settings, with persistent theme selection and previews. Keep Arctic Current as the default and allow switching back at any time.
