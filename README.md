@@ -13,14 +13,14 @@ Download the **DEB** or **AppImage** from [Releases](https://github.com/relentle
 For Zorin or Ubuntu, install the DEB from your download folder:
 
 ```bash
-sudo apt install ./Matrix-Play_0.6.8_amd64.deb
+sudo apt install ./Matrix-Play_0.6.9_amd64.deb
 ```
 
 For the portable AppImage:
 
 ```bash
-chmod +x Matrix-Play_0.6.8_amd64.AppImage
-./Matrix-Play_0.6.8_amd64.AppImage
+chmod +x Matrix-Play_0.6.9_amd64.AppImage
+./Matrix-Play_0.6.9_amd64.AppImage
 ```
 
 For future releases, open **Settings → Check for updates**.
@@ -87,3 +87,13 @@ For ambiguous titles or a different cover, open game details → **Find on Steam
 - Open a console game's details → **Launch settings** to override its emulator arguments. Enter one literal argument per line, with `{game}` for the game path. Leave blank to restore console defaults. These overrides do not change Steam or Windows shortcuts.
 - Settings → **Backup and restore** exports settings, favorites, recent history, launch overrides and managed console cover files. API keys, game files, external sidecar art and old online caches are excluded. Paths remain unchanged; backups are intended for the same library layout. Restore keeps existing covers, fills in missing files and saves `before-restore.json` beside the settings first. Only restore trusted backups: emulator profiles contain executable paths and arguments. A backup is limited to 64 MB, with at most 32 MB of source covers (4 MB per image).
 - Settings → Artwork → **Cover download queue** shows results and errors. Pause stops scheduling further jobs; an in-flight request may finish. Resume retries pending/interrupted/failed jobs and skips completed jobs. Provider rate limits still apply.
+
+## Library organization and save backups
+
+Settings → **Console visibility & order** controls hidden consoles, pins, order and the ready-only filter. Hidden consoles remain registered and can be shown again there. **Library behavior** enables optional version grouping and automatic refresh (every 30 seconds while visible, outside dialogs). Registered console drives that disconnect retain indexed entries marked Offline; reconnecting reconciles the index. Steam and Windows collections refresh too.
+
+Game details → **Title & versions** edits the display name, separate SteamGridDB/Libretro cover-search title, and version group. Empty titles use the original filename-derived identity. Automatic grouping recognizes base/update and common region/revision suffixes; other editions can share an explicit group name. Use `-` to keep a title separate. Enable grouping in Settings, then select a version in game details; files, per-version favorites and artwork stay separate. Each console remembers its own view, sorting and last selection.
+
+Console menu **··· → Back up saves / Restore saves** supports configured PCSX2, PPSSPP and Dolphin profiles. Close the emulator first, including instances started outside Matrix Play. Choose its actual `memcards`, `sstates`, `GC`, `StateSaves`, `SAVEDATA` or `PPSSPP_STATE` folder. This backs up the selected folder’s regular files, not game ROMs. Full Wii NAND backups, emulator cloud saves and other emulator profiles are not supported yet.
+
+Save backups are separate JSON files, limited to 128 MB of source files, 32 MB per file and 10,000 files. Symlinks and special files are rejected. Restore accepts a backup for the same console, lists every file and whether it replaces an existing file, then requires **Restore these files**. Files outside the list are kept. A private, restorable `before-restore-*.json` backup is saved under the Matrix configuration folder’s `save-backups` directory before writing; failed writes trigger rollback. Restore only trusted backups and choose the intended save folder.

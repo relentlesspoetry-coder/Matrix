@@ -399,6 +399,19 @@ def main():
             wait_for(lambda: js('return document.querySelector("#game-preview h2")?.textContent') == js('return document.querySelector(".game-card .game-title").textContent'))
             assert js('return document.querySelectorAll("#game-results .is-previewed").length') == 1
             assert js('return document.documentElement.scrollWidth <= window.innerWidth'), 'Console split pane must not overflow'
+            # Exact-version WebKit checks for optional version grouping and title overrides.
+            prefs=invoke('set_library_preference',{'section':'grouping','key':'','value':True})
+            js('state.libraryPrefs=arguments[0];renderConsole()',prefs)
+            assert js('return document.querySelectorAll(".game-card").length') == 3
+            assert js('return Array.from(document.querySelectorAll(".version-count")).some(n=>n.textContent.includes("2 versions"))')
+            first_uid=js('return document.querySelector(".game-card").dataset.uid')
+            prefs=invoke('set_library_preference',{'section':'metadata','key':'switch2|'+first_uid,'value':{'display':'Fixture display title','coverTitle':'Fixture catalog','group':''}})
+            js('state.libraryPrefs=arguments[0];renderConsole()',prefs)
+            assert js('return document.querySelector(".game-title").textContent.includes("Fixture display title")')
+            assert invoke('scan_console',{'id':'switch2'})[0]['title'] != 'Fixture display title'
+            invoke('set_library_preference',{'section':'metadata','key':'switch2|'+first_uid,'value':{'display':'','coverTitle':'','group':''}})
+            prefs=invoke('set_library_preference',{'section':'grouping','key':'','value':False})
+            js('state.libraryPrefs=arguments[0];renderConsole()',prefs)
             screenshot('matrix-linux-switch2-extracted-library.png')
             print('PASS: extracted Switch 2 base/update names, exact native launch argv, local covers and refreshed library; synthetic fixtures only')
             click('[data-action="home"]')

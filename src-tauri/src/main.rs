@@ -7,6 +7,8 @@ mod appimage_environment;
 mod artwork;
 mod steamgrid;
 mod library_tools;
+mod library_features;
+mod save_data;
 mod bounded_io;
 #[cfg(feature = "desktop")]
 mod desktop_commands;
@@ -225,6 +227,10 @@ impl Default for ArtworkSettings {
 #[derive(Clone, Serialize, Deserialize, Default)]
 struct Settings {
     #[serde(default)]
+    library_preferences: library_features::Preferences,
+    #[serde(default)]
+    library_index: BTreeMap<String,Vec<Game>>,
+    #[serde(default)]
     recent: Vec<library_tools::Recent>,
     #[serde(default)]
     game_options: BTreeMap<String,library_tools::GameOptions>,
@@ -249,6 +255,7 @@ struct Settings {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Bootstrap {
+    library_preferences: library_features::Preferences,
     recent: Vec<library_tools::Recent>,
     ready_profiles: BTreeMap<String,bool>,
     steamgrid_enabled: bool,
@@ -263,7 +270,7 @@ struct Bootstrap {
     windows: Vec<WindowsGame>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct Game {
     uid: String,
@@ -485,6 +492,7 @@ fn bootstrap() -> Result<Bootstrap, String> {
     }
     let ready_profiles=settings.profiles.iter().map(|(id,p)|(id.clone(),if p.launcher==emulators::Launcher::Flatpak {emulator_discovery.flatpak_inventory.as_ref().is_some_and(|apps|apps.iter().any(|a|a.app_id==p.flatpak_id&&a.installation==p.flatpak_installation))} else {emulators::executable_file(Path::new(&p.emulator_path))})).collect();
     Ok(Bootstrap {
+        library_preferences: settings.library_preferences,
         ready_profiles,
         recent: settings.recent,
         steamgrid_enabled: !settings.steamgriddb_api_key.is_empty(),
@@ -1486,7 +1494,8 @@ fn download_cover_impl(
         });
     }
     if !settings.steamgriddb_api_key.is_empty() {
-        return steamgrid::automatic(&kind, &uid, &game.title, &settings.steamgriddb_api_key);
+        let override_title=settings.library_preferences.metadata.get(&format!("{kind}|{uid}")).map(|m|m.cover_title.as_str()).filter(|t|!t.is_empty()).unwrap_or(&game.title);
+        return steamgrid::automatic(&kind, &uid, override_title, &settings.steamgriddb_api_key);
     }
     if !matrix_cover_core::supports(&kind) {
         return Err("Add a SteamGridDB API key in Settings or choose a local cover".into());
@@ -1501,6 +1510,7 @@ fn download_cover_impl(
             ..Default::default()
         });
     }
+    let serial=serial.or_else(|| if matrix_cover_core::title::system(&kind).is_some()&&settings.artwork.title_enabled{settings.library_preferences.metadata.get(&format!("{kind}|{uid}")).map(|m|m.cover_title.clone()).filter(|t|!t.is_empty())}else{None});
     matrix_cover_core::fetch_into(
         &artwork_root()?.join("online"),
         &console_covers_dir(&kind)?,
@@ -1765,6 +1775,10 @@ fn main() {
             download_cover,
             save_artwork_settings,
             open_cover_project,
+            library_features::set_library_preference,
+            library_features::library_snapshot,
+            save_data::save_data_dialog,
+            save_data::apply_save_restore,
             library_tools::save_game_options,
             library_tools::game_options,
             library_tools::backup_library,

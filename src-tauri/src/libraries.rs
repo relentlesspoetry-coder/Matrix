@@ -6,9 +6,9 @@ use std::io::Read;
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Folder {
-    path: String,
-    managed: bool,
-    available: bool,
+    pub(crate) path: String,
+    pub(crate) managed: bool,
+    pub(crate) available: bool,
 }
 
 fn folders_in(id: &str, managed: &Path, settings: &Settings) -> Vec<Folder> {

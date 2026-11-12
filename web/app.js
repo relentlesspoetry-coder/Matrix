@@ -1,4 +1,4 @@
-/* Matrix-Play v0.6.8 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.9 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -115,7 +115,7 @@ const artKey = (consoleId, uid) => `${consoleId}|${uid}`;
 const favoriteKey = (consoleId, uid) => `${consoleId}|${uid}`;
 const importedFor = id => Array.isArray(state.imported[id]) ? state.imported[id] : [];
 const isConfigured = id => !byId[id]?.libraryOnly && Boolean((state.configs[id]?.launcher === "flatpak" ? state.configs[id]?.flatpakId : state.configs[id]?.emulatorPath) && (state.native || state.configs[id]?.folderPath));
-const consoleReady = id => isConfigured(id) && (!state.native || state.readyProfiles[id]===true) && importedFor(id).length>0;
+const consoleReady = id => isConfigured(id) && (!state.native || state.readyProfiles[id]===true) && importedFor(id).some(g=>!g.offline);
 const configuredCount = () => consoles.filter(consoleInfo => isConfigured(consoleInfo.id)).length;
 
 function demoGames(consoleInfo) {
@@ -125,7 +125,8 @@ function demoGames(consoleInfo) {
 }
 function gamesFor(id) {
   const saved = importedFor(id);
-  return state.native ? saved : (saved.length ? saved : demoGames(byId[id]));
+  const rows=state.native ? saved : (saved.length ? saved : demoGames(byId[id]));
+  return rows.map(g=>({...g,originalTitle:g.originalTitle||g.title,title:gameMetadata(id,g.uid).display||g.title}));
 }
 function findGame(id, uid) {
   return gamesFor(id).find(game => game.uid === uid);
@@ -158,6 +159,7 @@ function readPrefs() {
     state.configs = saved.configs;
     state.imported = saved.imported;
     state.favorites = new Set(saved.favorites);
+    try{state.libraryPrefs=normalizeLibraryPrefs(JSON.parse(localStorage.getItem('matrix-library-preferences')));}catch{}
   } catch { /* Browser storage can be disabled for local files. */ }
 }
 function savePrefs(change) {
@@ -255,11 +257,11 @@ function consoleCard(consoleInfo) {
 }
 function renderHome() {
   const focus=captureLibraryFocus($('#screen'),'home');
-  const visible=consoles.filter(c=>state.vendor==='All'||c.group===state.vendor);
+  const visible=consoleChoices();
   $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${consoles.length} libraries</p></div></div>
     <div class="section-toolbar"><div class="segmented brand-filters" role="group" aria-label="Filter console brands">${['All','Sony','Nintendo','Sega','Xbox'].map(v=>`<button type="button" class="${state.vendor===v?'active':''}" data-action="vendor" data-value="${v}" aria-pressed="${state.vendor===v}">${v==='All'?'All systems':v==='Sony'?'PlayStation':v}</button>`).join('')}</div></div>
     ${state.recent.length?`<details class="library-notes recent-games"><summary>Recently played</summary><div class="tag-row">${state.recent.slice(0,8).map(g=>`<button class="button button-ghost" type="button" data-action="recent-game" data-id="${escapeHtml(g.kind)}" data-uid="${escapeHtml(g.uid)}">${escapeHtml(g.title)}</button>`).join('')}</div></details>`:''}
-    <div class="console-browser"><div class="console-grid">${visible.map(consoleCard).join('')}</div><aside class="console-preview" aria-label="Console preview">${consolePreview(visible.find(c=>c.id==='switch2') || visible[0])}</aside></div>`;
+    <div class="console-browser"><div class="console-grid">${visible.map(consoleCard).join('')||'<p>No consoles match. Adjust Console visibility in Settings.</p>'}</div><aside class="console-preview" aria-label="Console preview">${consolePreview(visible.find(c=>c.id==='switch2') || visible[0])}</aside></div>`;
   restoreLibraryFocus(focus);
 }
 function consolePreview(consoleInfo) {
@@ -382,7 +384,7 @@ function gameCard(consoleInfo, game, index) {
   const liked = state.favorites.has(favoriteKey(consoleInfo.id, game.uid));
   return `<div class="game-item ${state.previewGame?.id===consoleInfo.id && state.previewGame?.uid===game.uid ? 'is-previewed' : ''}" data-preview-uid="${escapeHtml(game.uid)}">
     <button class="game-card" type="button" data-action="quick-launch" data-id="${consoleInfo.id}" data-uid="${escapeHtml(game.uid)}" aria-label="${state.native && !consoleInfo.libraryOnly ? 'Launch' : 'View'} ${escapeHtml(game.title)}${state.native && !consoleInfo.libraryOnly ? '' : ' details'}">
-      ${gameCover(consoleInfo, game, index)}<span class="game-title">${escapeHtml(game.title)}</span><span class="game-meta">${game.year || (game.demo ? 'Sample game' : state.native ? consoleInfo.libraryOnly ? 'Collection file' : 'Installed game' : 'Folder preview')} · ${escapeHtml(consoleInfo.abbrev)}</span></button>
+      ${gameCover(consoleInfo, game, index)}<span class="game-title">${escapeHtml(game.title)}${game.versions?.length>1?` <small class="version-count">${game.versions.length} versions</small>`:''}${game.offline?' <small class="offline-badge">Offline</small>':''}</span><span class="game-meta">${game.year || (game.demo ? 'Sample game' : state.native ? consoleInfo.libraryOnly ? 'Collection file' : 'Installed game' : 'Folder preview')} · ${escapeHtml(consoleInfo.abbrev)}</span></button>
     <button class="game-info" type="button" data-action="game" data-id="${consoleInfo.id}" data-uid="${escapeHtml(game.uid)}" aria-label="Details for ${escapeHtml(game.title)}" title="Game details">${glyph('info')}</button>
     <button class="favorite ${liked ? 'active' : ''}" type="button" data-action="favorite" data-id="${consoleInfo.id}" data-uid="${escapeHtml(game.uid)}" aria-label="${liked ? 'Remove' : 'Add'} ${escapeHtml(game.title)} ${liked ? 'from' : 'to'} favorites" aria-pressed="${liked}">${glyph('heart')}</button>
   </div>`;
@@ -396,7 +398,7 @@ function visibleGames(id) {
   if (state.gameFilter === 'Favorites') result = result.filter(game => state.favorites.has(favoriteKey(id, game.uid)));
   if (state.sort === 'az') result.sort((a,b) => a.title.localeCompare(b.title));
   if (state.sort === 'recent') result.sort((a,b) => releaseYear(b) - releaseYear(a));
-  return result;
+  return groupedGames(id,result);
 }
 // Keep keyboard/controller position when a library render replaces its controls.
 // Disabling an async favorite button may blur it before the render begins.
@@ -451,6 +453,7 @@ function previewLibraryGame(id, uid) {
   const game=visibleGames(id).find(game=>game.uid===uid);
   if(!game)return;
   state.previewGame={id,uid};
+  if(window.setTimeout){clearTimeout(state.viewSaveTimer);state.viewSaveTimer=window.setTimeout(rememberLibrary,500);}
   document.querySelectorAll('#game-results .game-item').forEach(item=>item.classList.toggle('is-previewed',item.dataset.previewUid===uid));
   renderGamePreview(byId[id],game);hydrateNativeCovers();
 }
@@ -476,6 +479,7 @@ function renderConsole() {
     <div class="library-header" style="--tint:${consoleTone(consoleInfo)}"><div class="library-identity"><span class="library-emblem" aria-hidden="true">${deviceArt(consoleInfo.id)}</span><div><h1 class="page-title">${escapeHtml(consoleInfo.name)}</h1><p class="page-subtitle">${gamesFor(consoleInfo.id).length} ${gamesFor(consoleInfo.id).length===1?'game':'games'}</p></div></div>
     <div class="library-header-actions">${!isConfigured(consoleInfo.id)?`<button type="button" class="button button-primary" data-action="configure" data-id="${consoleInfo.id}">Set up emulator</button>`:''}
       <details class="library-menu"><summary aria-label="Library options" title="Library options">···</summary><div class="menu-items">
+        ${state.native?`<button data-action="save-data-backup" data-id="${consoleInfo.id}">Back up saves…</button><button data-action="save-data-restore" data-id="${consoleInfo.id}">Restore saves…</button>`:''}
         ${isConfigured(consoleInfo.id)?`<button type="button" data-action="configure" data-id="${consoleInfo.id}">Edit emulator</button>`:''}
         ${state.native&&isConfigured(consoleInfo.id)?`<button type="button" data-action="open-emulator" data-id="${consoleInfo.id}">Open emulator</button>`:''}
         ${state.native?`<button type="button" data-action="library-folders" data-id="${consoleInfo.id}">Manage folders</button>`:''}
@@ -496,6 +500,8 @@ function renderSettings() {
   const focus=captureLibraryFocus($('#screen'),'settings');
   $('#screen').innerHTML=`<div class="settings-header"><h1 class="page-title">Settings</h1><div class="settings-app"><span>Matrix-Play</span><button type="button" class="button button-ghost" data-action="updates" aria-label="Update Matrix-Play">Check for updates</button></div></div>
     ${state.native?discoverySummary():''}
+    ${organizationControls()}
+    <details class="library-notes"><summary>Library behavior</summary><label><input type="checkbox" data-pref="autoRefresh" ${libraryPrefs().autoRefresh!==false?'checked':''}> Automatically refresh game libraries every 30 seconds</label><label><input type="checkbox" data-pref="grouping" ${libraryPrefs().grouping?'checked':''}> Group game versions (same console)</label></details>
     <details class="library-notes"><summary>Backup and restore</summary><p>Back up settings, favorites and covers (up to 64 MB). Game files and API keys are excluded. Restore only backups you trust; existing covers are kept, and a safety snapshot is saved before restoring settings.</p><div class="tag-row"><button type="button" class="button button-ghost" data-action="backup-library" ${state.native?'':'disabled'}>Create backup</button><button type="button" class="button button-ghost" data-action="restore-library" ${state.native?'':'disabled'}>Restore backup…</button></div><p id="backup-status" role="status"></p></details>
     <section class="artwork-settings"><h2>Artwork</h2>
       <div class="steamgrid-settings"><h3>SteamGridDB</h3><p>${state.steamgridEnabled?'Enabled for automatic missing covers.':'Add your personal API key to enable SteamGridDB covers for all consoles.'}</p><label class="field" for="steamgrid-key">API key<input type="password" id="steamgrid-key" autocomplete="new-password" placeholder="Paste your SteamGridDB API key" ${state.native?'':'disabled'}></label><div class="tag-row"><button type="button" class="button button-primary" data-action="steamgrid-key-save" ${state.native?'':'disabled'}>Save and enable</button><button type="button" class="button button-ghost" data-action="steamgrid-key-clear" ${state.native?'':'disabled'}>Disable SteamGridDB</button><button type="button" class="button button-ghost" data-action="steamgrid-key-open" ${state.native?'':'disabled'}>Get API key</button></div><p class="setting-hint">Automatic lookups send game titles to SteamGridDB. Unique exact title matches use static portrait covers (flat only). Ambiguous matches can be selected in game details. Local covers take priority; the key stays in your private local settings.</p></div>
@@ -517,17 +523,18 @@ function render() {
   if (state.page === 'steam' || state.page === 'windows') renderExternal(state.page);
 }
 function goHome() {
-  dismissOverlay(); state.page = 'home'; state.consoleId = null; state.query = ''; render(); window.scrollTo(0,0);
+  rememberLibrary();dismissOverlay(); state.page = 'home'; state.consoleId = null; state.query = ''; render(); window.scrollTo(0,0);
 }
 function goConsole(id) {
   if (!byId[id]) return;
-  dismissOverlay(); state.page = 'console'; state.consoleId = id; state.query = ''; state.gameFilter = 'All'; state.sort = 'default'; render(); window.scrollTo(0,0);
+  rememberLibrary();const remembered=libraryPrefs().views?.[id];state.view=remembered?.layout||'list';state.previewGame={id,uid:remembered?.selected||''};
+  dismissOverlay(); state.page = 'console'; state.consoleId = id; state.query = ''; state.gameFilter = 'All'; state.sort = remembered?.sort||'default'; render(); window.scrollTo(0,0);
 }
 function goSettings() {
-  dismissOverlay(); state.page = 'settings'; state.consoleId = null; render(); window.scrollTo(0,0);
+  rememberLibrary();dismissOverlay(); state.page = 'settings'; state.consoleId = null; render(); window.scrollTo(0,0);
 }
 function goExternal(page) {
-  dismissOverlay(); state.page = page; state.consoleId = null;
+  rememberLibrary();dismissOverlay(); state.page = page; state.consoleId = null;
   state.query = ''; state.gameFilter = 'All'; state.sort = 'default';
   render(); window.scrollTo(0,0);
 }
@@ -645,6 +652,7 @@ async function launchTracked(id,command,args) {
   } finally {state.launchBusy[id]=false;}
 }
 async function launchConsole(id,uid=null) {
+  if(uid&&findGame(id,uid)?.offline){toast('Game drive is offline. Reconnect it before launching.');return;}
   if (byId[id]?.libraryOnly) {if (uid) openGame(id,uid);else toast(byId[id].supportNote);return;}
   if (!state.native) {toast('Open the Linux app to launch an emulator.');return;}
   await launchTracked(id,uid ? 'launch_console_game':'open_emulator',uid ? {id,uid}:{id});
@@ -824,10 +832,11 @@ function openGame(id, uid) {
   if (state.overlay !== 'game') state.lastFocus = document.activeElement;
   state.overlay = 'game'; state.selectedGame = { id, uid };
   const liked = state.favorites.has(favoriteKey(id,uid));
-  const index = gamesFor(id).indexOf(game);
+  const index = gamesFor(id).findIndex(g=>g.uid===uid);
   $('#overlay-root').innerHTML = `<div class="overlay detail-overlay" data-backdrop="true"><aside class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detail-title">
     <button type="button" class="close" data-action="close" aria-label="Close game details">${glyph('close')}</button>
     <div class="detail-cover">${gameCover(consoleInfo,game,index)}</div><div class="eyebrow">GAME DETAILS · ${state.native ? consoleInfo.libraryOnly ? 'COLLECTION FILE' : 'LOCAL GAME' : game.demo ? 'DEMO TITLE' : 'FOLDER PREVIEW'}</div><h2 id="detail-title">${escapeHtml(game.title)}</h2>
+    ${metadataControls(id,game)}
     <p class="detail-sub">${escapeHtml(consoleInfo.name)}${game.year ? ` · ${game.year}` : ''}</p>
     <div class="tag-row"><span class="tag">${escapeHtml(consoleInfo.abbrev)}</span><span class="tag">${escapeHtml(state.configs[id]?.emulatorName || consoleInfo.emulator)}</span><span class="tag">${consoleInfo.libraryOnly ? 'No launch adapter' : isConfigured(id) ? 'Profile saved' : 'Not connected'}</span></div>
     <details class="library-notes"><summary>Game information</summary><p class="detail-description">${consoleInfo.libraryOnly || consoleInfo.customEmulator ? escapeHtml(consoleInfo.supportNote) : state.native ? 'The Play button starts this file fullscreen with the recognized emulator’s game-only launch options. Custom launchers need their own fullscreen arguments.' : `The native application will launch this game using ${escapeHtml(state.configs[id]?.emulatorName || consoleInfo.emulator)}. This browser preview cannot execute games.`}</p></details>
@@ -843,7 +852,7 @@ function openGame(id, uid) {
 function openSteamGrid() {
   if (!state.native || !state.selectedGame) return;
   const selected={...state.selectedGame};
-  const title=gamesFor(selected.id).find(g=>g.uid===selected.uid)?.title || '';
+  const title=gameMetadata(selected.id,selected.uid).coverTitle||gamesFor(selected.id).find(g=>g.uid===selected.uid)?.originalTitle||gamesFor(selected.id).find(g=>g.uid===selected.uid)?.title || '';
   state.overlay='steamgrid';
   $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog steamgrid-dialog" role="dialog" aria-modal="true" aria-labelledby="steamgrid-title"><button type="button" class="close" data-action="close" aria-label="Close SteamGridDB">${glyph('close')}</button><div class="eyebrow">COVER ART</div><h2 id="steamgrid-title">SteamGridDB</h2><p class="muted">Select the correct game, then choose a cover to replace its artwork. Requires an API key in Settings.</p><label class="field">Game title<input id="steamgrid-query" value="${escapeHtml(title)}" maxlength="240"></label><button type="button" class="button button-primary" data-action="steamgrid-search">Search</button><p id="steamgrid-message" role="status"></p><div id="steamgrid-results"></div></section></div>`;
   $('.steamgrid-dialog')._selection=selected;
@@ -1035,7 +1044,7 @@ async function scanArtwork(resume=false) {
  const generation=++state.coverGeneration;
  if(!state.native||!state.artwork.enabled||state.coverQueue.paused)return;
  const kinds=state.steamgridEnabled?consoles.map(c=>c.id):AUTO_COVER_KINDS.filter(k=>!TITLE_COVER_KINDS.includes(k)||state.artwork.titleEnabled);
- const items=resume&&state.coverQueue.items.length?state.coverQueue.items:kinds.flatMap(kind=>(state.imported[kind]||[]).map(g=>({kind,uid:g.uid,title:g.title||g.uid,status:'pending'})));
+ const items=resume&&state.coverQueue.items.length?state.coverQueue.items:kinds.flatMap(kind=>(state.imported[kind]||[]).filter(g=>!g.offline).map(g=>({kind,uid:g.uid,title:g.title||g.uid,status:'pending'})));
  state.coverQueue.items=items;renderCoverQueue();let complete=0;
  for(const item of items){
   if(resume&&!['pending','downloading','failed'].includes(item.status)){complete++;continue;}
@@ -1083,12 +1092,14 @@ async function refreshNative() {
   if (!state.native) { toast('Preview mode — launch the native Matrix-Play app to scan your filesystem.'); return; }
   const generation=++nativeRefreshGeneration;
   try {
+    const snapshot=state.librarySnapshotSupported?await nativeInvoke('library_snapshot'):null;
     const results = await Promise.all([
-      ...consoles.map(c => nativeInvoke('scan_console', {id:c.id})),
+      ...consoles.map(c => snapshot?Promise.resolve(snapshot.games[c.id]||[]):nativeInvoke('scan_console', {id:c.id})),
       nativeInvoke('scan_steam'), nativeInvoke('list_windows_games'),
     ]);
     if (generation!==nativeRefreshGeneration) return;
-    consoles.forEach((c,index) => { state.imported[c.id] = results[index].map(g => ({...g, demo:false})); });
+    if(snapshot)state.libraryFolders=snapshot.folders||{};
+    consoles.forEach((c,index) => { state.imported[c.id] = results[index].map(g => ({...g, demo:false,offline:snapshot?offlineGame(c.id,g):Boolean(g.offline)})); });
     state.steam = results[consoles.length];
     state.windows = results[consoles.length+1];
     state.missingArt.clear(); // Rescan can introduce matching .jpg files next to ROMs.
@@ -1103,7 +1114,7 @@ let nativeBootstrapGeneration=0, artworkWriteRevision=0, favoriteWriteRevision=0
 async function bootstrapNative() {
   const generation=++nativeBootstrapGeneration;
   const profileRevisions=new Map(emulatorSavedRequests);
-  const artworkRevision=artworkWriteRevision, favoritesRevision=favoriteWriteRevision;
+  const artworkRevision=artworkWriteRevision, favoritesRevision=favoriteWriteRevision,libraryRevision=libraryPrefRevision;
   const current=()=>generation===nativeBootstrapGeneration;
   try {
     const config=await nativeInvoke('bootstrap');
@@ -1113,7 +1124,7 @@ async function bootstrapNative() {
     for (const [id,profile] of Object.entries(state.configs)) {
       if (emulatorSavedRequests.get(id)!==profileRevisions.get(id)) profiles[id]=profile;readiness[id]=state.readyProfiles[id];
     }
-    state.recent=config.recent||state.recent;state.configs=profiles;state.readyProfiles=readiness;
+    state.librarySnapshotSupported=Boolean(config.libraryPreferences);if(config.libraryPreferences&&libraryRevision===libraryPrefRevision)state.libraryPrefs=normalizeLibraryPrefs(config.libraryPreferences);state.recent=config.recent||state.recent;state.configs=profiles;state.readyProfiles=readiness;
     state.root=config.root;state.folders=config.folders;state.steamgridEnabled=Boolean(config.steamgridEnabled);
     state.discovery=config.emulatorDiscovery || state.discovery;
     if (artworkWriteRevision===artworkRevision) state.artwork=config.artwork || state.artwork;
@@ -1129,7 +1140,7 @@ async function initializeNative() {
   $('#mode-indicator').textContent = 'NATIVE LINUX';
   $('#native-status').textContent = 'Native backend · folders managed automatically';
   try {
-    if (await bootstrapNative()) await refreshNative();
+    if (await bootstrapNative()) {await refreshNative();await pollLibraries(true);setInterval(()=>void pollLibraries(),30000);}
   } catch(error) { toast(`Matrix-Play initialization failed: ${error}`); }
 }
 
@@ -1223,6 +1234,11 @@ async function handleAction(button) {
   const menu=button.closest?.('.library-menu');
   if (menu) { menu.open=false;menu.querySelector('summary')?.focus(); }
   const { action, id, uid, value } = button.dataset;
+  if(action==='move-console'){const order=[...new Set([...(libraryPrefs().order||[]),...consoles.map(c=>c.id)])];const at=order.indexOf(id),next=at+Number(value);if(next>=0&&next<order.length){[order[at],order[next]]=[order[next],order[at]];await saveLibraryPref('order','',order);renderSettings();}return;}
+  if(action==='save-game-metadata'){const selected={...state.selectedGame};const owner=$('.detail-panel');const metadata={display:$('#display-title').value.trim(),coverTitle:$('#cover-search-title').value.trim(),group:$('#version-group').value.trim()};if(!await saveLibraryPref('metadata',artKey(selected.id,selected.uid),metadata))return;if($('.detail-panel')===owner){dismissOverlay();render();}return;}
+  if(action==='select-version'){state.previewGame={id,uid};rememberLibrary();renderConsole();openGame(id,uid);return;}
+  if(action==='save-data-backup'||action==='save-data-restore'){button.disabled=true;try{await saveDataFlow(id,action==='save-data-restore');}catch(e){toast(String(e));}finally{button.disabled=false;}return;}
+  if(action==='apply-save-restore'){button.disabled=true;try{toast(await nativeInvoke('apply_save_restore',{token:value}));dismissOverlay();}catch(e){toast(String(e));}finally{button.disabled=false;}return;}
   if (action === 'updates') void openUpdater();
   else if (action === 'check-updates') void runUpdate('check_updates');
   else if (action === 'download-update') void runUpdate('download_update');
@@ -1249,8 +1265,9 @@ async function handleAction(button) {
   else if (action === 'close') dismissOverlay();
   else if (action === 'game') openGame(id,uid);
   else if (action === 'quick-launch') {
+    if(findGame(id,uid)?.offline){toast('This game is on an offline drive. Reconnect it and refresh.');return;}
     if (!state.native) {openGame(id,uid);return;}
-    void launchConsole(id,uid);
+    rememberLibrary();void launchConsole(id,uid);
   }
   else if (action === 'play-console') {if (state.selectedGame) void launchConsole(state.selectedGame.id,state.selectedGame.uid);}
   else if (action === 'open-emulator') void launchConsole(id);
@@ -1289,7 +1306,7 @@ async function handleAction(button) {
     finally {button.disabled=false;}
   }
   else if (action === 'filter-games') { state.gameFilter = value; renderConsole(); }
-  else if (action === 'view') { state.view = value; renderConsole(); }
+  else if (action === 'view') { state.view = value; rememberLibrary();renderConsole(); }
   else if (action === 'favorite') toggleFavorite(id,uid,button);
   else if (action === 'preview-folder') { $('#folder-input').value = ''; $('#folder-input').click(); }
   else if (action === 'clear-preview') {
@@ -1363,6 +1380,9 @@ function setupEvents() {
   document.addEventListener('pointerover', previewConsole);
   document.addEventListener('focusin', previewConsole);
   document.addEventListener('change', event => {
+    const field=event.target;
+    if(field.dataset?.pref){void saveLibraryPref(field.dataset.pref,'',field.checked);return;}
+    for(const [attr,section]of [['consoleHide','hidden'],['consolePin','pinned']])if(field.dataset?.[attr]){const ids=new Set(libraryPrefs()[section]||[]);if(field.checked)ids.add(field.dataset[attr]);else ids.delete(field.dataset[attr]);void saveLibraryPref(section,'',[...ids]);return;}
     if (event.target.id==='detected-emulator') chooseDetectedEmulator();
     if (event.target.id==='flatpak-app') $('#runtime-fonts').checked=event.target.value.startsWith('net.pcsx2.PCSX2|');
     if (event.target.id==='emulator-launcher') updateLauncherFields();
@@ -1387,7 +1407,7 @@ function setupEvents() {
     }
   });
   document.addEventListener('change', event => {
-    if (event.target.id === 'sort-games') { state.sort = event.target.value; renderGameResults(); }
+    if (event.target.id === 'sort-games') { state.sort = event.target.value; rememberLibrary();renderGameResults(); }
     if (event.target.id === 'folder-input') importFolder(event.target.files);
     if (event.target.id === 'art-input') void loadCover(event.target.files?.[0]);
   });
@@ -1465,4 +1485,34 @@ function setupEvents() {
     }
   });
 }
+// Library organization is additive; identities and on-disk names stay unchanged.
+let libraryWrites=Promise.resolve(), libraryPolling=false,libraryPrefRevision=0;
+function normalizeLibraryPrefs(value){const p=value&&typeof value==='object'?value:{};for(const key of ['hidden','pinned','order'])p[key]=Array.isArray(p[key])?[...new Set(p[key].filter(id=>byId[id]))]:[];for(const key of ['views','metadata'])if(!p[key]||typeof p[key]!=='object'||Array.isArray(p[key]))p[key]={};return p;}
+function libraryPrefs(){return state.libraryPrefs || (state.libraryPrefs={hidden:[],pinned:[],order:[],views:{},metadata:{},autoRefresh:true,grouping:false,readyOnly:false});}
+function gameMetadata(id,uid){return libraryPrefs().metadata?.[artKey(id,uid)]||{};}
+function saveLibraryPref(section,key,value){
+ ++libraryPrefRevision;const p=libraryPrefs();if(section==='view')(p.views||={})[key]=value;else if(section==='metadata')(p.metadata||={})[key]=value;else p[section]=value;
+ if(!state.native){try{localStorage.setItem('matrix-library-preferences',JSON.stringify(p));}catch{}return Promise.resolve(true);}
+ libraryWrites=libraryWrites.catch(()=>{}).then(()=>nativeInvoke('set_library_preference',{section,key,value})).then(()=>true).catch(e=>{toast('Library preference was not saved: '+e);return false;});return libraryWrites;
+}
+function rememberLibrary(){if(state.page!=='console'||!state.consoleId)return;const v={layout:state.view,sort:state.sort,selected:state.previewGame?.id===state.consoleId?state.previewGame.uid:''};const old=libraryPrefs().views?.[state.consoleId];if(JSON.stringify(v)!==JSON.stringify(old))void saveLibraryPref('view',state.consoleId,v);}
+function versionKey(id,g){const m=gameMetadata(id,g.uid);if(m.group==='-')return g.uid;if(m.group)return m.group.toLocaleLowerCase();return (g.originalTitle||g.title).replace(/\s+[—–-]\s+(?:Base|Update\s+\d+)$/i,'').replace(/\s*\((?:USA|Europe|Japan|World|Rev\s+[\w.]+|v\d[\w.]*)\)\s*$/i,'').trim().toLocaleLowerCase();}
+function groupedGames(id,games){
+ if(!libraryPrefs().grouping)return games;
+ const groups=new Map();for(const g of games){const k=versionKey(id,g);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(g);}
+ return [...groups.values()].map(versions=>{const preferred=state.previewGame?.id===id?state.previewGame.uid:libraryPrefs().views?.[id]?.selected;const g=versions.find(g=>g.uid===preferred)||versions.find(g=>/\s[—–-]\sBase$/i.test(g.originalTitle||g.title))||versions[0];return {...g,versions};});
+}
+function consoleChoices(){const p=libraryPrefs();const order=[...(p.order||[]),...consoles.map(c=>c.id)];return consoles.filter(c=>!(p.hidden||[]).includes(c.id)&&(!p.readyOnly||consoleReady(c.id))&&(state.vendor==='All'||c.group===state.vendor)).sort((a,b)=>Number((p.pinned||[]).includes(b.id))-Number((p.pinned||[]).includes(a.id))||order.indexOf(a.id)-order.indexOf(b.id));}
+function organizationControls(){const p=libraryPrefs();return `<details class="library-notes organization"><summary>Console visibility &amp; order</summary><label><input type="checkbox" data-pref="readyOnly" ${p.readyOnly?'checked':''}> Ready systems only</label><div class="console-order">${[...new Set([...(p.order||[]),...consoles.map(c=>c.id)])].map(id=>`<div><span>${escapeHtml(byId[id].name)}</span><label><input type="checkbox" data-console-hide="${id}" ${(p.hidden||[]).includes(id)?'checked':''}> Hide</label><label><input type="checkbox" data-console-pin="${id}" ${(p.pinned||[]).includes(id)?'checked':''}> Pin</label><button class="button button-ghost" data-action="move-console" data-id="${id}" data-value="-1" aria-label="Move ${escapeHtml(byId[id].name)} up">↑</button><button class="button button-ghost" data-action="move-console" data-id="${id}" data-value="1" aria-label="Move ${escapeHtml(byId[id].name)} down">↓</button></div>`).join('')}</div></details>`;}
+function metadataControls(id,game){const m=gameMetadata(id,game.uid);const variants=gamesFor(id).filter(g=>versionKey(id,g)===versionKey(id,game));return `<details class="library-notes"><summary>Title &amp; versions${variants.length>1?' ('+variants.length+')':''}</summary><label class="field">Display title<input id="display-title" maxlength="240" value="${escapeHtml(m.display||'')}" placeholder="${escapeHtml(game.originalTitle||game.title)}"></label><label class="field">Cover search title<input id="cover-search-title" maxlength="240" value="${escapeHtml(m.coverTitle||'')}" placeholder="Original catalog title"></label><label class="field">Version group<input id="version-group" maxlength="240" value="${escapeHtml(m.group||'')}" placeholder="Automatic; use - to keep separate"></label><p class="muted">Changes affect the library only. Matching group names combine versions within this console when grouping is enabled.</p><button class="button button-ghost" data-action="save-game-metadata">Save title &amp; group</button>${variants.length>1?`<p>Choose version:</p><div class="tag-row">${variants.map(g=>`<button class="button button-ghost" data-action="select-version" data-id="${id}" data-uid="${escapeHtml(g.uid)}">${escapeHtml(g.originalTitle||g.title)}${g.offline?' · Offline':''}</button>`).join('')}</div>`:''}</details>`;}
+function offlineGame(id,g){return (state.libraryFolders?.[id]||[]).some(f=>!f.available&&(g.path===f.path||g.path?.startsWith(f.path.replace(/\/$/,'')+'/')));}
+async function pollLibraries(force=false){
+ if(!state.native||libraryPolling||!force&&(libraryPrefs().autoRefresh===false||document.hidden||state.overlay))return;
+ libraryPolling=true;const generation=nativeRefreshGeneration;try{await libraryWrites;const [result,steam,windows]=await Promise.all([nativeInvoke('library_snapshot'),nativeInvoke('scan_steam'),nativeInvoke('list_windows_games')]);if(!result?.games||!force&&state.overlay||generation!==nativeRefreshGeneration)return;const before=JSON.stringify([state.imported,state.libraryFolders,state.steam,state.windows]);if(Array.isArray(steam))state.steam=steam;if(Array.isArray(windows))state.windows=windows;state.libraryFolders=result.folders||{};for(const c of consoles)state.imported[c.id]=(result.games[c.id]||[]).map(g=>({...g,demo:false,offline:offlineGame(c.id,g)}));if(before!==JSON.stringify([state.imported,state.libraryFolders,state.steam,state.windows])){state.missingArt.clear();if(!state.overlay)render();}}catch(e){if(force)toast('Library refresh failed: '+e);}finally{libraryPolling=false;}
+}
+async function saveDataFlow(id,restore){
+ const result=await nativeInvoke('save_data_dialog',{id,restore});if(result.cancelled)return;if(result.message){toast(result.message);return;}
+ state.overlay='save-restore';$('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="save-restore-title"><button class="close" data-action="close" aria-label="Cancel restore">${glyph('close')}</button><h2 id="save-restore-title">Review save restore</h2><p>Close the emulator before continuing. These files will be written inside ${escapeHtml(result.root)}. A safety backup is created first; files not listed are kept.</p><div class="save-file-list">${result.files.map(f=>`<p>${escapeHtml(f.name)} · ${f.bytes} bytes · ${f.replaces?'Replace':'Add'}</p>`).join('')}</div><button class="button button-primary" data-action="apply-save-restore" data-value="${escapeHtml(result.token)}">Restore these files</button></section></div>`;$('.dialog .close')?.focus();
+}
+
 readPrefs(); setupEvents(); render(); window.matrixStartup?.complete(); void initializeArt(); void initializeNative();

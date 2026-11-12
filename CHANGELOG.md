@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.9
+
+- Add optional game-version grouping, with explicit version selection and editable group names. Preserve each file identity, launch arguments, covers and favorites.
+- Add console visibility, ready-only filtering, pins and custom order in Settings. Keep all 24 libraries available through these controls.
+- Refresh libraries automatically every 30 seconds while the UI is visible and idle. Preserve indexed console entries and favorites when registered drives are offline, mark them Offline, block offline launches, and reconcile additions/removals after reconnect.
+- Add explicit save-folder backup and previewed restore for PCSX2, PPSSPP and Dolphin GameCube memory cards/savestates. Validate paths and sizes, create a safety backup, preserve unlisted files and roll back failed writes.
+- Remember each console’s layout, sorting and selected game between sessions. Add editable display titles and separate persistent cover-search titles without renaming game files.
+
 ## 0.6.8
 
 - Match the approved console-library concept across all 24 consoles: frosted game rows, cobalt selection, compact library controls and a large right-hand cover/title preview. Default to rows while retaining the grid toggle and all library actions.
