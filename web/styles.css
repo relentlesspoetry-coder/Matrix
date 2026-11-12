@@ -387,3 +387,8 @@ summary:focus-visible { outline:2px solid var(--focus); outline-offset:3px }
 .gamepad-navigation .console-card:focus { outline:3px solid #8fc8ff; outline-offset:5px; border-color:#b5d5ff; transform:translateY(-3px) }
 .gamepad-navigation .game-card:focus .game-cover { transform:translateY(-4px); border-color:#b4d6ff; box-shadow:0 0 0 2px #8abaff,0 14px 28px #02040c99 }
 .gamepad-navigation :is(.nav-item,.button,.segmented button,summary):focus { outline-color:#8fc8ff }
+
+/* Preserve the supplied transparent console artwork and original colors. */
+.console-card .console-image,
+.library-emblem .console-image,
+.settings-glyph .console-image { mix-blend-mode:normal }

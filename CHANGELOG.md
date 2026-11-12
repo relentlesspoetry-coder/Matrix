@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2
+
+- Replace console artwork across all 24 libraries with the newly approved console icons, including NES, SNES, Genesis, Saturn, Xbox and Xbox 360.
+- Preserve transparent backgrounds, glow, labels and original artwork colors in the dashboard, library headings and settings.
+
 ## 0.6.1
 
 - Combine the clean library controls with a navy-and-blue gaming dashboard: larger console artwork, bolder tiles, bigger game covers and clearer controller focus.

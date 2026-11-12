@@ -39,7 +39,32 @@ const glyph = name => {
   return `<svg viewBox="0 0 24 24" aria-hidden="true">${symbols[name] || symbols.info}</svg>`;
 };
 
-const consoleImages = {"switch": "./assets/consoles/switch.webp", "ps1": "./assets/consoles/ps1.webp", "ps2": "./assets/consoles/ps2.webp", "ps3": "./assets/consoles/ps3.webp", "psp": "./assets/consoles/psp.webp", "n64": "./assets/consoles/n64.webp", "gamecube": "./assets/consoles/gamecube.webp", "dreamcast": "./assets/consoles/dreamcast.webp", "wii": "./assets/consoles/wii.webp", "wiiu": "./assets/consoles/wiiu.webp", "gb": "./assets/consoles/gb.webp", "gba": "./assets/consoles/gba.webp", "nds": "./assets/consoles/nds.webp", "3ds": "./assets/consoles/3ds.webp", "ps4":"./assets/consoles/ps4.webp", "ps5":"./assets/consoles/ps5.webp", "vita":"./assets/consoles/vita.webp", "switch2":"./assets/consoles/switch2.webp"};
+const consoleImages = {
+  "switch": "./assets/consoles/switch.webp",
+  "ps1": "./assets/consoles/ps1.webp",
+  "ps2": "./assets/consoles/ps2.webp",
+  "ps3": "./assets/consoles/ps3.webp",
+  "psp": "./assets/consoles/psp.webp",
+  "n64": "./assets/consoles/n64.webp",
+  "gamecube": "./assets/consoles/gamecube.webp",
+  "dreamcast": "./assets/consoles/dreamcast.webp",
+  "wii": "./assets/consoles/wii.webp",
+  "wiiu": "./assets/consoles/wiiu.webp",
+  "gb": "./assets/consoles/gb.webp",
+  "gba": "./assets/consoles/gba.webp",
+  "nds": "./assets/consoles/nds.webp",
+  "3ds": "./assets/consoles/3ds.webp",
+  "ps4": "./assets/consoles/ps4.webp",
+  "ps5": "./assets/consoles/ps5.webp",
+  "vita": "./assets/consoles/vita.webp",
+  "switch2": "./assets/consoles/switch2.webp",
+  "genesis": "./assets/consoles/genesis.webp",
+  "saturn": "./assets/consoles/saturn.webp",
+  "nes": "./assets/consoles/nes.webp",
+  "snes": "./assets/consoles/snes.webp",
+  "xbox": "./assets/consoles/xbox.webp",
+  "xbox360": "./assets/consoles/xbox360.webp",
+};
 // Supplied console artwork; original silhouettes remain a fallback.
 function deviceArt(id) {
   if (consoleImages[id]) return `<img class="device-illustration console-image" src="${consoleImages[id]}" alt="" decoding="async">`;
