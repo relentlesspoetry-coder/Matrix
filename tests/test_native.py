@@ -456,16 +456,18 @@ def main():
             # Real native import and dispatch through the recognized Lichii
             # adapter. This harmless shell fixture is not a real emulator/game.
             saved_switch2=invoke('bootstrap')['profiles']['switch2']
-            lichii=home/'Lichii-nx2-fixture.sh';lichii.write_text(launcher);lichii.chmod(0o700)
+            lichii=home/'Lichii-nx2-fixture.sh'
+            lichii.write_text('#!/bin/sh\n{ printf "argc:%s\\n" "$#"; if [ "$#" -gt 0 ]; then printf "%s\\n" "$@"; fi; } > "$MATRIX_NATIVE_TEST_LAUNCH_LOG"\n')
+            lichii.chmod(0o700)
             added=invoke('import_emulator',{'id':'switch2','path':str(lichii)})
             assert added['moved'] and not lichii.exists()
             lichii_boot=extracted[0][0]
             log.unlink(missing_ok=True)
             invoke('launch_console_game',{'id':'switch2','uid':lichii_boot})
-            wait_for(lambda: log.exists() and log.read_text().splitlines()==['-f','-g',lichii_boot])
+            wait_for(lambda: log.exists() and log.read_text().splitlines()==['argc:3','-f','-g',lichii_boot])
             log.unlink()
             invoke('open_emulator',{'id':'switch2'})
-            wait_for(lambda: log.exists() and log.read_text()=='')
+            wait_for(lambda: log.exists() and log.read_text().splitlines()==['argc:0'])
             invoke('save_emulator',{'id':'switch2',**saved_switch2})
             print('PASS: recognized Lichii managed import and exact fullscreen game argv, with plain Open emulator (synthetic launcher only)')
             print('PASS: extracted Switch 2 base/update names, exact native launch argv, local covers and refreshed library; synthetic fixtures only')
