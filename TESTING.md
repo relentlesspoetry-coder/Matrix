@@ -2,7 +2,7 @@
 
 ## Version 0.6.9 library organization
 
-Local verification covers 174 headless backend tests and 244 JavaScript tests, including disconnect/reconnect index preservation, per-console view memory, separate display/cover identities, optional grouping, composable console filters, unsafe save archives, symlink rejection, save restore safety snapshots and rollback after a failed write. The native fixture adds real IPC/WebKit checks for version grouping and title overrides; existing native/controller/packaging/update gates run before publication. Save fixtures are synthetic; real emulator saves and external physical drives are not exercised.
+Local verification covers 174 headless backend tests and 245 JavaScript tests, including disconnect/reconnect index preservation, per-console view memory, separate display/cover identities, optional grouping, composable console filters, unsafe save archives, symlink rejection, save restore safety snapshots and rollback after a failed write. The native fixture adds real IPC/WebKit checks for version grouping and title overrides; existing native/controller/packaging/update gates run before publication. Save fixtures are synthetic; real emulator saves and external physical drives are not exercised.
 
 ## Version 0.6.8 console-library concept
 
