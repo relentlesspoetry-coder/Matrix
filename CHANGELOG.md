@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.6
+
+- Shift the currents to cooler cobalt and ice blue and pre-render their glow layers for lighter, continuous animation without reverse-direction pauses.
+- Show green console status only when an emulator is configured and real games have been added; retain grey for empty or unconfigured libraries.
+- Add SteamGridDB API-key setup, exact-title automatic covers, and a manual game/cover picker for all consoles. Save covers in each console’s Covers folder, preserving local artwork priority and existing providers when SteamGridDB is disabled.
+
 ## 0.6.5
 
 - Rebuild the Arctic Current backdrop with layered, variable-width blue ribbons, fine cyan-white edges, soft crossing highlights and delicate light patterns to match the approved concept more closely.

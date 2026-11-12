@@ -5,6 +5,7 @@
 
 mod appimage_environment;
 mod artwork;
+mod steamgrid;
 mod bounded_io;
 #[cfg(feature = "desktop")]
 mod desktop_commands;
@@ -223,6 +224,8 @@ impl Default for ArtworkSettings {
 #[derive(Clone, Serialize, Deserialize, Default)]
 struct Settings {
     #[serde(default)]
+    steamgriddb_api_key: String,
+    #[serde(default)]
     steam_libraries: Vec<steam_libraries::RegisteredLibrary>,
     #[serde(default)]
     favorites: BTreeMap<String, Vec<String>>,
@@ -241,6 +244,7 @@ struct Settings {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Bootstrap {
+    steamgrid_enabled: bool,
     emulator_discovery: discovery::Report,
     favorites: BTreeMap<String, Vec<String>>,
     favorites_migrated: bool,
@@ -473,6 +477,7 @@ fn bootstrap() -> Result<Bootstrap, String> {
         library_folders.insert(s.id.into(), libraries::folders(s.id)?);
     }
     Ok(Bootstrap {
+        steamgrid_enabled: !settings.steamgriddb_api_key.is_empty(),
         library_folders,
         emulator_discovery,
         favorites: settings.favorites,
@@ -1227,7 +1232,7 @@ async fn launch_windows_game(uid: String) -> Result<launches::Info, String> {
         .map_err(|e| e.to_string())?
 }
 
-// Artwork is private to Matrix, not stored in emulator / games directories.
+// Console artwork is stored in managed Covers folders, separately from game files.
 // Titles have stable IDs and SHA-256 filenames to prevent traversal or name collisions.
 const MAX_COVER_BYTES: usize = 4 * 1024 * 1024;
 
@@ -1451,11 +1456,6 @@ fn download_cover_impl(
     uid: String,
     serial: Option<String>,
 ) -> Result<matrix_cover_core::Outcome, String> {
-    if !matrix_cover_core::supports(&kind) {
-        return Err(
-            "No verified automatic artwork provider for this console; choose a local cover".into(),
-        );
-    }
     let game = validate_game(&kind, &uid)?;
     let settings = load_settings()?;
     if !settings.artwork.enabled && serial.is_none() {
@@ -1471,6 +1471,12 @@ fn download_cover_impl(
             message: "Using your local cover".into(),
             ..Default::default()
         });
+    }
+    if !settings.steamgriddb_api_key.is_empty() {
+        return steamgrid::automatic(&kind, &uid, &game.title, &settings.steamgriddb_api_key);
+    }
+    if !matrix_cover_core::supports(&kind) {
+        return Err("Add a SteamGridDB API key in Settings or choose a local cover".into());
     }
     if matrix_cover_core::title::system(&kind).is_some()
         && !settings.artwork.title_enabled
@@ -1746,6 +1752,11 @@ fn main() {
             download_cover,
             save_artwork_settings,
             open_cover_project,
+            steamgrid::steamgrid_save_key,
+            steamgrid::steamgrid_search,
+            steamgrid::steamgrid_grids,
+            steamgrid::steamgrid_save,
+            steamgrid::steamgrid_open_key,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Matrix Play frontend");

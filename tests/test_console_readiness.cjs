@@ -1,0 +1,24 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+test('green console status requires both emulator setup and real imported games', () => {
+  const source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
+  const startup='readPrefs(); setupEvents(); render(); window.matrixStartup?.complete(); void initializeArt(); void initializeNative();';
+  assert.ok(source.includes(startup));
+  const consoleInfo={id:'ps2',name:'PlayStation 2',group:'Sony',games:[['Sample',2000]]};
+  const context=vm.createContext({consoles:[consoleInfo],window:{},document:{},consoleInfo});
+  vm.runInContext(source.replace(startup,'')+';globalThis.api={state,consoleCard};',context);
+  const {state,consoleCard}=context.api;
+  const ready=()=>consoleCard(consoleInfo).includes('connection-dot ready');
+  assert.equal(ready(),false,'sample games do not count');
+  state.configs.ps2={emulatorPath:'/mock/emulator',folderPath:'/mock/games'};
+  assert.equal(ready(),false,'configured but empty remains grey');
+  state.imported.ps2=[{uid:'/mock/Game.iso',title:'Game',demo:false}];
+  assert.equal(ready(),true,'emulator plus imported game is green');
+  delete state.configs.ps2;
+  assert.equal(ready(),false,'games without an emulator remain grey');
+  state.native=true;state.configs.ps2={launcher:'flatpak',flatpakId:'org.test.Emulator'};
+  assert.equal(ready(),true,'Flatpak profiles count');
+});

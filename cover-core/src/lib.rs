@@ -1,3 +1,4 @@
+pub mod steamgriddb;
 pub mod identity;
 pub mod switch;
 pub mod title;

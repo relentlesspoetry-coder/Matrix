@@ -74,3 +74,9 @@ Emulators, games, firmware and keys are supplied separately.
 ## License
 
 [MIT](LICENSE). Third-party artwork and trademarks belong to their respective owners.
+
+## SteamGridDB covers
+
+In Settings → Artwork → SteamGridDB, use **Get API key** to open your SteamGridDB preferences, then paste your key and choose **Save and enable**. This enables missing-cover lookups for every console using unique exact game-title matches. Title lookups send titles to SteamGridDB; full paths and game files stay local. Your key is saved in the private local settings file and is not returned to the web UI.
+
+For ambiguous titles or a different cover, open game details → **Find on SteamGridDB**, select the correct game, and choose a cover. Selection explicitly replaces the current cover. Images are validated and saved in the console’s `Covers` folder. Existing local covers take priority over automatic downloads. Disable SteamGridDB to use the existing serial/Libretro providers again. SteamGridDB uses static portrait covers and does not supply the existing 3D-cover style.

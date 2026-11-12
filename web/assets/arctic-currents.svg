@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024" preserveAspectRatio="none" fill="none">
 <defs>
-  <linearGradient id="ribbon" x1="100" y1="100" x2="1440" y2="840" gradientUnits="userSpaceOnUse"><stop stop-color="#087eff" stop-opacity=".05"/><stop offset=".25" stop-color="#12bcff" stop-opacity=".3"/><stop offset=".46" stop-color="#ecffff" stop-opacity=".5"/><stop offset=".64" stop-color="#0098ff" stop-opacity=".5"/><stop offset=".8" stop-color="#06dfff" stop-opacity=".42"/><stop offset="1" stop-color="#2184ff" stop-opacity=".05"/></linearGradient>
-  <linearGradient id="edge" x1="50" y1="200" x2="1480" y2="680" gradientUnits="userSpaceOnUse"><stop stop-color="#eaffff" stop-opacity=".05"/><stop offset=".22" stop-color="#69efff"/><stop offset=".4" stop-color="#fff" stop-opacity=".85"/><stop offset=".55" stop-color="#67cfff" stop-opacity=".3"/><stop offset=".75" stop-color="#baffff"/><stop offset="1" stop-color="#fff" stop-opacity=".1"/></linearGradient>
-  <radialGradient id="pool"><stop stop-color="#fff" stop-opacity=".85"/><stop offset=".15" stop-color="#c9ffff" stop-opacity=".6"/><stop offset=".5" stop-color="#00baff" stop-opacity=".22"/><stop offset="1" stop-color="#0096ff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="ribbon" x1="100" y1="100" x2="1440" y2="840" gradientUnits="userSpaceOnUse"><stop stop-color="#087eff" stop-opacity=".05"/><stop offset=".25" stop-color="#3889ef" stop-opacity=".3"/><stop offset=".46" stop-color="#ecffff" stop-opacity=".5"/><stop offset=".64" stop-color="#1875d7" stop-opacity=".5"/><stop offset=".8" stop-color="#8fd8ff" stop-opacity=".42"/><stop offset="1" stop-color="#2184ff" stop-opacity=".05"/></linearGradient>
+  <linearGradient id="edge" x1="50" y1="200" x2="1480" y2="680" gradientUnits="userSpaceOnUse"><stop stop-color="#eaffff" stop-opacity=".05"/><stop offset=".22" stop-color="#bedfff"/><stop offset=".4" stop-color="#fff" stop-opacity=".85"/><stop offset=".55" stop-color="#91bff4" stop-opacity=".3"/><stop offset=".75" stop-color="#e4f5ff"/><stop offset="1" stop-color="#fff" stop-opacity=".1"/></linearGradient>
+  <radialGradient id="pool"><stop stop-color="#fff" stop-opacity=".85"/><stop offset=".15" stop-color="#c9ffff" stop-opacity=".6"/><stop offset=".5" stop-color="#529ce1" stop-opacity=".22"/><stop offset="1" stop-color="#0096ff" stop-opacity="0"/></radialGradient>
   <filter id="halo" x="-20%" y="-30%" width="140%" height="160%"><feGaussianBlur stdDeviation="7"/></filter>
   <g id="edges">
     <path d="M-80 108C145 152 278 72 430 36S694 9 842 84 1056 228 1265 236 1473 184 1610 149"/>
@@ -20,7 +20,7 @@
   <path d="M1601 212C1402 258 1331 380 1399 465S1523 611 1347 722 1104 876 916 910 490 841 249 927 41 1056-70 1047L-70 1090C162 1096 304 948 511 930S833 1021 1057 937 1273 836 1456 722 1583 556 1494 481 1410 332 1601 253Z"/>
   <path d="M1620 332C1435 369 1366 470 1450 534S1497 666 1315 784 1147 950 954 959 634 883 402 945 126 1049-50 1044L-50 1080C187 1076 327 993 503 979S819 1054 1016 1014 1211 902 1407 795 1623 613 1519 531 1477 409 1620 377Z"/>
 </g>
-<g opacity=".8" stroke="#03cfff" stroke-width="9" filter="url(#halo)"><use href="#edges"/></g>
+<g opacity=".8" stroke="#4b9fea" stroke-width="9" filter="url(#halo)"><use href="#edges"/></g>
 <g stroke="url(#edge)" stroke-width="1.5"><use href="#edges"/></g>
 <!-- Soft light gathers where the streams cross. -->
 <g fill="url(#pool)"><ellipse cx="414" cy="102" rx="150" ry="27" transform="rotate(-11 414 102)"/><ellipse cx="1323" cy="259" rx="160" ry="80" transform="rotate(-35 1323 259)"/><ellipse cx="1385" cy="645" rx="160" ry="40" transform="rotate(-37 1385 645)"/><ellipse cx="871" cy="938" rx="200" ry="29"/></g>
