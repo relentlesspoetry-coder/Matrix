@@ -550,7 +550,7 @@ def main():
             click('[data-action="home"]')
             log.unlink()
             print('PASS: additional compressed formats, literal PPSSPP/Dolphin argv, installed SFO names, HTML escaping, metadata fallback and stable artwork identity')
-            wait_for(lambda: js('return [...document.querySelectorAll(".console-image")].length === 18 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)'))
+            wait_for(lambda: js('return document.querySelectorAll(".console-card").length === consoles.length && [...document.querySelectorAll(".console-card")].every(card => { const image = card.querySelector(".console-image"); return image?.complete && image.naturalWidth > 0; })'))
             update=invoke('update_status')
             assert update['phase'] == 'idle' and update['currentVersion'] == diagnostics['version']
             check_shutdown_prompt()

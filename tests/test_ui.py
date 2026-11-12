@@ -96,7 +96,7 @@ with sync_playwright() as p:
     native.set_content(HTML)
     native.wait_for_function('document.querySelector("#mode-indicator")?.textContent === "NATIVE LINUX" && document.querySelector(".console-card__bottom small")?.textContent?.includes("games")')
     assert native.locator('.console-card').count()==24
-    native.wait_for_function('[...document.querySelectorAll(".console-image")].length === 18 && [...document.querySelectorAll(".console-image")].every(i=>i.naturalWidth > 0)')
+    native.wait_for_function('document.querySelectorAll(".console-card").length === consoles.length && [...document.querySelectorAll(".console-card")].every(card => { const image = card.querySelector(".console-image"); return image?.complete && image.naturalWidth > 0; })')
     screenshot(native,'matrix-native-home.png')
     for platform, id in [('PlayStation 5', 'ps5'), ('Nintendo Switch 2', 'switch2')]:
         native.get_by_role('button',name=f'Browse {platform} library').click()
