@@ -4,7 +4,7 @@ function fixture(invoke){
  const calls=[];
  const context=vm.createContext({consoles:[{id:'ps2'}],document:{querySelector:s=>nodes[s]},window:{__TAURI__:{core:{invoke:(name,args)=>{calls.push([name,args]);return invoke(name,args);}}}}});
  const source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8').replace('readPrefs(); setupEvents(); render(); window.matrixStartup?.complete(); void initializeArt(); void initializeNative();','');
- vm.runInContext(source+';render=()=>{};dismissOverlay=()=>{};clearCoverCache=()=>{};toast=()=>{};globalThis.api={state,steamGridAction};',context);
+ vm.runInContext(source+';render=()=>{};dismissOverlay=()=>{};clearCoverCache=()=>{};toast=()=>{};globalThis.api={state,steamGridAction,scanArtwork,stubFetch(fn){fetchArtwork=fn;updateCoverStatus=()=>{};}};',context);
  return {nodes,calls,...context.api};
 }
 test('SteamGridDB picker escapes titles and saves the chosen cover for the original game',async()=>{
@@ -23,4 +23,13 @@ test('late SteamGridDB responses cannot replace a newer dialog',async()=>{
  f.nodes['.steamgrid-dialog']={dataset:{}};
  resolve([{id:7,name:'Old response'}]);await pending;
  assert.equal(f.nodes['#steamgrid-results'].innerHTML,'');
+});
+
+test('automatic scans stop after a rejected key or rate limit',async()=>{
+ for(const message of ['SteamGridDB API key was rejected.','SteamGridDB rate limit reached.']){
+  const f=fixture(()=>{});let calls=0;f.state.native=true;f.state.steamgridEnabled=true;
+  f.state.imported.ps2=[{uid:'one'},{uid:'two'}];
+  f.stubFetch(async()=>{calls++;throw Error(message);});
+  await f.scanArtwork();assert.equal(calls,1);
+ }
 });

@@ -1016,6 +1016,11 @@ async function scanArtwork() {
     catch(error) {
       if (generation!==state.coverGeneration) return;
       state.coverStatus.set(artKey(kind,uid),{message:`Artwork unavailable: ${error}`});updateCoverStatus(kind,uid);
+      if (state.steamgridEnabled && /API key was rejected|rate limit|cooling down|Cannot reach SteamGridDB/i.test(String(error))) {
+        const progress=$('#cover-scan-status');
+        if (progress) progress.textContent=`SteamGridDB scan paused: ${error}`;
+        return;
+      }
     }
     complete++;
     const progress=$('#cover-scan-status');
