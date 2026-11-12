@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.10
+
+- Add General and Themes sections inside Settings, with persistent theme selection and previews. Keep Arctic Current as the default and allow switching back at any time.
+- Add White Frost Current based on the approved reference: compact single-row navigation, open six-column console tiles, understated selection, a bottom console preview/action strip, white frosted surfaces, navy text and blue-to-cyan controls.
+- Add softly animated blue gradient currents using a cached vector background, responsive four/three/two-column layouts and reduced-motion support. Preserve all 24 console libraries, separate Steam/Windows libraries, artwork, real readiness checks and controller navigation.
+
 ## 0.6.9
 
 - Add optional game-version grouping, with explicit version selection and editable group names. Preserve each file identity, launch arguments, covers and favorites.

@@ -814,6 +814,26 @@ def main():
             assert not invoke('bootstrap')['artwork']['titleEnabled']
             screenshot('matrix-linux-cover-provider-settings.png')
             print('PASS: legacy title-provider opt-out, real Settings opt-in/out and optional-argument persistence; no title requests sent')
+            click('[data-action="settings-tab"][data-value="themes"]')
+            wait_for(lambda: js('return document.querySelectorAll(".theme-choice").length === 2'))
+            click('[data-action="select-theme"][data-value="white-frost"]')
+            wait_for(lambda: js('return document.documentElement.dataset.theme === "white-frost"'))
+            assert invoke('bootstrap')['libraryPreferences']['theme'] == 'white-frost'
+            screenshot('matrix-linux-theme-choices.png')
+            click('[data-action="home"]')
+            wait_for(lambda: js('return document.querySelectorAll(".frost-console").length === 24'))
+            js('document.querySelector(".frost-console[data-id=ps2]").focus()')
+            wait_for(lambda: js('return document.querySelector(".console-preview").dataset.consoleId === "ps2"'))
+            assert js('return document.querySelectorAll(".is-console-selected").length') == 1
+            assert js('return document.documentElement.scrollWidth <= window.innerWidth')
+            screenshot('matrix-linux-white-frost-home.png')
+            click('[data-action="settings"]')
+            click('[data-action="select-theme"][data-value="arctic-current"]')
+            wait_for(lambda: js('return document.documentElement.dataset.theme === "arctic-current"'))
+            assert invoke('bootstrap')['libraryPreferences']['theme'] == 'arctic-current'
+            click('[data-action="settings-tab"][data-value="general"]')
+            print('PASS: real theme selection persistence, White Frost console focus and return to Arctic Current')
+
             click('[data-action="configure"][data-id="ps2"]')
             js('document.querySelector("#emulator-launcher").value="flatpak";document.querySelector("#emulator-launcher").dispatchEvent(new Event("change",{bubbles:true}))')
             wait_for(lambda: js('return document.querySelector("#flatpak-app").options.length === 4'))

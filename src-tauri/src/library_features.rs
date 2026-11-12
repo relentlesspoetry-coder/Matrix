@@ -3,6 +3,7 @@ use super::*;
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct Preferences {
+    pub theme: Option<String>,
     pub ready_only: bool,
     pub hidden: Vec<String>,
     pub pinned: Vec<String>,
@@ -35,6 +36,7 @@ pub(crate) fn set_library_preference(
     update_settings(|s| {
         let p = &mut s.library_preferences;
         match section.as_str() {
+            "theme" => {let theme=value.as_str().ok_or("Invalid theme")?;if !["arctic-current","white-frost"].contains(&theme){return Err("Unknown theme".into());}p.theme=Some(theme.into());},
             "readyOnly" => p.ready_only = value.as_bool().ok_or("Invalid filter")?,
             "autoRefresh" => {
                 p.auto_refresh = Some(value.as_bool().ok_or("Invalid refresh setting")?)
@@ -197,6 +199,10 @@ mod tests {
             return;
         }
         create_layout().unwrap();
+        set_library_preference("theme".into(),"".into(),serde_json::json!("white-frost")).unwrap();
+        assert_eq!(load_settings().unwrap().library_preferences.theme.as_deref(),Some("white-frost"));
+        assert!(set_library_preference("theme".into(),"".into(),serde_json::json!("not-a-theme")).is_err());
+
         let view = serde_json::json!({"layout":"grid","sort":"az","selected":"game"});
         set_library_preference("view".into(), "ps2".into(), view).unwrap();
         assert_eq!(

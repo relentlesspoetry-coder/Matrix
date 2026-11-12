@@ -1,4 +1,4 @@
-/* Matrix-Play v0.6.9 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.10 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -156,10 +156,11 @@ function storedPrefs() {
 function readPrefs() {
   try {
     const saved = storedPrefs();
+    try{const theme=localStorage.getItem('matrix-theme');if(THEMES.some(t=>t.id===theme))libraryPrefs().theme=theme;}catch{}
     state.configs = saved.configs;
     state.imported = saved.imported;
     state.favorites = new Set(saved.favorites);
-    try{state.libraryPrefs=normalizeLibraryPrefs(JSON.parse(localStorage.getItem('matrix-library-preferences')));}catch{}
+    try{const p=normalizeLibraryPrefs(JSON.parse(localStorage.getItem('matrix-library-preferences')));state.libraryPrefs={...p,theme:p.theme||libraryPrefs().theme};}catch{}
   } catch { /* Browser storage can be disabled for local files. */ }
 }
 function savePrefs(change) {
@@ -251,6 +252,7 @@ function renderNav() {
 }
 function consoleCard(consoleInfo) {
   const count=gamesFor(consoleInfo.id).length;
+  if(activeTheme()==='white-frost')return `<button class="console-card frost-console ${state.previewConsoleId===consoleInfo.id?'is-console-selected':''}" type="button" data-action="console" data-id="${consoleInfo.id}" aria-label="Browse ${escapeHtml(consoleInfo.name)} library"><span class="console-card__art">${deviceArt(consoleInfo.id)}</span><strong>${escapeHtml(consoleInfo.name)}</strong><small class="console-tile-meta">${escapeHtml(consoleInfo.group==='Sony'?'PlayStation':consoleInfo.group)} · ${count} ${count===1?'game':'games'} <span class="connection-dot ${consoleReady(consoleInfo.id)?'ready':''}" title="${consoleReady(consoleInfo.id)?'Emulator and games ready':'Emulator or games unavailable'}"></span></small></button>`;
   return `<button class="console-card" style="--tint:${consoleTone(consoleInfo)}" type="button" data-action="console" data-id="${consoleInfo.id}" aria-label="Browse ${escapeHtml(consoleInfo.name)} library">
     <span class="console-card__top"><span class="console-brand">${escapeHtml(consoleInfo.group==='Sony'?'PlayStation':consoleInfo.group)}</span><span class="connection-dot ${consoleReady(consoleInfo.id)?'ready':''}" title="${consoleReady(consoleInfo.id)?'Emulator and games ready':!isConfigured(consoleInfo.id)?'Set up emulator':state.native&&state.readyProfiles[consoleInfo.id]!==true?'Emulator unavailable':'Add games'}"></span></span>
     <span class="console-card__art">${deviceArt(consoleInfo.id)}</span><span class="console-card__bottom"><strong>${escapeHtml(consoleInfo.name)}</strong><small>${count} ${count===1?'game':'games'}</small></span></button>`;
@@ -258,15 +260,17 @@ function consoleCard(consoleInfo) {
 function renderHome() {
   const focus=captureLibraryFocus($('#screen'),'home');
   const visible=consoleChoices();
+  const selected=visible.find(c=>c.id===state.previewConsoleId)||visible.find(c=>c.id==='switch2')||visible[0];state.previewConsoleId=selected?.id;
   $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${consoles.length} libraries</p></div></div>
     <div class="section-toolbar"><div class="segmented brand-filters" role="group" aria-label="Filter console brands">${['All','Sony','Nintendo','Sega','Xbox'].map(v=>`<button type="button" class="${state.vendor===v?'active':''}" data-action="vendor" data-value="${v}" aria-pressed="${state.vendor===v}">${v==='All'?'All systems':v==='Sony'?'PlayStation':v}</button>`).join('')}</div></div>
     ${state.recent.length?`<details class="library-notes recent-games"><summary>Recently played</summary><div class="tag-row">${state.recent.slice(0,8).map(g=>`<button class="button button-ghost" type="button" data-action="recent-game" data-id="${escapeHtml(g.kind)}" data-uid="${escapeHtml(g.uid)}">${escapeHtml(g.title)}</button>`).join('')}</div></details>`:''}
-    <div class="console-browser"><div class="console-grid">${visible.map(consoleCard).join('')||'<p>No consoles match. Adjust Console visibility in Settings.</p>'}</div><aside class="console-preview" aria-label="Console preview">${consolePreview(visible.find(c=>c.id==='switch2') || visible[0])}</aside></div>`;
+    <div class="console-browser"><div class="console-grid">${visible.map(consoleCard).join('')||'<p>No consoles match. Adjust Console visibility in Settings.</p>'}</div><aside class="console-preview" aria-label="Console preview" data-console-id="${selected?.id||''}">${consolePreview(selected)}</aside></div>`;
   restoreLibraryFocus(focus);
 }
 function consolePreview(consoleInfo) {
   if (!consoleInfo) return '';
   const count=gamesFor(consoleInfo.id).length;
+  if(activeTheme()==='white-frost')return `<div class="preview-device" aria-hidden="true">${deviceArt(consoleInfo.id)}</div><div class="preview-copy"><h2>${escapeHtml(consoleInfo.name)}</h2><p>${escapeHtml(consoleInfo.group==='Sony'?'PlayStation':consoleInfo.group)} · ${count} ${count===1?'game':'games'}</p></div><button type="button" class="button button-primary" data-action="console" data-id="${consoleInfo.id}">Open library</button>`;
   return `<div class="preview-device" aria-hidden="true">${deviceArt(consoleInfo.id)}</div><h2>${escapeHtml(consoleInfo.name)}</h2><p>${escapeHtml(consoleInfo.group)}</p><p>${count} ${count===1?'game':'games'}</p><button type="button" class="button button-primary" data-action="console" data-id="${consoleInfo.id}">Open library</button>`;
 }
 function gameCover(consoleInfo, game, index) {
@@ -498,7 +502,8 @@ function renderConsole() {
 }
 function renderSettings() {
   const focus=captureLibraryFocus($('#screen'),'settings');
-  $('#screen').innerHTML=`<div class="settings-header"><h1 class="page-title">Settings</h1><div class="settings-app"><span>Matrix-Play</span><button type="button" class="button button-ghost" data-action="updates" aria-label="Update Matrix-Play">Check for updates</button></div></div>
+  if(state.settingsTab==='themes'){renderThemes(focus);return;}
+  $('#screen').innerHTML=`<div class="settings-header"><h1 class="page-title">Settings</h1><div class="settings-app"><span>Matrix-Play</span><button type="button" class="button button-ghost" data-action="updates" aria-label="Update Matrix-Play">Check for updates</button></div></div>${settingsTabs()}
     ${state.native?discoverySummary():''}
     ${organizationControls()}
     <details class="library-notes"><summary>Library behavior</summary><label><input type="checkbox" data-pref="autoRefresh" ${libraryPrefs().autoRefresh!==false?'checked':''}> Automatically refresh game libraries every 30 seconds</label><label><input type="checkbox" data-pref="grouping" ${libraryPrefs().grouping?'checked':''}> Group game versions (same console)</label></details>
@@ -516,7 +521,7 @@ function renderSettings() {
   restoreLibraryFocus(focus);
 }
 function render() {
-  renderNav();
+  applyTheme();renderNav();
   if (state.page === 'home') renderHome();
   if (state.page === 'console') renderConsole();
   if (state.page === 'settings') renderSettings();
@@ -1239,6 +1244,14 @@ async function handleAction(button) {
   if(action==='select-version'){state.previewGame={id,uid};rememberLibrary();renderConsole();openGame(id,uid);return;}
   if(action==='save-data-backup'||action==='save-data-restore'){button.disabled=true;try{await saveDataFlow(id,action==='save-data-restore');}catch(e){toast(String(e));}finally{button.disabled=false;}return;}
   if(action==='apply-save-restore'){button.disabled=true;try{toast(await nativeInvoke('apply_save_restore',{token:value}));dismissOverlay();}catch(e){toast(String(e));}finally{button.disabled=false;}return;}
+  if(action==='settings-tab'){state.settingsTab=value==='themes'?'themes':'general';renderSettings();return;}
+  if(action==='select-theme'){
+    if(state.themeSaving||!THEMES.some(t=>t.id===value))return;
+    const previous=libraryPrefs().theme;state.themeSaving=true;button.disabled=true;
+    document.querySelectorAll('[data-action="select-theme"]').forEach(node=>node.disabled=true);
+    try{if(await saveLibraryPref('theme','',value)){applyTheme();toast('Theme saved.');}else{libraryPrefs().theme=previous;applyTheme();}}
+    finally{state.themeSaving=false;if(state.page==='home')renderHome();else if(state.page==='settings'&&state.settingsTab==='themes')renderSettings();button.disabled=false;}return;
+  }
   if (action === 'updates') void openUpdater();
   else if (action === 'check-updates') void runUpdate('check_updates');
   else if (action === 'download-update') void runUpdate('download_update');
@@ -1367,6 +1380,8 @@ function setupEvents() {
     const card=event.target.closest?.('.console-card');
     const preview=$('.console-preview');
     if (state.page!=='home' || !card || !preview || preview.dataset.consoleId===card.dataset.id) return;
+    state.previewConsoleId=card.dataset.id;
+    document.querySelectorAll('.console-card').forEach(node=>node.classList.toggle('is-console-selected',node.dataset.id===card.dataset.id));
     preview.dataset.consoleId=card.dataset.id;
     preview.innerHTML=consolePreview(byId[card.dataset.id]);
   };
@@ -1485,6 +1500,12 @@ function setupEvents() {
     }
   });
 }
+const THEMES=[{id:'arctic-current',name:'Arctic Current',description:'Frosted cards, a side preview and luminous cobalt currents. The original Matrix Play layout.'},{id:'white-frost',name:'White Frost Current',description:'A compact navigation bar, open console gallery and bottom selection strip over soft blue currents.'}];
+function activeTheme(){return THEMES.some(t=>t.id===libraryPrefs().theme)?libraryPrefs().theme:'arctic-current';}
+function applyTheme(){const theme=activeTheme();if(document.documentElement?.dataset)document.documentElement.dataset.theme=theme;try{localStorage.setItem('matrix-theme',theme);}catch{}}
+function settingsTabs(){return `<nav class="settings-tabs" aria-label="Settings sections"><button type="button" class="${state.settingsTab!=='themes'?'active':''}" data-action="settings-tab" data-value="general" aria-current="${state.settingsTab!=='themes'?'page':'false'}">General</button><button type="button" class="${state.settingsTab==='themes'?'active':''}" data-action="settings-tab" data-value="themes" aria-current="${state.settingsTab==='themes'?'page':'false'}">Themes</button></nav>`;}
+function renderThemes(focus){$('#screen').innerHTML=`<div class="settings-header"><h1 class="page-title">Settings</h1></div>${settingsTabs()}<section aria-labelledby="themes-title"><h2 id="themes-title">Themes</h2><p class="theme-intro">Choose a layout and atmosphere for your libraries. Your selection is saved automatically.</p><div class="theme-choices">${THEMES.map(t=>`<article class="theme-choice ${activeTheme()===t.id?'selected':''}"><div class="theme-swatch swatch-${t.id}" aria-hidden="true"><span class="swatch-nav"></span><div class="swatch-tiles">${Array.from({length:12},()=>'<i></i>').join('')}</div><span class="swatch-preview"></span></div><h3>${t.name}</h3><p>${t.description}</p><button type="button" class="button ${activeTheme()===t.id?'button-primary':'button-ghost'}" data-action="select-theme" data-value="${t.id}" aria-pressed="${activeTheme()===t.id}" ${state.themeSaving?'disabled':''}>${activeTheme()===t.id?'Selected':'Apply theme'}</button></article>`).join('')}</div><p class="theme-intro">Themes apply across console, Steam and Windows libraries, Settings and dialogs. Reduced-motion preferences are respected.</p></section>`;restoreLibraryFocus(focus);}
+
 // Library organization is additive; identities and on-disk names stay unchanged.
 let libraryWrites=Promise.resolve(), libraryPolling=false,libraryPrefRevision=0;
 function normalizeLibraryPrefs(value){const p=value&&typeof value==='object'?value:{};for(const key of ['hidden','pinned','order'])p[key]=Array.isArray(p[key])?[...new Set(p[key].filter(id=>byId[id]))]:[];for(const key of ['views','metadata'])if(!p[key]||typeof p[key]!=='object'||Array.isArray(p[key]))p[key]={};return p;}

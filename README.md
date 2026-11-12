@@ -13,14 +13,14 @@ Download the **DEB** or **AppImage** from [Releases](https://github.com/relentle
 For Zorin or Ubuntu, install the DEB from your download folder:
 
 ```bash
-sudo apt install ./Matrix-Play_0.6.9_amd64.deb
+sudo apt install ./Matrix-Play_0.6.10_amd64.deb
 ```
 
 For the portable AppImage:
 
 ```bash
-chmod +x Matrix-Play_0.6.9_amd64.AppImage
-./Matrix-Play_0.6.9_amd64.AppImage
+chmod +x Matrix-Play_0.6.10_amd64.AppImage
+./Matrix-Play_0.6.10_amd64.AppImage
 ```
 
 For future releases, open **Settings → Check for updates**.
@@ -97,3 +97,7 @@ Game details → **Title & versions** edits the display name, separate SteamGrid
 Console menu **··· → Back up saves / Restore saves** supports configured PCSX2, PPSSPP and Dolphin profiles. Close the emulator first, including instances started outside Matrix Play. Choose its actual `memcards`, `sstates`, `GC`, `StateSaves`, `SAVEDATA` or `PPSSPP_STATE` folder. This backs up the selected folder’s regular files, not game ROMs. Full Wii NAND backups, emulator cloud saves and other emulator profiles are not supported yet.
 
 Save backups are separate JSON files, limited to 128 MB of source files, 32 MB per file and 10,000 files. Symlinks and special files are rejected. Restore accepts a backup for the same console, lists every file and whether it replaces an existing file, then requires **Restore these files**. Files outside the list are kept. A private, restorable `before-restore-*.json` backup is saved under the Matrix configuration folder’s `save-backups` directory before writing; failed writes trigger rollback. Restore only trusted backups and choose the intended save folder.
+
+## Themes
+
+Open **Settings → Themes** to choose **Arctic Current** (the original layout) or **White Frost Current** (the approved open gallery with a compact header, six-column desktop grid and bottom selection bar). Selection is saved in native settings, included in settings backups, and applied across libraries and dialogs. Hover or focus a console to update the bottom strip. Smaller windows use fewer columns. System reduced-motion preferences stop the animated currents.

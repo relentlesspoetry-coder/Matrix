@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1100" preserveAspectRatio="none">
+ <defs>
+  <linearGradient id="blue" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#b9eeff" stop-opacity=".1"/><stop offset=".52" stop-color="#3684ff" stop-opacity=".44"/><stop offset=".82" stop-color="#9ce8ff" stop-opacity=".3"/><stop offset="1" stop-color="#e9faff" stop-opacity=".1"/></linearGradient>
+  <linearGradient id="ice" x1="0" y1="0" x2=".9" y2=".7"><stop stop-color="#f9fcff" stop-opacity=".8"/><stop offset=".6" stop-color="#b5e8ff" stop-opacity=".28"/><stop offset="1" stop-color="#6edaff" stop-opacity=".18"/></linearGradient>
+  <linearGradient id="edge"><stop stop-color="#fff" stop-opacity=".08"/><stop offset=".55" stop-color="#fff" stop-opacity=".85"/><stop offset="1" stop-color="#fff" stop-opacity=".2"/></linearGradient>
+ </defs>
+ <path d="M-50-30H1650V240C1420 210 1490 68 1170 64C850 42 730 210 345 132C140 90 20 101-50 130Z" fill="url(#blue)"/>
+ <path d="M-50 22C410 215 730 100 1020 24S1470-32 1650 42V360C1410 312 1505 120 1160 98C846 81 586 238 264 138C86 83 30 88-50 116Z" fill="url(#ice)"/>
+ <path d="M-50 1075C305 1114 497 915 830 972S1324 1120 1650 966V1140H-50Z" fill="url(#blue)"/>
+ <path d="M-50 1102C340 1117 514 939 822 1009S1375 1082 1650 987V1140H-50Z" fill="url(#ice)"/>
+ <path d="M-50 18C410 212 730 98 1020 22S1470-34 1650 40M-50 1074C305 1113 497 914 830 971S1324 1119 1650 965" stroke="url(#edge)" stroke-width="1.5" fill="none"/>
+</svg>
