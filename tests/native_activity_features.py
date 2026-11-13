@@ -106,15 +106,21 @@ def exercise_polish(home, invoke, js, click, wait_for, screenshot):
         process.terminate()
         process.wait(timeout=5)
 
-    wait_for(lambda: js('return artworkTask===null'))
+    wait_for(lambda: js('return artworkTask===null&&!managedRefreshBusy&&!libraryPolling'))
     js('''
       window.__polishInvoke=nativeInvoke;
       window.__polishQueue=state.coverQueue;
       window.__polishEnabled=state.artwork.enabled;
       window.__polishCovers=[];
-      nativeInvoke=(name,args)=>name==='download_cover'&&args.uid.startsWith('polish-')
-        ?new Promise(resolve=>window.__polishCovers.push({uid:args.uid,resolve}))
-        :window.__polishInvoke(name,args);
+      // Keep the synthetic opt-in stable across the real discovery timer's
+      // settings refresh. Earlier tests intentionally saved artwork as off.
+      nativeInvoke=(name,args)=>{
+        if(name==='download_cover'&&args.uid.startsWith('polish-'))
+          return new Promise(resolve=>window.__polishCovers.push({uid:args.uid,resolve}));
+        return window.__polishInvoke(name,args).then(result=>
+          ['bootstrap','refresh_managed_emulators'].includes(name)
+            ?{...result,artwork:{...result.artwork,enabled:true}}:result);
+      };
       state.artwork.enabled=true;
       state.coverQueue={paused:false,items:['polish-a','polish-b'].map(uid=>({kind:'ps2',uid,title:uid,status:'pending'}))};
       window.__polishWork=scanArtwork(true);
@@ -125,6 +131,11 @@ def exercise_polish(home, invoke, js, click, wait_for, screenshot):
     try:
         assert js('return window.__polishSameWorker')
         assert js('return window.__polishCovers.length') == 1
+        # Deliberately overlap a real settings refresh with the pending cover;
+        # its saved opt-out must not alter this fixture's injected opt-in.
+        js('window.__polishRefreshed=false;void bootstrapNative().then(()=>window.__polishRefreshed=true)')
+        wait_for(lambda: js('return window.__polishRefreshed'))
+        assert js('return state.artwork.enabled')
         js('window.__polishCovers[0].resolve({status:"not-found"})')
         wait_for(lambda: js('return window.__polishCovers.length===2'))
         assert js('return window.__polishCovers.map(c=>c.uid)') == ['polish-a', 'polish-b']

@@ -234,6 +234,8 @@ pub(crate) fn apply_restore_impl(token: String) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     backup.as_file().sync_all().map_err(|e| e.to_string())?;
     let (_, safety) = backup.keep().map_err(|e| e.to_string())?;
+    fs::File::open(safety.parent().ok_or("Invalid safety backup path")?)
+        .and_then(|f| f.sync_all()).map_err(|e| e.to_string())?;
     let old: BTreeMap<_, _> = validated(&previous)?.into_iter().collect();
     restore_files(&checked_root, files, &old, &safety, |_| Ok(()))?;
     *pending = None;

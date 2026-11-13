@@ -75,6 +75,7 @@ def exercise(home, library, invoke, js, click, wait_for, screenshot):
         js('if(window.__deepRestore)window.__deepRestore("Synthetic cleanup");nativeInvoke=window.__deepInvoke;dismissOverlay();delete window.__deepInvoke')
 
     # A transient startup failure must recover without another application restart.
+    wait_for(lambda: js('return !managedRefreshBusy&&!libraryPolling'))
     settings_file = home / 'config/matrix/frontend.json'
     previous = settings_file.read_bytes()
     try:
