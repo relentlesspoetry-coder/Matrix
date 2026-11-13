@@ -314,6 +314,8 @@ mod tests {
         let p=EmulatorProfile{emulator_path:"/bin/duckstation".into(),..Default::default()};
         assert_eq!(super::disc_sets::launch_path("ps1",&collection,&p,Some(d1.to_str().unwrap())).unwrap(),d1);
         assert!(super::disc_sets::launch_path("ps1",&collection,&p,Some("/outside/Disc.chd")).is_err());
+        let custom=EmulatorProfile{emulator_path:"/bin/custom-launcher".into(),launch_args:vec!["--own-playlist".into(),"{game}".into()],..Default::default()};
+        assert_eq!(super::disc_sets::launch_path("ps1",&collection,&custom,None).unwrap(),PathBuf::from(&collection.path));
         assert_eq!(fs::read(&d1).unwrap(),b"disc one");
         // Display preferences are validated and survive settings reload.
         for (section,value) in [("uiScale",serde_json::json!(130)),("coverSize",serde_json::json!("large")),("controllerPrompts",serde_json::json!("playstation")),("startFullscreen",serde_json::json!(true))] {

@@ -3,7 +3,7 @@
 ## 0.6.16
 
 - Add native drag-and-drop setup: preview and confirm a portable emulator move, register a game folder in place, or replace a selected game’s cover. Preserve active dialogs and validate files through the normal import/artwork paths.
-- Add ordered multi-disc playlist creation and a starting-disc selector for PlayStation 1 and Sega Saturn. Use verified DuckStation/Mednafen playlist adapters, reject out-of-library members and collisions, and keep original discs, favorites and covers.
+- Add ordered multi-disc playlist creation and a starting-disc selector for PlayStation 1 and Sega Saturn. Use verified DuckStation/Mednafen playlist adapters, preserve explicitly configured custom PS1 launchers, reject out-of-library members and collisions, and keep original discs, favorites and covers.
 - Add Settings → Display & controller: interface scaling (85–150%), small/medium/large game covers, automatic or explicit Xbox/PlayStation button prompts, fullscreen startup, F11 and display reset. Keep bold Sora and both themes.
 - Track per-game emulator session time and show totals beneath game titles in rows, grids, previews and details. An independent process clock follows the owned launch process group after the GUI closes, checkpoints every five seconds, excludes system suspend, and stops on process exit. Short startup failures are not counted; existing-window handoffs and processes that detach from the launch group cannot be timed reliably.
 - Preserve playtime in settings backups and merge restored totals without reducing time already recorded. Add backend, DOM and native WebKit regression checks with synthetic games and harmless launchers; no real gameplay or physical controller compatibility is claimed.

@@ -7,6 +7,7 @@ use std::io::Write;
 pub(crate) struct DiscSet {
     pub discs: Vec<Game>,
     pub playlist_supported: bool,
+    pub custom_playlist: bool,
 }
 
 fn supported(profile: &EmulatorProfile, id: &str) -> bool {
@@ -14,6 +15,11 @@ fn supported(profile: &EmulatorProfile, id: &str) -> bool {
         (id, discovery::identity(profile, id)),
         ("ps1", Some("DuckStation")) | ("saturn", Some("Mednafen"))
     )
+}
+fn custom_playlist(profile: &EmulatorProfile, id: &str) -> bool {
+    // PS1 already accepted M3U paths with explicitly configured custom launchers.
+    // Keep that contract without inventing flags or claiming engine support.
+    id == "ps1" && discovery::identity(profile, id).is_none()
 }
 pub(crate) fn details(id: &str, uid: &str) -> Result<DiscSet, String> {
     let game = validate_game(id, uid)?;
@@ -39,13 +45,17 @@ pub(crate) fn details(id: &str, uid: &str) -> Result<DiscSet, String> {
     } else {
         Vec::new()
     };
-    let playlist_supported = load_settings()?
+    let settings = load_settings()?;
+    let custom_playlist = settings
         .profiles
         .get(id)
-        .is_some_and(|p| supported(p, id));
+        .is_some_and(|p| custom_playlist(p, id));
+    let playlist_supported =
+        custom_playlist || settings.profiles.get(id).is_some_and(|p| supported(p, id));
     Ok(DiscSet {
         discs,
         playlist_supported,
+        custom_playlist,
     })
 }
 pub(crate) fn launch_path(
@@ -68,7 +78,7 @@ pub(crate) fn launch_path(
             .find(|p| p.to_str() == Some(disc))
             .ok_or("Disc is not part of this game".into());
     }
-    if !supported(profile, id) {
+    if !supported(profile, id) && !custom_playlist(profile, id) {
         return Err("This emulator has no verified playlist adapter. Open game details and choose a disc to launch individually.".into());
     }
     Ok(path.into())
