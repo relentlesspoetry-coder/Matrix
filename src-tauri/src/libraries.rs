@@ -2,6 +2,37 @@
 //! Never moves, rewrites, or removes game data.
 use super::*;
 use std::io::Read;
+use std::os::unix::{ffi::OsStrExt, fs::MetadataExt};
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct Volume {
+    fsid: u64,
+    inode: u64,
+}
+pub(crate) fn volume_key(id: &str, path: &str) -> String {
+    format!("{id}|{path}")
+}
+pub(crate) fn volume(path: &Path) -> Option<Volume> {
+    let meta = fs::metadata(path).ok()?;
+    if !meta.is_dir() { return None; }
+    let name = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut info = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    if unsafe { libc::statvfs(name.as_ptr(), info.as_mut_ptr()) } != 0 { return None; }
+    // Filesystem IDs survive device-number reassignment across reconnects.
+    Some(Volume { fsid: unsafe { info.assume_init() }.f_fsid as u64, inode: meta.ino() })
+}
+fn available(id: &str, path: &Path, settings: &Settings) -> bool {
+    let Some(current) = volume(path) else { return false; };
+    if let Some(saved) = settings.library_volumes.get(&volume_key(id, &path.to_string_lossy())) {
+        return *saved == current;
+    }
+    // On migration, do not adopt an empty, unmounted directory over a cached
+    // volume. Learn its identity once a known game is accessible, or when the
+    // user explicitly re-adds the folder to accept a replacement volume.
+    let indexed: Vec<_> = settings.library_index.get(id).into_iter().flatten()
+        .filter(|g| Path::new(&g.path).starts_with(path)).collect();
+    indexed.is_empty() || indexed.iter().any(|g| Path::new(&g.path).is_file())
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,7 +46,7 @@ fn folders_in(id: &str, managed: &Path, settings: &Settings) -> Vec<Folder> {
     let mut result = vec![Folder {
         path: managed.to_string_lossy().into_owned(),
         managed: true,
-        available: managed.is_dir(),
+        available: available(id, managed, settings),
     }];
     let mut seen = HashSet::new();
     seen.insert(
@@ -37,7 +68,7 @@ fn folders_in(id: &str, managed: &Path, settings: &Settings) -> Vec<Folder> {
             result.push(Folder {
                 path: path.to_string_lossy().into_owned(),
                 managed: false,
-                available: path.is_dir(),
+                available: available(id, path, settings),
             });
         }
     }
@@ -97,17 +128,20 @@ fn register(settings: &mut Settings, id: &str, path: &Path, managed: &Path) -> R
     if path.parent().is_none() {
         return Err("Choose a game library folder, not the filesystem root.".into());
     }
-    if folders_in(id, managed, settings)
+    if let Some(existing) = folders_in(id, managed, settings)
         .iter()
-        .any(|f| Path::new(&f.path).canonicalize().ok().as_ref() == Some(&path))
+        .find(|f| Path::new(&f.path).canonicalize().ok().as_ref() == Some(&path))
     {
+        let identity = volume(&path).ok_or("Cannot identify this game volume")?;
+        settings.library_volumes.insert(volume_key(id, &existing.path), identity);
         return Ok(());
     }
     let paths = settings.library_folders.entry(id.into()).or_default();
     if paths.len() >= 32 {
         return Err("At most 32 external folders can be registered per console.".into());
     }
-    paths.push(saved_path);
+    paths.push(saved_path.clone());
+    settings.library_volumes.insert(volume_key(id, &saved_path), volume(&path).ok_or("Cannot identify this game volume")?);
     Ok(())
 }
 
@@ -128,6 +162,7 @@ pub(crate) fn remove_library_folder(id: String, path: String) -> Result<Vec<Fold
         if let Some(paths) = settings.library_folders.get_mut(&id) {
             paths.retain(|saved| saved != &path);
         }
+        settings.library_volumes.remove(&volume_key(&id, &path));
         Ok(folders_in(&id, &managed, settings))
     })
 }
@@ -244,6 +279,31 @@ pub(crate) fn has_manual_cover(root: &Path, id: &str, uid: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn replacement_directories_remain_offline_until_explicitly_readded() {
+        let tmp=tempfile::tempdir().unwrap();let external=tmp.path().join("external");let managed=tmp.path().join("managed");
+        fs::create_dir(&external).unwrap();fs::write(external.join("keep.iso"),b"keep").unwrap();
+        let mut settings=Settings::default();register(&mut settings,"ps1",&external,&managed).unwrap();
+        let original=tmp.path().join("original-volume");fs::rename(&external,&original).unwrap();fs::create_dir(&external).unwrap();
+        assert!(!folders_in("ps1",&managed,&settings)[1].available);
+        fs::remove_dir(&external).unwrap();fs::rename(&original,&external).unwrap();
+        assert!(folders_in("ps1",&managed,&settings)[1].available);
+        fs::rename(&external,&original).unwrap();fs::create_dir(&external).unwrap();
+        register(&mut settings,"ps1",&external,&managed).unwrap();
+        assert!(folders_in("ps1",&managed,&settings)[1].available);
+        assert_eq!(settings.library_folders["ps1"].len(),1);
+        assert_eq!(fs::read(original.join("keep.iso")).unwrap(),b"keep");
+    }
+    #[test]
+    fn migration_keeps_cached_games_when_a_volume_is_already_absent() {
+        let tmp=tempfile::tempdir().unwrap();let external=tmp.path().join("external");let managed=tmp.path().join("managed");fs::create_dir(&external).unwrap();
+        let path=external.join("Cached.iso").to_str().unwrap().to_string();
+        let mut settings=Settings::default();settings.library_folders.insert("ps1".into(),vec![external.to_str().unwrap().into()]);
+        settings.library_index.insert("ps1".into(),vec![Game{uid:path.clone(),path:path.clone(),title:"Cached".into(),kind:"ps1".into(),app_id:None}]);
+        assert!(!folders_in("ps1",&managed,&settings)[1].available);
+        fs::write(&path,b"returned game").unwrap();assert!(folders_in("ps1",&managed,&settings)[1].available);
+        fs::remove_file(&path).unwrap();register(&mut settings,"ps1",&external,&managed).unwrap();assert!(folders_in("ps1",&managed,&settings)[1].available);
+    }
     #[test]
     fn registration_rejects_non_utf8_targets_without_aliasing_saved_roots() {
         use std::os::unix::ffi::OsStringExt;

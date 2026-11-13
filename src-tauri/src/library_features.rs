@@ -113,9 +113,17 @@ pub(crate) struct Snapshot {
 pub(crate) fn snapshot_impl() -> Result<Snapshot, String> {
     let mut games = BTreeMap::new();
     let mut folders = BTreeMap::new();
-    let previous = load_settings()?.library_index;
+    let settings = load_settings()?;
+    let previous = settings.library_index;
+    let mut volumes = BTreeMap::new();
     for s in SPECS {
         let fs = libraries::folders(s.id)?;
+        for folder in &fs {
+            let key = libraries::volume_key(s.id, &folder.path);
+            if folder.available && !settings.library_volumes.contains_key(&key) {
+                if let Some(volume) = libraries::volume(Path::new(&folder.path)) { volumes.insert(key, volume); }
+            }
+        }
         let mut rows = scan_console_impl(s.id)?;
         for old in previous.get(s.id).into_iter().flatten() {
             if fs
@@ -129,9 +137,10 @@ pub(crate) fn snapshot_impl() -> Result<Snapshot, String> {
         games.insert(s.id.into(), rows);
         folders.insert(s.id.into(), fs);
     }
-    if games != previous {
+    if games != previous || !volumes.is_empty() {
         update_settings(|s| {
             s.library_index = games.clone();
+            for (key, value) in volumes { s.library_volumes.entry(key).or_insert(value); }
             Ok(())
         })?;
     }
@@ -287,6 +296,7 @@ mod tests {
         let uid = game.to_str().unwrap();
         save_cover("ps2".into(), uid.into(), png.to_vec()).unwrap();
         fs::rename(&external, &unplugged).unwrap();
+        fs::create_dir(&external).unwrap(); // persistent, empty mountpoint
         let offline = snapshot_impl().unwrap();
         assert!(get_cover("ps2".into(), uid.into())
             .unwrap()
@@ -298,8 +308,11 @@ mod tests {
         assert!(offline.games["ps2"]
             .iter()
             .any(|g| g.path == game.to_str().unwrap()));
-        fs::remove_file(unplugged.join("Example.iso")).unwrap();
+        assert_eq!(fs::read(unplugged.join("Example.iso")).unwrap(),b"synthetic game");
+        fs::remove_dir(&external).unwrap();
         fs::rename(&unplugged, &external).unwrap();
+        assert!(snapshot_impl().unwrap().folders["ps2"].iter().find(|f|!f.managed).unwrap().available);
+        fs::remove_file(&game).unwrap();
         assert!(!snapshot_impl().unwrap().games["ps2"]
             .iter()
             .any(|g| g.path == game.to_str().unwrap()));

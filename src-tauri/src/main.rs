@@ -249,6 +249,8 @@ struct Settings {
     #[serde(default)]
     library_folders: BTreeMap<String, Vec<String>>,
     #[serde(default)]
+    library_volumes: BTreeMap<String, libraries::Volume>,
+    #[serde(default)]
     artwork: ArtworkSettings,
     #[serde(default)]
     profiles: BTreeMap<String, EmulatorProfile>,

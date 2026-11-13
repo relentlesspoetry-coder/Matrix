@@ -163,20 +163,17 @@ fn restore(bytes: &[u8]) -> Result<String, String> {
         {
             return Err("Unsafe cover filename in backup".into());
         }
-        let extension = name
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .ok_or("Missing cover extension")?
-            .to_ascii_lowercase();
-        let target = console_covers_dir(&cover.kind)?
-            .join(&cover.name)
-            .with_extension(extension);
+        if !name.extension().and_then(|e|e.to_str()).is_some_and(|e|["png","jpg","jpeg","webp"].contains(&e.to_ascii_lowercase().as_str())) {
+            return Err("Unsupported cover extension in backup".into());
+        }
         let data = BASE64
             .decode(cover.bytes)
             .map_err(|_| "Invalid cover data")?;
-        if data.len() > MAX_COVER_BYTES || cover_format(&data).is_none() {
+        if data.len() > MAX_COVER_BYTES {
             return Err("Invalid cover image in backup".into());
         }
+        let (extension, _) = cover_format(&data).ok_or("Invalid cover image in backup")?;
+        let target = console_covers_dir(&cover.kind)?.join(&cover.name).with_extension(extension);
         decoded.push((target, data));
     }
     // Preserve an automatic safety snapshot before applying anything.
@@ -331,6 +328,13 @@ mod tests {
         let png = include_bytes!("../../tests/fixtures/demo-cover.png");
         fs::write(&cover, png).unwrap();
         let bytes = export().unwrap();
+        let jpeg_path = console_covers_dir("ps2").unwrap().join("Imported.jpeg");
+        let jpeg = include_bytes!("../../tests/fixtures/demo-cover.jpg");
+        fs::write(&jpeg_path, jpeg).unwrap();
+        let jpeg_backup = export().unwrap();fs::remove_file(&jpeg_path).unwrap();
+        restore(&jpeg_backup).unwrap();
+        assert_eq!(fs::read(jpeg_path.with_extension("jpg")).unwrap(),jpeg);
+        fs::remove_file(jpeg_path.with_extension("jpg")).unwrap();
         assert!(!String::from_utf8_lossy(&bytes).contains("private-retro-key-that-must-not-be-exported"));
         assert!(!String::from_utf8_lossy(&bytes).contains("secret-that-must-not-be-exported"));
         let bad = Backup {

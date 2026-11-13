@@ -138,15 +138,27 @@ fn validated(archive: &Archive) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
         }
         out.push((p, bytes));
     }
+    // A valid file tree cannot contain both a file and its descendant. Reject
+    // the entire archive before creating a safety copy or touching any saves.
+    if seen.iter().any(|p| p.ancestors().skip(1).any(|a| seen.contains(a))) {
+        return Err("Conflicting file and directory names in save backup".into());
+    }
     Ok(out)
 }
 fn target(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     let mut p = root.to_owned();
-    for c in relative.components() {
+    let mut components = relative.components().peekable();
+    while let Some(c) = components.next() {
         p.push(c);
         match fs::symlink_metadata(&p) {
             Ok(m) if m.file_type().is_symlink() => {
                 return Err("Restore path contains a symlink".into())
+            }
+            Ok(m) if components.peek().is_some() && !m.is_dir() => {
+                return Err("A save path parent is not a directory".into())
+            }
+            Ok(m) if components.peek().is_none() && !m.is_file() => {
+                return Err("A save target is not a regular file".into())
             }
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -160,16 +172,26 @@ fn atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let mut f = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
     f.write_all(bytes).map_err(|e| e.to_string())?;
+    f.as_file().sync_all().map_err(|e| e.to_string())?;
     f.persist(path).map_err(|e| e.to_string())?;
+    fs::File::open(parent).and_then(|f| f.sync_all()).map_err(|e| e.to_string())?;
     Ok(())
 }
 fn idle(kind: &str) -> Result<(), String> {
     if launches::get_launch_status(kind.into())?
-        .is_some_and(|i| ["running", "starting"].contains(&i.phase.as_str()))
+        .is_some_and(|i| ["started", "running", "starting"].contains(&i.phase.as_str()))
     {
         return Err("Close this console's game before backing up or restoring saves".into());
     }
+    if gaming::scan(&load_settings()?.profiles)?.active {
+        return Err("Close all emulators before backing up or restoring saves".into());
+    }
     Ok(())
+}
+fn save_guard(kind: &str) -> Result<update_lifecycle::Launch, String> {
+    let guard = update_lifecycle::begin_save()?;
+    idle(kind)?;
+    Ok(guard)
 }
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -183,7 +205,7 @@ pub(crate) async fn save_data_dialog(
  let folder=app.dialog().file().set_title("Close your emulator, then choose its save folder").blocking_pick_folder();let Some(folder)=folder else{return Ok(serde_json::json!({"cancelled":true}));};let root=root(&folder.into_path().map_err(|e|e.to_string())?)?;
  if restore{let file=app.dialog().file().add_filter("Matrix save backup",&["json"]).blocking_pick_file();let Some(file)=file else{return Ok(serde_json::json!({"cancelled":true}));};let mut bytes=Vec::new();fs::File::open(file.into_path().map_err(|e|e.to_string())?).map_err(|e|e.to_string())?.take((LIMIT+1)as u64).read_to_end(&mut bytes).map_err(|e|e.to_string())?;if bytes.len()>LIMIT{return Err("Save backup exceeds 192 MB".into());}let archive:Archive=serde_json::from_slice(&bytes).map_err(|_|"Invalid save backup")?;if archive.kind!=id{return Err("This backup belongs to a different console".into());}let files=validated(&archive)?;for(p,_)in &files{target(&root,p)?;}
  let token=format!("{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos());let result=serde_json::json!({"token":token,"root":root.to_string_lossy(),"files":files.iter().map(|(p,b)|serde_json::json!({"name":p.to_string_lossy(),"bytes":b.len(),"replaces":root.join(p).exists()})).collect::<Vec<_>>()});*PENDING.lock().map_err(|_|"Restore state unavailable")?=Some(Plan{token,root,archive});Ok(result)
- }else{let archive=capture(&id,&root)?;let file=app.dialog().file().set_file_name("matrix-save-backup.json").add_filter("Matrix save backup",&["json"]).blocking_save_file();let Some(file)=file else{return Ok(serde_json::json!({"cancelled":true}));};let path=file.into_path().map_err(|e|e.to_string())?;if path.starts_with(&root)||path==config_file()?||path.extension().and_then(|s|s.to_str())!=Some("json"){return Err("Choose a separate .json file outside the save folder".into());}atomic(&path,&serde_json::to_vec(&archive).map_err(|e|e.to_string())?)?;Ok(serde_json::json!({"message":format!("Backed up {} save files from {}",archive.files.len(),root.display())}))}
+ }else{let file=app.dialog().file().set_file_name("matrix-save-backup.json").add_filter("Matrix save backup",&["json"]).blocking_save_file();let Some(file)=file else{return Ok(serde_json::json!({"cancelled":true}));};let path=file.into_path().map_err(|e|e.to_string())?;if path.starts_with(&root)||path==config_file()?||path.extension().and_then(|s|s.to_str())!=Some("json"){return Err("Choose a separate .json file outside the save folder".into());}let _guard=save_guard(&id)?;let archive=capture(&id,&root)?;atomic(&path,&serde_json::to_vec(&archive).map_err(|e|e.to_string())?)?;Ok(serde_json::json!({"message":format!("Backed up {} save files from {}",archive.files.len(),root.display())}))}
  }).await.map_err(|e|e.to_string())?
 }
 pub(crate) fn apply_restore_impl(token: String) -> Result<String, String> {
@@ -193,7 +215,7 @@ pub(crate) fn apply_restore_impl(token: String) -> Result<String, String> {
         .filter(|p| p.token == token)
         .ok_or("Restore preview expired; choose the backup again")?;
     supported(&plan.archive.kind)?;
-    idle(&plan.archive.kind)?;
+    let _guard = save_guard(&plan.archive.kind)?;
     let checked_root = root(&plan.root)?;
     let files = validated(&plan.archive)?;
     for (p, _) in &files {
@@ -210,18 +232,45 @@ pub(crate) fn apply_restore_impl(token: String) -> Result<String, String> {
     backup
         .write_all(&serde_json::to_vec(&previous).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
+    backup.as_file().sync_all().map_err(|e| e.to_string())?;
     let (_, safety) = backup.keep().map_err(|e| e.to_string())?;
+    let old: BTreeMap<_, _> = validated(&previous)?.into_iter().collect();
+    restore_files(&checked_root, files, &old, &safety, |_| Ok(()))?;
+    *pending = None;
+    Ok(format!(
+        "Saves restored. Previous saves are backed up at {}",
+        safety.display()
+    ))
+}
+fn restore_files(
+    root: &Path,
+    files: Vec<(PathBuf, Vec<u8>)>,
+    old: &BTreeMap<PathBuf, Vec<u8>>,
+    safety: &Path,
+    mut before_write: impl FnMut(usize) -> Result<(), String>,
+) -> Result<(), String> {
     let mut written: Vec<(PathBuf, Option<Vec<u8>>)> = Vec::new();
-    for (p, b) in files {
-        let path = target(&checked_root, &p)?;
-        if let Err(error) = atomic(&path, &b) {
+    let result = (|| -> Result<(), String> {
+      for (index, (p, b)) in files.into_iter().enumerate() {
+        before_write(index)?;
+        let path = target(root, &p)?;
+        // Include the current attempt: an atomic publish may succeed before a
+        // subsequent directory sync fails. It must participate in rollback too.
+        written.push((p.clone(), old.get(&p).cloned()));
+        atomic(&path, &b)?;
+      }
+      Ok(())
+    })();
+    if let Err(error) = result {
             let mut errors = Vec::new();
             for (p, old) in written.into_iter().rev() {
-                let result = if let Some(old) = old {
-                    atomic(&p, &old)
-                } else {
-                    fs::remove_file(p).map_err(|e| e.to_string())
-                };
+                let result = target(root, &p).and_then(|path| if let Some(old) = old {
+                    atomic(&path, &old)
+                } else { match fs::remove_file(path) {
+                    Ok(()) => Ok(()),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    Err(e) => Err(e.to_string()),
+                }});
                 if let Err(e) = result {
                     errors.push(e);
                 }
@@ -230,25 +279,33 @@ pub(crate) fn apply_restore_impl(token: String) -> Result<String, String> {
                 "Restore failed: {error}. Rollback errors: {errors:?}. Safety backup: {}",
                 safety.display()
             ));
-        }
-        written.push((
-            path,
-            previous
-                .files
-                .iter()
-                .find(|f| Path::new(&f.name) == p)
-                .map(|f| BASE64.decode(&f.bytes).unwrap()),
-        ));
     }
-    *pending = None;
-    Ok(format!(
-        "Saves restored. Previous saves are backed up at {}",
-        safety.display()
-    ))
+    Ok(())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn conflicting_archive_paths_are_rejected_before_any_writes() {
+        for names in [["collision", "collision/nested"], ["collision/nested", "collision"]] {
+            let archive = Archive { format: 1, kind: "ps2".into(), files: names.into_iter().map(|name| SaveFile { name:name.into(), bytes:BASE64.encode(b"test") }).collect() };
+            assert!(validated(&archive).unwrap_err().contains("Conflicting"));
+        }
+    }
+    #[test]
+    fn a_late_path_failure_rolls_back_an_earlier_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("card.ps2"), b"current progress").unwrap();
+        let old = BTreeMap::from([(PathBuf::from("card.ps2"), b"current progress".to_vec())]);
+        let files = vec![(PathBuf::from("card.ps2"),b"older progress".to_vec()),(PathBuf::from("collision/nested"),b"test".to_vec())];
+        let result = restore_files(dir.path(), files, &old, &dir.path().join("safety.json"), |index| {
+            if index == 1 { fs::write(dir.path().join("collision"), b"external file").unwrap(); }
+            Ok(())
+        });
+        assert!(result.unwrap_err().contains("Rollback errors: []"));
+        assert_eq!(fs::read(dir.path().join("card.ps2")).unwrap(),b"current progress");
+        assert_eq!(fs::read(dir.path().join("collision")).unwrap(),b"external file");
+    }
     #[test]
     fn unsafe_archives_are_rejected() {
         for name in ["../escape", "/absolute", "a/../../escape"] {
@@ -303,6 +360,23 @@ pub(super) fn test_restore_roundtrip() {
         root: save.clone(),
         archive,
     });
+    // A tracked session and its inherited helper lease both block restoration,
+    // regardless of which launch is most recently shown in the UI.
+    let launch = update_lifecycle::begin_launch().unwrap();
+    assert!(apply_restore_impl("fixture".into()).is_err());
+    let inherited = launch.activity.try_clone().unwrap();
+    drop(launch);
+    assert!(apply_restore_impl("fixture".into()).is_err());
+    drop(inherited);
+    let script = home().unwrap().join("save-safety-emulator.sh");
+    fs::write(&script,"#!/bin/sh\nsleep 5\n").unwrap();
+    update_settings(|s|{s.profiles.get_mut("psp").unwrap().emulator_path=script.to_str().unwrap().into();Ok(())}).unwrap();
+    let mut external = Command::new("/bin/sh").arg(&script).spawn().unwrap();
+    for _ in 0..40 { if gaming::scan(&load_settings().unwrap().profiles).unwrap().active { break; } std::thread::sleep(std::time::Duration::from_millis(25)); }
+    let blocked = apply_restore_impl("fixture".into()).unwrap_err();
+    external.kill().unwrap();external.wait().unwrap();
+    assert!(blocked.contains("Close"));
+    assert_eq!(fs::read(save.join("game.bin")).unwrap(),b"newer save");
     let result = apply_restore_impl("fixture".into()).unwrap();
     assert!(result.contains("backed up"));
     assert_eq!(fs::read(save.join("game.bin")).unwrap(), b"older save");

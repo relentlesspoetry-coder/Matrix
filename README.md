@@ -13,14 +13,14 @@ Download the **DEB** or **AppImage** from [Releases](https://github.com/relentle
 For Zorin or Ubuntu, install the DEB from your download folder:
 
 ```bash
-sudo apt install ./Matrix-Play_0.6.19_amd64.deb
+sudo apt install ./Matrix-Play_0.6.20_amd64.deb
 ```
 
 For the portable AppImage:
 
 ```bash
-chmod +x Matrix-Play_0.6.19_amd64.AppImage
-./Matrix-Play_0.6.19_amd64.AppImage
+chmod +x Matrix-Play_0.6.20_amd64.AppImage
+./Matrix-Play_0.6.20_amd64.AppImage
 ```
 
 For future releases, choose **Check for updates** beside **Add emulator** on the main console menu. Matrix Play also checks at startup and every hour while running, catches up after suspend, and displays a notice when a newer verified release is available. Choose **Review update** or **Later**; downloading and installation remain explicit actions. Background checks keep existing downloads and installer recovery guidance intact. Network failures stay quiet and retry the next hour.

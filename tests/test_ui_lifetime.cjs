@@ -73,7 +73,7 @@ function fixture() {
   vm.runInContext(source.replace(startup, '') + `
     toast = onToast;
     globalThis.api = { state, loadCover, goConsole, goSettings, dismissOverlay, saveArtworkOptions,
-      bootstrapNative, initializeNative, findEmulators, loadDetectedEmulators, loadFlatpakChoices, refreshNative, fetchArtwork, renderUpdater, runUpdate, openUpdater, handleAction, toggleFavorite, visibleGames, renderConsole, setArtDb: db => { artDb=db; } };
+      bootstrapNative, initializeNative, findEmulators, loadDetectedEmulators, loadFlatpakChoices, refreshNative, fetchArtwork, renderUpdater, runUpdate, openUpdater, handleAction, saveDataFlow, toggleFavorite, visibleGames, renderConsole, setArtDb: db => { artDb=db; } };
     setupEvents();
   `, context);
   const api = context.api;
@@ -943,4 +943,36 @@ test('clean library keeps one Favorites filter and places secondary actions in a
   assert.match(source,/aria-label="Library options"/);
   assert.doesNotMatch(source,/data-action="console-favorites"/);
   assert.match(source,/data-action="filter-games"/);
+});
+
+test('manual refresh after a failed startup starts background services exactly once',async()=>{
+ const f=fixture();f.node('#mode-indicator');f.node('#native-status');let boots=0;
+ f.responders.bootstrap=()=>++boots===1?Promise.reject(Error('temporary startup failure')):Promise.resolve(bootstrapSnapshot());
+ await f.initializeNative();assert.equal(Boolean(f.state.nativeInitialized),false);assert.equal(f.intervals.size,0);
+ await f.handleAction({dataset:{action:'refresh'}});await tick();
+ assert.equal(f.state.nativeInitialized,true);assert.equal(f.intervals.size,3);
+ await f.handleAction({dataset:{action:'refresh'}});await tick();assert.equal(f.intervals.size,3);
+});
+test('active restore disables Close and refuses dismissal until the write finishes',async()=>{
+ const f=fixture(),saving=deferred();const owner=f.node('.save-restore-dialog'),close={disabled:false},button={dataset:{action:'apply-save-restore',value:'fixture'},disabled:false};
+ owner.querySelectorAll=()=>[close,button];f.node('#save-restore-status');f.state.overlay='save-restore';f.responders.apply_save_restore=()=>saving.promise;
+ const work=f.handleAction(button);assert.equal(close.disabled,true);assert.equal(button.disabled,true);
+ f.dismissOverlay();assert.equal(f.state.overlay,'save-restore');
+ saving.resolve('Restored');await work;assert.equal(f.state.overlay,null);assert.equal(close.disabled,false);
+});
+test('a late restore completion cannot dismiss a replacement dialog',async()=>{
+ const f=fixture(),saving=deferred();const owner=f.node('.save-restore-dialog');owner.querySelectorAll=()=>[];f.node('#save-restore-status');f.state.overlay='save-restore';f.responders.apply_save_restore=()=>saving.promise;
+ const work=f.handleAction({dataset:{action:'apply-save-restore',value:'fixture'}});
+ f.state.overlay='statistics';f.nodes.delete('.save-restore-dialog');const writes=f.overlayWrites();saving.resolve('Restored');await work;
+ assert.equal(f.state.overlay,'statistics');assert.equal(f.overlayWrites(),writes);
+});
+test('failed restore retains its preview and releases controls for retry or cancel',async()=>{
+ const f=fixture(),owner=f.node('.save-restore-dialog'),button={dataset:{action:'apply-save-restore',value:'fixture'}};owner.querySelectorAll=()=>[button];f.node('#save-restore-status');f.state.overlay='save-restore';f.responders.apply_save_restore=()=>Promise.reject(Error('Close all emulators'));
+ await f.handleAction(button);assert.equal(f.state.overlay,'save-restore');assert.match(f.node('#save-restore-status').textContent,/Close all emulators/);assert.equal(button.disabled,false);
+ f.dismissOverlay();assert.equal(f.state.overlay,null);
+});
+test('an old restore picker cannot replace a newer dialog',async()=>{
+ const f=fixture(),picker=deferred();f.responders.save_data_dialog=()=>picker.promise;
+ const work=f.saveDataFlow('ps2',true);f.state.overlay='configure';const writes=f.overlayWrites();picker.resolve({root:'/fake/memcards',token:'fixture',files:[]});await work;
+ assert.equal(f.state.overlay,'configure');assert.equal(f.overlayWrites(),writes);
 });

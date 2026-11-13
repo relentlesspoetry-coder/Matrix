@@ -1058,6 +1058,8 @@ def main():
             exercise_update_notice(invoke, js, click, wait_for, screenshot)
             from native_activity_features import exercise as exercise_activity
             exercise_activity(home, library, invoke, js, click, wait_for, screenshot)
+            from native_deep_fixes import exercise as exercise_deep_fixes
+            exercise_deep_fixes(home, library, invoke, js, click, wait_for, screenshot)
             print('PASS: native shared-profile relocation, immediate import completion under stalled inventory, bounded Flatpak timeout and standalone ELF discovery')
             print('PASS: scoped sidecar-save Flatpak argv and console-only IPC (synthetic fixtures)')
             print('PASS: automatic Flatpak/AppImage linking, canonical duplicate removal, execute-permission preservation, Open emulator and captured startup errors')

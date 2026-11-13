@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const BUSY: &str = "Finish and close games, emulators and other launched apps before updating. Let installers and updates finish first. A Matrix launch or log helper is still active. Nothing will be force-stopped.";
+pub const BUSY: &str = "Finish and close games, emulators and other launched apps before updating. Let installers, save operations and updates finish first. A Matrix launch, save operation or log helper is still active. Nothing will be force-stopped.";
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
@@ -277,6 +277,34 @@ pub fn begin_launch() -> Result<Launch, String> {
         activity: activity(&root, false)?,
         _gate: gate,
     })
+}
+/// Exclude every tracked launch (across windows and clock/log helpers), new
+/// launches, other save operations and cooperative updates until saves finish.
+pub fn begin_save() -> Result<Launch, String> {
+    begin_save_in(&directory()?)
+}
+fn begin_save_in(root: &Path) -> Result<Launch, String> {
+    let gate = gate(root, false)?;
+    Ok(Launch {
+        activity: activity(root, true)
+            .map_err(|_| "Close all emulators and wait for other save operations to finish before backing up or restoring saves".to_string())?,
+        _gate: gate,
+    })
+}
+#[cfg(test)]
+#[test]
+fn save_lease_excludes_live_helpers_other_saves_new_launches_and_updates() {
+    let root = tempfile::tempdir().unwrap();
+    let launch = activity(root.path(), false).unwrap();
+    assert!(begin_save_in(root.path()).is_err());
+    let helper = launch.try_clone().unwrap();drop(launch);
+    assert!(begin_save_in(root.path()).is_err());drop(helper);
+    let saving = begin_save_in(root.path()).unwrap();
+    assert!(activity(root.path(), false).is_err());
+    assert!(begin_save_in(root.path()).is_err());
+    assert!(gate(root.path(), true).is_err());drop(saving);
+    assert!(activity(root.path(), false).is_ok());
+    assert!(gate(root.path(), true).is_ok());
 }
 #[derive(Debug)]
 struct Registered {

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.20
+
+- Protect save backups and restores with a cross-instance operation lease. Block writes while tracked games, clock/log helpers or freshly detected external emulators are active; block new Matrix launches and cooperative updates until the save operation finishes.
+- Reject archive file/ancestor conflicts and invalid target types before restoring. Roll back earlier writes after any late path or write failure, including failures after an atomic replacement, and retain a durable safety backup.
+- Keep dialogs and their Close controls inside the window at every interface size in both themes, including statistics and achievements at 150%.
+- Restore exported .jpeg artwork using its actual image format and canonical .jpg extension, preserving existing covers and image-size limits.
+- Start hourly update checks, gaming detection, playtime polling and managed-folder discovery exactly once after a failed startup is recovered with Refresh. Preserve first-launch onboarding.
+- Remember library filesystem and folder identities so an empty mountpoint after disconnect cannot erase cached games. Preserve offline legacy entries during migration, reconnect automatically to the original volume, and allow an explicitly re-added replacement folder to be adopted.
+- Keep the save-restore dialog open and its controls disabled during application. Ignore stale file-picker previews and prevent late restore completion from dismissing a newer dialog.
+- Add backend, delayed-response and native WebKit regressions using disposable saves, artwork, processes and volume fixtures. These checks do not run real games or use personal account credentials.
+
 ## 0.6.19
 
 - Rename the main console menu's update button to Updates. Keep the label stable when an update is available, while retaining the availability highlight and notification banner.

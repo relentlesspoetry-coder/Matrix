@@ -1,4 +1,4 @@
-/* Matrix-Play v0.6.19 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.20 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -541,7 +541,7 @@ function goSettings() {
   rememberLibrary();dismissOverlay(); state.page = 'settings'; state.consoleId = null; render(); window.scrollTo(0,0);
 }
 function dismissOverlay() {
-  if(state.overlay==='emulator-import'&&emulatorImportBusy||state.overlay==='drop-preview'&&dropBusy||state.overlay==='disc-create'&&$('.disc-create-dialog')?.dataset.busy==='true')return;
+  if(state.overlay==='emulator-import'&&emulatorImportBusy||state.overlay==='drop-preview'&&dropBusy||state.overlay==='disc-create'&&$('.disc-create-dialog')?.dataset.busy==='true'||state.overlay==='save-restore'&&saveRestoreBusy)return;
   if (state.overlay === null) return;
   state.overlay = null;
   renderUpdateNotice();
@@ -783,7 +783,7 @@ function showLibraryFolderRows(owner, folders) {
 async function openLibraryFolders(id) {
   if (!state.native || !byId[id]) return;
   state.lastFocus=document.activeElement;state.overlay='library-folders';
-  $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog library-folder-dialog" id="library-folder-dialog" data-id="${escapeHtml(id)}" role="dialog" aria-modal="true" aria-labelledby="library-folder-title"><button type="button" class="close" data-action="close" aria-label="Close library folders">${glyph('close')}</button><div class="eyebrow">YOUR FILES STAY IN PLACE</div><h2 id="library-folder-title">${escapeHtml(byId[id].name+' folders')}</h2><p>${'Add a folder containing this console’s games. The managed folder remains available. Removing a folder only removes its registration; games, saves and artwork are not deleted.'}</p><ul class="library-folder-list" aria-label="Registered library folders"><li>Loading folders…</li></ul><div class="field"><label for="external-library-path">Existing library folder</label><div class="file-choice"><input id="external-library-path" placeholder="/media/drive/Games"><button type="button" class="button button-ghost" data-action="browse-library-folder">Browse…</button></div></div><p class="config-error library-folder-error" role="alert"></p><div class="dialog-actions"><button type="button" class="button button-ghost" data-action="close">Done</button><button type="button" class="button button-primary" data-action="add-library-folder">Add folder</button></div></section></div>`;
+  $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog library-folder-dialog" id="library-folder-dialog" data-id="${escapeHtml(id)}" role="dialog" aria-modal="true" aria-labelledby="library-folder-title"><button type="button" class="close" data-action="close" aria-label="Close library folders">${glyph('close')}</button><div class="eyebrow">YOUR FILES STAY IN PLACE</div><h2 id="library-folder-title">${escapeHtml(byId[id].name+' folders')}</h2><p>${'Add a folder containing this console’s games. The managed folder remains available. Removing a folder only removes its registration; games, saves and artwork are not deleted. Re-add a replaced drive or folder to confirm its new location.'}</p><ul class="library-folder-list" aria-label="Registered library folders"><li>Loading folders…</li></ul><div class="field"><label for="external-library-path">Existing library folder</label><div class="file-choice"><input id="external-library-path" placeholder="/media/drive/Games"><button type="button" class="button button-ghost" data-action="browse-library-folder">Browse…</button></div></div><p class="config-error library-folder-error" role="alert"></p><div class="dialog-actions"><button type="button" class="button button-ghost" data-action="close">Done</button><button type="button" class="button button-primary" data-action="add-library-folder">Add folder</button></div></section></div>`;
   const owner=$('#library-folder-dialog');owner.querySelector('input').focus();
   const request=owner.folderRequest=1;
   try {const folders=await nativeInvoke('list_library_folders',{id});if (owner.folderRequest===request) showLibraryFolderRows(owner,folders);}
@@ -1139,6 +1139,7 @@ async function refreshNative() {
     render();
     void scanArtwork();
   } catch (error) { if (generation===nativeRefreshGeneration) toast(`Library scan failed: ${error}`); }
+  finally {if(generation===nativeRefreshGeneration)completeNativeInitialization();}
 }
 // Bootstrap includes slow inventory/folder work. A returned snapshot must not
 // replace local writes that succeeded while it was in flight, or a newer load.
@@ -1161,6 +1162,7 @@ async function bootstrapNative(command='bootstrap') {
     state.discovery=config.emulatorDiscovery || state.discovery;state.needsEmulatorSetup=config.needsEmulatorSetup===true;
     if (artworkWriteRevision===artworkRevision) state.artwork=config.artwork || state.artwork;
     await loadNativeFavorites(config,()=>current() && favoriteWriteRevision===favoritesRevision);
+    if(current())state.nativeBootstrapped=true;
     return current()?config:null;
   } catch(error) {
     if (current()) throw error;
@@ -1172,8 +1174,14 @@ async function initializeNative() {
   $('#mode-indicator').textContent = 'NATIVE LINUX';
   $('#native-status').textContent = 'Native backend · folders managed automatically';
   try {
-    if (await bootstrapNative()) {await refreshNative();await pollLibraries(true);if(state.needsEmulatorSetup&&!state.overlay)openEmulatorImport(true);state.nativeInitialized=true;startUpdateChecks();void initializeQuality();setInterval(()=>void refreshManagedAndGames(),30000);}
+    if (await bootstrapNative()) {await refreshNative();await pollLibraries(true);completeNativeInitialization();}
   } catch(error) { toast(`Matrix-Play initialization failed: ${error}`); }
+}
+function completeNativeInitialization(){
+ if(!state.native||!state.nativeBootstrapped||state.nativeInitialized)return;
+ state.nativeInitialized=true;
+ startUpdateChecks();void initializeQuality();setInterval(()=>void refreshManagedAndGames(),30000);
+ if(state.needsEmulatorSetup&&!state.overlay&&!state.emulatorSetupPrompted){state.emulatorSetupPrompted=true;openEmulatorImport(true);}
 }
 
 function renderUpdater() {
@@ -1332,7 +1340,7 @@ async function handleAction(button) {
   if(action==='save-game-metadata'){const selected={...state.selectedGame};const owner=$('.detail-panel');const metadata={...gameMetadata(selected.id,selected.uid),display:$('#display-title').value.trim(),coverTitle:$('#cover-search-title').value.trim(),group:$('#version-group').value.trim()};if(!await saveLibraryPref('metadata',artKey(selected.id,selected.uid),metadata))return;if($('.detail-panel')===owner){dismissOverlay();render();}return;}
   if(action==='select-version'){state.previewGame={id,uid};rememberLibrary();renderConsole();openGame(id,uid);return;}
   if(action==='save-data-backup'||action==='save-data-restore'){button.disabled=true;try{await saveDataFlow(id,action==='save-data-restore');}catch(e){toast(String(e));}finally{button.disabled=false;}return;}
-  if(action==='apply-save-restore'){button.disabled=true;try{toast(await nativeInvoke('apply_save_restore',{token:value}));dismissOverlay();}catch(e){toast(String(e));}finally{button.disabled=false;}return;}
+  if(action==='apply-save-restore'){await applySaveRestore(button);return;}
   if(action==='settings-tab'){state.settingsTab=value==='themes'?'themes':'general';renderSettings();return;}
   if(action==='select-theme'){
     if(state.themeSaving||!THEMES.some(t=>t.id===value))return;
@@ -1598,9 +1606,23 @@ async function pollLibraries(force=false){
  if(!state.native||libraryPolling||!force&&(libraryPrefs().autoRefresh===false||libraryUiBusy()))return;
  libraryPolling=true;const generation=nativeRefreshGeneration;try{await libraryWrites;const result=await nativeInvoke('library_snapshot',{background:!force});if(!result?.games||!force&&libraryUiBusy()||generation!==nativeRefreshGeneration)return;const previous=state.imported;state.imported={...previous};const before=JSON.stringify([previous,state.libraryFolders]);state.libraryFolders=result.folders||{};for(const c of consoles)state.imported[c.id]=(result.games[c.id]||[]).map(g=>({...g,demo:false,offline:offlineGame(c.id,g)}));if(before!==JSON.stringify([state.imported,state.libraryFolders])){state.missingArt.clear();if(!state.overlay)render();queueDiscoveredGames(previous);}}catch(e){if(force)toast('Library refresh failed: '+e);}finally{libraryPolling=false;}
 }
+let saveRestoreBusy=false,saveDialogGeneration=0;
 async function saveDataFlow(id,restore){
+ const generation=++saveDialogGeneration,overlay=state.overlay,owner=$('#overlay-root').firstElementChild,page=state.page,consoleId=state.consoleId;
  const result=await nativeInvoke('save_data_dialog',{id,restore});if(result.cancelled)return;if(result.message){toast(result.message);return;}
- state.overlay='save-restore';$('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="save-restore-title"><button class="close" data-action="close" aria-label="Cancel restore">${glyph('close')}</button><h2 id="save-restore-title">Review save restore</h2><p>Close the emulator before continuing. These files will be written inside ${escapeHtml(result.root)}. A safety backup is created first; files not listed are kept.</p><div class="save-file-list">${result.files.map(f=>`<p>${escapeHtml(f.name)} · ${f.bytes} bytes · ${f.replaces?'Replace':'Add'}</p>`).join('')}</div><button class="button button-primary" data-action="apply-save-restore" data-value="${escapeHtml(result.token)}">Restore these files</button></section></div>`;$('.dialog .close')?.focus();
+ if(generation!==saveDialogGeneration||overlay!==state.overlay||owner!==$('#overlay-root').firstElementChild||page!==state.page||consoleId!==state.consoleId)return;
+ state.lastFocus=document.activeElement;state.overlay='save-restore';$('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog save-restore-dialog" role="dialog" aria-modal="true" aria-labelledby="save-restore-title"><button class="close" data-action="close" aria-label="Cancel restore">${glyph('close')}</button><h2 id="save-restore-title">Review save restore</h2><p>Close the emulator before continuing. These files will be written inside ${escapeHtml(result.root)}. A safety backup is created first; files not listed are kept.</p><div class="save-file-list">${result.files.map(f=>`<p>${escapeHtml(f.name)} · ${f.bytes} bytes · ${f.replaces?'Replace':'Add'}</p>`).join('')}</div><p id="save-restore-status" role="status"></p><button class="button button-primary" data-action="apply-save-restore" data-value="${escapeHtml(result.token)}">Restore these files</button></section></div>`;$('.dialog .close')?.focus();
+}
+async function applySaveRestore(button){
+ const owner=$('.save-restore-dialog');if(!owner||saveRestoreBusy)return;
+ saveRestoreBusy=true;const controls=[...owner.querySelectorAll('button')];for(const c of controls)c.disabled=true;
+ $('#save-restore-status').textContent='Restoring saves…';
+ try{
+  const message=await nativeInvoke('apply_save_restore',{token:button.dataset.value});
+  if(owner===$('.save-restore-dialog')){saveRestoreBusy=false;dismissOverlay();}
+  toast(message);
+ }catch(e){if(owner===$('.save-restore-dialog'))$('#save-restore-status').textContent=String(e);else toast(String(e));}
+ finally{saveRestoreBusy=false;for(const c of controls)c.disabled=false;}
 }
 
 // Session clocks, display preferences, disc sets and explicit native drops.
