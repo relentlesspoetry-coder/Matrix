@@ -6,6 +6,10 @@ pub(crate) struct Preferences {
     pub setup_completed: Option<bool>,
     pub hide_unconfigured: Option<bool>,
     pub theme: Option<String>,
+    pub ui_scale: Option<u16>,
+    pub cover_size: Option<String>,
+    pub controller_prompts: Option<String>,
+    pub start_fullscreen: Option<bool>,
     pub ready_only: bool,
     pub hidden: Vec<String>,
     pub pinned: Vec<String>,
@@ -45,6 +49,10 @@ pub(crate) fn set_library_preference(
                 }
                 p.theme = Some(theme.into());
             }
+            "uiScale" => {let n=value.as_u64().ok_or("Invalid UI scale")?;if ![85,100,115,130,150].contains(&n){return Err("Unsupported UI scale".into());}p.ui_scale=Some(n as u16);}
+            "coverSize" => {let v=value.as_str().ok_or("Invalid cover size")?;if !["small","medium","large"].contains(&v){return Err("Invalid cover size".into());}p.cover_size=Some(v.into());}
+            "controllerPrompts" => {let v=value.as_str().ok_or("Invalid button prompts")?;if !["auto","xbox","playstation"].contains(&v){return Err("Invalid button prompts".into());}p.controller_prompts=Some(v.into());}
+            "startFullscreen" => p.start_fullscreen=Some(value.as_bool().ok_or("Invalid fullscreen setting")?),
             "readyOnly" => p.ready_only = value.as_bool().ok_or("Invalid filter")?,
             "setupCompleted" => p.setup_completed = Some(value.as_bool().ok_or("Invalid setup state")?),
             "hideUnconfigured" => p.hide_unconfigured = Some(value.as_bool().ok_or("Invalid emulator filter")?),
@@ -293,6 +301,27 @@ mod tests {
         assert!(!snapshot_impl().unwrap().games["ps2"]
             .iter()
             .any(|g| g.path == game.to_str().unwrap()));
+        // Ordered sets preserve images, reject foreign members and never overwrite.
+        let discroot=games_dir("ps1").unwrap();
+        let d1=discroot.join("Adventure (Disc 1).chd");let d2=discroot.join("Adventure (Disc 2).chd");
+        fs::write(&d1,b"disc one").unwrap();fs::write(&d2,b"disc two").unwrap();
+        let uids=vec![d2.to_str().unwrap().into(),d1.to_str().unwrap().into()];
+        let collection=super::disc_sets::create("ps1","Adventure",&uids).unwrap();
+        assert_eq!(super::disc_sets::details("ps1",&collection.uid).unwrap().discs[0].path,d2.to_str().unwrap());
+        assert!(super::disc_sets::create("ps1","Adventure",&uids).is_err());
+        assert!(super::disc_sets::create("ps2","Adventure",&uids).is_err());
+        assert!(super::disc_sets::create("ps1","../Escape",&uids).is_err());
+        let p=EmulatorProfile{emulator_path:"/bin/duckstation".into(),..Default::default()};
+        assert_eq!(super::disc_sets::launch_path("ps1",&collection,&p,Some(d1.to_str().unwrap())).unwrap(),d1);
+        assert!(super::disc_sets::launch_path("ps1",&collection,&p,Some("/outside/Disc.chd")).is_err());
+        assert_eq!(fs::read(&d1).unwrap(),b"disc one");
+        // Display preferences are validated and survive settings reload.
+        for (section,value) in [("uiScale",serde_json::json!(130)),("coverSize",serde_json::json!("large")),("controllerPrompts",serde_json::json!("playstation")),("startFullscreen",serde_json::json!(true))] {
+            set_library_preference(section.into(),"".into(),value).unwrap();
+        }
+        assert_eq!(load_settings().unwrap().library_preferences.ui_scale,Some(130));
+        assert!(set_library_preference("uiScale".into(),"".into(),serde_json::json!(900)).is_err());
+        assert!(set_library_preference("coverSize".into(),"".into(),serde_json::json!("huge")).is_err());
         super::save_data::test_restore_roundtrip();
     }
 }

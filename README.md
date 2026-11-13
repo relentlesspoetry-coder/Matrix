@@ -13,14 +13,14 @@ Download the **DEB** or **AppImage** from [Releases](https://github.com/relentle
 For Zorin or Ubuntu, install the DEB from your download folder:
 
 ```bash
-sudo apt install ./Matrix-Play_0.6.15_amd64.deb
+sudo apt install ./Matrix-Play_0.6.16_amd64.deb
 ```
 
 For the portable AppImage:
 
 ```bash
-chmod +x Matrix-Play_0.6.15_amd64.AppImage
-./Matrix-Play_0.6.15_amd64.AppImage
+chmod +x Matrix-Play_0.6.16_amd64.AppImage
+./Matrix-Play_0.6.16_amd64.AppImage
 ```
 
 For future releases, open **Settings → Check for updates**.
@@ -109,3 +109,17 @@ Save backups are separate JSON files, limited to 128 MB of source files, 32 MB p
 Open **Settings → Themes** to choose **Arctic Current** (the original layout) or **White Frost Current** (the approved open gallery with a compact header, six-column desktop grid and bottom selection bar). Selection is saved in native settings, included in settings backups, and applied across libraries and dialogs. Hover or focus a console to update the bottom strip. Smaller windows use fewer columns. System reduced-motion preferences stop the animated currents.
 
 Steam and Windows game integrations are removed. Existing installations, shortcuts and saved legacy registration data are left untouched. SteamGridDB remains available for console artwork.
+
+## Drag-and-drop, disc sets and display preferences
+
+Drop one portable Linux emulator, game folder or cover into the native window. Emulator drops open the usual destination preview; **Move file and set up** performs the import. Folder drops let you choose a console and register the folder without moving games. Drop a PNG/JPEG/WebP image onto a game row/tile (or select a game first), then confirm replacing its cover. Finish or close another dialog before dropping files. Installed emulators and distributions with adjacent resources should still be linked in place.
+
+In a PS1 or Saturn library, open **··· → Create multi-disc game**. Enter a title and check 2–64 discs from the same folder in playback order. Matrix Play creates a new `.m3u` without overwriting any file. Game details lists the discs and can start a selected disc; changing discs while playing uses the emulator's own disc menu. Full-playlist launches are supported for DuckStation (PS1) and Mednafen (Saturn). Other launchers can start individual members. Existing individual-disc favorites and artwork stay reachable, so customized discs may remain listed beside their playlist.
+
+**Settings → Display & controller** offers interface scaling, game-cover sizes, automatic/Xbox/PlayStation button labels, and fullscreen startup. **F11** toggles the Matrix Play window. These controls preserve Sora typography, themes and emulator input mappings.
+
+## Playtime
+
+Total session time appears beneath each played game's name, including grid/list cards, the preview and game details—for example, **50 h played**. Timing starts with this version and applies only to games launched through Matrix Play; earlier playtime cannot be recovered. Each file/version keeps its own total; launching a selected disc from a playlist credits the playlist entry.
+
+The clock follows the launched emulator process group, continues if you close Matrix Play, and saves every five seconds and at normal process exit. Menus and paused games count as session time; Linux system suspend does not. Very short launches under one second are ignored. Existing-window handoffs, emulator processes that detach into another process group, and games launched outside Matrix Play cannot be reliably tracked. A crash or power loss can discard the last few seconds. Playtime is stored locally, included in settings backups, and never reduced when restoring an older backup.

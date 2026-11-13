@@ -19,7 +19,10 @@ pub(crate) async fn refresh_managed_emulators() -> Result<Bootstrap, String> {
     blocking(|| super::bootstrap_inventory(true)).await
 }
 #[tauri::command]
-pub(crate) async fn import_emulator(id: String, path: String) -> Result<super::emulator_import::Imported, String> {
+pub(crate) async fn import_emulator(
+    id: String,
+    path: String,
+) -> Result<super::emulator_import::Imported, String> {
     let request = profile_saves::begin()?;
     blocking(move || super::emulator_import::import(request, &id, &path)).await
 }
@@ -76,4 +79,42 @@ pub(crate) async fn save_emulator(
         )
     })
     .await
+}
+
+#[tauri::command]
+pub(crate) async fn disc_set(id: String, uid: String) -> Result<super::disc_sets::DiscSet, String> {
+    blocking(move || super::disc_sets::details(&id, &uid)).await
+}
+#[tauri::command]
+pub(crate) async fn create_disc_set(
+    id: String,
+    title: String,
+    uids: Vec<String>,
+) -> Result<Game, String> {
+    blocking(move || super::disc_sets::create(&id, &title, &uids)).await
+}
+#[tauri::command]
+pub(crate) async fn inspect_drop(
+    paths: Vec<String>,
+) -> Result<Vec<super::drop_setup::DropItem>, String> {
+    blocking(move || super::drop_setup::inspect(paths)).await
+}
+#[tauri::command]
+pub(crate) async fn import_dropped_cover(
+    id: String,
+    uid: String,
+    path: String,
+) -> Result<(), String> {
+    blocking(move || super::drop_setup::cover(&id, &uid, &path)).await
+}
+#[tauri::command]
+pub(crate) fn set_app_fullscreen(
+    window: tauri::Window,
+    fullscreen: Option<bool>,
+) -> Result<bool, String> {
+    let fullscreen = fullscreen.unwrap_or(!window.is_fullscreen().map_err(|e| e.to_string())?);
+    window
+        .set_fullscreen(fullscreen)
+        .map_err(|e| e.to_string())?;
+    Ok(fullscreen)
 }

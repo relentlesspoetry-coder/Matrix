@@ -24,6 +24,9 @@ mod immersive;
 mod installed_titles;
 mod launch_log;
 mod launches;
+mod playtime;
+mod disc_sets;
+mod drop_setup;
 mod libraries;
 mod local_artwork;
 mod profile_saves;
@@ -219,6 +222,8 @@ impl Default for ArtworkSettings {
 
 #[derive(Clone, Serialize, Deserialize, Default)]
 struct Settings {
+    #[serde(default)]
+    playtime: BTreeMap<String,u64>,
     #[serde(default)]
     library_preferences: library_features::Preferences,
     #[serde(default)]
@@ -893,6 +898,9 @@ fn console_launch_args(
 }
 
 fn launch_console_impl(id: String, uid: String) -> Result<launches::Info, String> {
+    launch_console_disc_impl(id,uid,None)
+}
+fn launch_console_disc_impl(id: String, uid: String, disc: Option<String>) -> Result<launches::Info, String> {
     spec(&id)?;
     let game = scan_console_impl(&id)?
         .into_iter()
@@ -902,19 +910,20 @@ fn launch_console_impl(id: String, uid: String) -> Result<launches::Info, String
     let mut selected=settings.profiles.get(&id).ok_or("Configure an emulator for this console first")?.clone();
     if let Some(options)=settings.game_options.get(&cover_key(&id,&uid)){selected.launch_args=options.args.clone();}
     let profile=&selected;
+    let launch_path=disc_sets::launch_path(&id,&game,profile,disc.as_deref())?;
     launches::preflight(profile)?;
-    let mut command = emulators::command(profile, &id, Some(Path::new(&game.path)))?;
-    command.args(console_launch_args(profile, &id, Path::new(&game.path))?);
-    command.current_dir(Path::new(&game.path).parent().ok_or("Invalid game path")?);
-    let info=launches::start(command, &id)?;
+    let mut command = emulators::command(profile, &id, Some(&launch_path))?;
+    command.args(console_launch_args(profile, &id, &launch_path)?);
+    command.current_dir(launch_path.parent().ok_or("Invalid game path")?);
+    let info=launches::start_game(command, &id, &uid)?;
     let _=library_tools::record(&game);
     Ok(info)
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-async fn launch_console_game(id: String, uid: String) -> Result<launches::Info, String> {
-    tauri::async_runtime::spawn_blocking(move || launch_console_impl(id, uid))
+async fn launch_console_game(id: String, uid: String, disc: Option<String>) -> Result<launches::Info, String> {
+    tauri::async_runtime::spawn_blocking(move || launch_console_disc_impl(id, uid, disc))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1309,6 +1318,9 @@ fn main() {
             return;
         }
     }
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--matrix-playtime") {
+        std::process::exit(if playtime::run().is_ok(){0}else{1});
+    }
     // The log reader is a separate process that must outlive the GUI. Dispatch
     // before initializing WebKit, application state or startup/cache files.
     if std::env::args_os()
@@ -1340,6 +1352,13 @@ fn main() {
             startup_log(&format!("Page {:?}: {}", page.event(), page.url()));
         })
         .setup(|app| {
+            {
+                use tauri::Manager;
+                if let Some(window)=app.get_webview_window("main") {
+                    let prefs=load_settings().unwrap_or_default().library_preferences;
+                    let _=window.set_fullscreen(prefs.start_fullscreen.unwrap_or(false));
+                }
+            }
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
                 if INSTANCE
@@ -1400,6 +1419,12 @@ fn main() {
             launch_console_game,
             open_emulator,
             launches::get_launch_status,
+            playtime::get_playtime,
+            desktop_commands::disc_set,
+            desktop_commands::create_disc_set,
+            desktop_commands::inspect_drop,
+            desktop_commands::import_dropped_cover,
+            desktop_commands::set_app_fullscreen,
             desktop_commands::get_cover,
             desktop_commands::save_cover,
             download_cover,

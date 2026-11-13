@@ -96,3 +96,23 @@ html[data-theme="white-frost"] body .sidebar { height:auto; min-height:62px }
 .emulator-import-dialog .muted { margin-top:16px }
 #import-destination,#import-status { overflow-wrap:anywhere }
 #import-status { margin-top:18px }
+
+/* User display preferences preserve Sora's type hierarchy at every scale. */
+:root body .game-playtime { display:block; margin-top:5px; color:#244c73; font-family:inherit; font-size:13px; font-weight:600; line-height:1.4; letter-spacing:0 }
+:root body .game-playtime[hidden] { display:none }
+:root body .game-list .game-title { min-width:0 }
+:root body .game-list .game-playtime { font-size:14px }
+:root body .game-preview>.game-playtime { margin:-6px 0 14px }
+:root body .display-options .field { max-width:360px; margin:14px 0 }
+:root body .display-options>label { display:block; margin:12px 0 }
+:root body .disc-candidates { max-height:40vh; overflow:auto; border-block:1px solid #7da6ce77; margin:12px 0 }
+:root body .disc-candidates>label { display:flex; align-items:center; gap:12px; padding:12px 4px; border-bottom:1px solid #7da6ce44 }
+:root body .disc-candidates small { display:block; font-size:12px; overflow-wrap:anywhere; font-weight:500 }
+:root body .disc-order { margin-left:auto; font-weight:800; color:#005bea }
+:root.native-drop-hover body::after { content:'Drop an emulator, game folder or cover'; position:fixed; inset:16px; z-index:9999; display:grid; place-items:center; pointer-events:none; border:3px dashed #006bea; border-radius:24px; background:#eaf7ffcf; color:#071d49; font:700 24px Sora,sans-serif }
+:root[data-cover-size="small"] body .game-grid { grid-template-columns:repeat(auto-fill,minmax(130px,1fr)) }
+:root[data-cover-size="large"] body .game-grid { grid-template-columns:repeat(auto-fill,minmax(230px,1fr)) }
+:root[data-cover-size="small"] body .console-library .game-list .game-cover { width:80px; flex-basis:80px; height:64px }
+:root[data-cover-size="small"] body .console-library .game-list .game-item { min-height:80px }
+:root[data-cover-size="large"] body .console-library .game-list .game-cover { width:168px; flex-basis:168px; height:110px }
+:root[data-cover-size="large"] body .console-library .game-list .game-item { min-height:122px }

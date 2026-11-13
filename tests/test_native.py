@@ -1050,6 +1050,8 @@ def main():
                 assert any(c['profile']['emulatorPath']==str(standalone) for c in fresh['emulatorDiscovery']['candidates'])
             finally:
                 flatpak.write_text(healthy_flatpak)
+            from native_quality_features import exercise as exercise_quality
+            exercise_quality(home, library, invoke, js, click, wait_for, screenshot)
             print('PASS: native shared-profile relocation, immediate import completion under stalled inventory, bounded Flatpak timeout and standalone ELF discovery')
             print('PASS: scoped sidecar-save Flatpak argv and console-only IPC (synthetic fixtures)')
             print('PASS: automatic Flatpak/AppImage linking, canonical duplicate removal, execute-permission preservation, Open emulator and captured startup errors')

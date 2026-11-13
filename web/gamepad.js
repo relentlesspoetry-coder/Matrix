@@ -4,6 +4,10 @@
 (function (root) {
   'use strict';
   const selector='button,input,select,textarea,summary,a[href],[tabindex]';
+  function promptLabels(style,pads=[]) {
+    const playstation=style==='playstation'||style!=='xbox'&&pads.some(p=>p?.connected!==false&&p?.mapping==='standard'&&/sony|playstation|dualsense|dualshock|054c|wireless controller/i.test(p.id||''));
+    return playstation?'D-pad: move · ×: select · ○: back · L1 / R1: next control':'D-pad: move · A: select · B: back · LB / RB: next control';
+  }
   function commands(pad) {
     const down=index=>!!pad.buttons?.[index]?.pressed;
     const x=pad.axes?.[0] || 0, y=pad.axes?.[1] || 0;
@@ -101,7 +105,7 @@
       try {pads=Array.from(window.navigator.getGamepads?.() || []);} catch (_) { /* Restricted web preview. */ }
       poll(pads,time,document.visibilityState!=='hidden' && document.hasFocus());
       running=pads.some(pad=>pad?.connected!==false && pad?.mapping==='standard');
-      const help=document.getElementById?.('controller-help');if (help) help.hidden=!running;
+      const help=document.getElementById?.('controller-help');if (help) {help.hidden=!running;help.textContent=promptLabels(window.matrixPromptStyle,pads);}
       if (running) window.requestAnimationFrame(frame);
     }
     function start() {if (!running) {running=true;window.requestAnimationFrame(frame);}}
@@ -116,6 +120,6 @@
     document.addEventListener('keydown',event=>{if (!controllerKeyEvents.has(event)) document.documentElement.classList.remove('gamepad-navigation');});
     start();
   }
-  if (typeof module!=='undefined' && module.exports) module.exports={commands,createInput,nearest,install};
+  if (typeof module!=='undefined' && module.exports) module.exports={commands,createInput,nearest,install,promptLabels};
   else if (root.document) install(root);
 })(typeof window!=='undefined'?window:globalThis);

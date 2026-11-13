@@ -153,7 +153,7 @@ pub(crate) async fn browse_library_folder(app: tauri::AppHandle) -> Result<Optio
 }
 
 pub(crate) fn is_playlist(id: &str, path: &Path) -> bool {
-    id == "ps1"
+    ["ps1", "saturn"].contains(&id)
         && path
             .extension()
             .and_then(|e| e.to_str())

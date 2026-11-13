@@ -132,16 +132,25 @@ pub(crate) fn start(command: Command, id: &str) -> Result<Info, String> {
         .ok_or("Cannot locate Matrix Play launch logs")?
         .join("matrix/launches");
     let launch = update_lifecycle::begin_launch()?;
-    start_in_root_guarded(command, id, &root, Some(launch))
+    start_in_root_guarded(command, id, &root, Some(launch), None)
+}
+pub(crate) fn start_game(mut command: Command, id: &str, uid: &str) -> Result<Info,String> {
+    validate_launch_id(id)?;
+    let lease=playtime::reserve(id,uid)?;
+    command.process_group(0);
+    let root=dirs::data_local_dir().ok_or("Cannot locate launch logs")?.join("matrix/launches");
+    let launch=update_lifecycle::begin_launch()?;
+    start_in_root_guarded(command,id,&root,Some(launch),Some((uid.to_owned(),lease)))
 }
 fn start_in_root(command: Command, id: &str, root: &Path) -> Result<Info, String> {
-    start_in_root_guarded(command, id, root, None)
+    start_in_root_guarded(command, id, root, None, None)
 }
 fn start_in_root_guarded(
     mut command: Command,
     id: &str,
     root: &Path,
     launch: Option<update_lifecycle::Launch>,
+    tracking: Option<(String,fs::File)>,
 ) -> Result<Info, String> {
     let label = launcher_name(id);
     fs::create_dir_all(root).map_err(|e| e.to_string())?;
@@ -224,6 +233,11 @@ fn start_in_root_guarded(
             return Ok(r.info.clone());
         }
     };
+    if let Some((uid,lease))=tracking {
+        if let Err(e)=playtime::start(child.id(),id,&uid,lease,launch.as_ref().map(|l|&l.activity)) {
+            append(&record,&format!("\nPlaytime tracking unavailable: {e}\n"));
+        }
+    }
     // Command retains its configured Stdio handles after spawn. Close our copies
     // now, so short-lived launchers can deliver EOF and flush their diagnostics.
     drop(command);

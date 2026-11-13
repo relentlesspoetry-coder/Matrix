@@ -196,6 +196,8 @@ fn restore(bytes: &[u8]) -> Result<String, String> {
         }
         update_settings(|current| {
             backup.settings.steamgriddb_api_key = current.steamgriddb_api_key.clone();
+            // Import totals monotonically, retaining sessions checkpointed since export.
+            for (key,total) in &current.playtime { let incoming=backup.settings.playtime.entry(key.clone()).or_default();*incoming=(*incoming).max(*total); }
             *current = backup.settings;
             Ok(())
         })?;
