@@ -1,11 +1,11 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function fixture(reply){
+function fixture(reply,inventory=()=>Promise.reject(Error("Unexpected inventory request"))){
  const calls=[],controls=[{disabled:false},{disabled:false}],owner={querySelectorAll:()=>controls};
  const nodes={'.emulator-import-dialog':owner,'#import-console':{value:'gamecube'},'#import-path':{value:'/old/Dolphin.AppImage'},'#import-error':{textContent:''},'#import-status':{textContent:''},'#import-destination':{textContent:''},'#overlay-root':{innerHTML:''},'.app-shell':{inert:false}};
- const context=vm.createContext({consoles:[{id:'gamecube',name:'GameCube',games:[]},{id:'wii',name:'Wii',games:[]}],window:{__TAURI__:{core:{invoke:async(name,args)=>{calls.push([name,args]);if(name==='import_emulator')return reply();if(name==='set_library_preference')return {};throw Error('Inventory must not be awaited after import');}}}},document:{querySelector:s=>nodes[s]},localStorage:{getItem(){return null;},setItem(){}}});
+ const context=vm.createContext({consoles:[{id:'gamecube',name:'GameCube',games:[]},{id:'wii',name:'Wii',games:[]}],window:{__TAURI__:{core:{invoke:async(name,args)=>{calls.push([name,args]);if(name==='import_emulator')return reply();if(name==='bootstrap')return inventory();if(name==='set_library_preference')return {};throw Error('Inventory must not be awaited after import');}}}},document:{querySelector:s=>nodes[s]},localStorage:{getItem(){return null;},setItem(){}}});
  const source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8').replace('readPrefs(); setupEvents(); render(); window.matrixStartup?.complete(); void initializeArt(); void initializeNative();','');
- vm.runInContext(source+';render=()=>{};toast=()=>{};state.overlay="emulator-import";state.configs={gamecube:{emulatorPath:"/old/Dolphin.AppImage"},wii:{emulatorPath:"/old/Dolphin.AppImage"}};globalThis.api={state,saveEmulatorImport,finishEmulatorSetup,dismissOverlay,libraryPrefs,emulatorSavedRequests};',context);
+ vm.runInContext(source+';render=()=>{};toast=()=>{};state.overlay="emulator-import";state.configs={gamecube:{emulatorPath:"/old/Dolphin.AppImage"},wii:{emulatorPath:"/old/Dolphin.AppImage"}};globalThis.api={state,saveEmulatorImport,finishEmulatorSetup,dismissOverlay,libraryPrefs,emulatorSavedRequests,bootstrapNative};',context);
  return {...context.api,nodes,calls,controls};
 }
 const committed=()=>({path:'/managed/Dolphin.AppImage',moved:true,message:'Emulator added and configured.',profiles:{gamecube:{emulatorPath:'/managed/Dolphin.AppImage'},wii:{emulatorPath:'/managed/Dolphin.AppImage',launchArgs:['--user','/keep/Wii config','{game}']}}});
@@ -25,4 +25,12 @@ test('finishing onboarding preserves explicit show-all preference',async()=>{
 });
 test('finishing onboarding defaults to hiding only when no visibility choice was saved',async()=>{
  const f=fixture(committed);await f.finishEmulatorSetup(f.controls[0]);assert.deepEqual(f.calls.map(c=>c[1].section),['hideUnconfigured','setupCompleted']);assert.equal(f.libraryPrefs().hideUnconfigured,true);
+});
+
+
+test('an older bootstrap cannot hide a console after its import unhides it',async()=>{
+ let resolve;const f=fixture(committed,()=>new Promise(r=>resolve=r));f.libraryPrefs().hidden=['gamecube'];
+ const loading=f.bootstrapNative();await tick();await f.saveEmulatorImport(f.controls[0]);assert.equal(f.libraryPrefs().hidden.includes('gamecube'),false);
+ resolve({profiles:{},readyProfiles:{},root:'/managed',folders:{},favoritesMigrated:true,favorites:{},libraryPreferences:{hidden:['gamecube'],pinned:[],order:[],views:{},metadata:{}}});await loading;
+ assert.equal(f.libraryPrefs().hidden.includes('gamecube'),false);assert.equal(f.state.configs.gamecube.emulatorPath,'/managed/Dolphin.AppImage');
 });

@@ -687,6 +687,7 @@ async function saveEmulatorImport(button){
    const request=(emulatorSaveRequests.get(consoleId)||0)+1;emulatorSaveRequests.set(consoleId,request);emulatorSavedRequests.set(consoleId,request);
    state.configs[consoleId]=profile;state.readyProfiles[consoleId]=true;
   }
+  ++libraryPrefRevision; // Pending snapshots must not restore the old hidden list.
   libraryPrefs().hidden=(libraryPrefs().hidden||[]).filter(consoleId=>consoleId!==id);
   render();
   if(owner===$('.emulator-import-dialog')){$('#import-path').value='';$('#import-status').textContent=result.message;updateEmulatorDestination();}
