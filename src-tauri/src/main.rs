@@ -14,6 +14,8 @@ mod bounded_io;
 mod desktop_commands;
 #[cfg(test)]
 mod console_library_tests;
+#[cfg(test)]
+mod emulator_regression_tests;
 mod discovery;
 mod emulators;
 mod emulator_import;
@@ -375,6 +377,7 @@ fn detect_emulators_in(s: &ConsoleSpec, dir: &Path) -> Vec<PathBuf> {
         let recognized = name.ends_with(".appimage")
             || name.ends_with(".sh")
             || discovery::supports_filename(&name, s.id)
+            || emulators::native_binary(&path)
             || name.contains(&guessed_emulator(s.id).to_lowercase().replace(' ', ""));
         if !recognized {
             continue;
@@ -469,9 +472,10 @@ fn bootstrap_inventory(managed_only: bool) -> Result<Bootstrap, String> {
     let mut emulator_discovery = if managed_only { discovery::discover_managed()? } else { discovery::discover()? };
     let settings = update_settings(|settings| {
         // Existing configured users are migrated without interrupting startup.
-        if settings.library_preferences.setup_completed.is_none() && !settings.profiles.is_empty() {
-            settings.library_preferences.setup_completed = Some(true);
-            settings.library_preferences.hide_unconfigured = Some(true);
+        if settings.library_preferences.setup_completed.is_none() {
+            let existing = !settings.profiles.is_empty();
+            settings.library_preferences.setup_completed = Some(existing);
+            if existing { settings.library_preferences.hide_unconfigured.get_or_insert(true); }
         }
         discovery::auto_link(settings, &mut emulator_discovery);
         Ok(settings.clone())
@@ -839,6 +843,11 @@ fn save_emulator(
     immersive::validate_profile_paths(&profile, &id)?;
     profile_saves::commit(request, &id, || {
         update_settings(|settings| {
+            // An import may have relocated this file while validation was pending.
+            if profile.launcher != emulators::Launcher::Flatpak
+                && !emulators::executable_file(Path::new(&profile.emulator_path)) {
+                return Err("The emulator moved while this choice was being saved. Choose its current file and save again.".into());
+            }
             settings.profiles.insert(id.clone(), profile);
             Ok(())
         })

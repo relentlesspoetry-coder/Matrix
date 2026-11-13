@@ -50,11 +50,64 @@ fn parse_flatpaks(text: &str) -> Vec<FlatpakApp> {
     apps.into_values().collect()
 }
 pub(crate) fn list_flatpaks() -> Result<Vec<FlatpakApp>, String> {
-    let output = launch_command("flatpak").args(["list","--app","--columns=application,name,installation"]).env("LC_ALL","C").output().map_err(|_|"Flatpak was not found. Install your emulator through Software first, or choose an AppImage / executable.")?;
-    if !output.status.success() {
-        return Err("Could not read installed Flatpak apps. Check that Flatpak works in Software, then try Reload apps.".into());
+    let mut command = launch_command("flatpak");
+    command.args(["list","--app","--columns=application,name,installation"]).env("LC_ALL","C");
+    Ok(parse_flatpaks(&bounded_inventory(command, std::time::Duration::from_secs(10))?))
+}
+
+/// File-backed stdout cannot deadlock on an inherited pipe. Bound both the
+/// command's lifetime and output; never terminate an emulator or unrelated app.
+fn bounded_inventory(mut command: Command, timeout: std::time::Duration) -> Result<String, String> {
+    use std::{io::Seek, os::unix::process::CommandExt, process::Stdio, time::Instant};
+    const LIMIT: u64 = 1024 * 1024;
+    let mut capture = tempfile::tempfile().map_err(|e|e.to_string())?;
+    command.stdin(Stdio::null()).stderr(Stdio::null()).stdout(capture.try_clone().map_err(|e|e.to_string())?).process_group(0);
+    let mut child = command.spawn().map_err(|_|"Flatpak was not found. Install your emulator through Software first, or choose an AppImage / executable.")?;
+    let started = Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().map_err(|e|e.to_string())? {
+            if !status.success() { return Err("Could not read installed Flatpak apps. Check Flatpak, then try Reload apps.".into()); }
+            break;
+        }
+        if started.elapsed() >= timeout || capture.metadata().map_err(|e|e.to_string())?.len() > LIMIT {
+            // This unreaped child's private process group belongs to this one
+            // inventory command; no process-name matching or game termination.
+            unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL); }
+            let _ = child.wait();
+            return Err("Flatpak inventory timed out or exceeded its output limit. File-based emulators remain available; try Reload apps later.".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
     }
-    Ok(parse_flatpaks(&String::from_utf8_lossy(&output.stdout)))
+    capture.rewind().map_err(|e|e.to_string())?;
+    let mut bytes = Vec::new();
+    capture.take(LIMIT + 1).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
+    if bytes.len() as u64 > LIMIT {return Err("Flatpak inventory exceeded its output limit.".into());}
+    String::from_utf8(bytes).map_err(|_|"Flatpak returned invalid text.".into())
+}
+
+/// Recognize same-architecture standalone Linux executables without requiring a
+/// brand name or suffix. Libraries and foreign-console ELF files are excluded.
+pub(crate) fn native_binary(path: &Path) -> bool {
+    use std::{io::{Seek, SeekFrom}, os::unix::fs::OpenOptionsExt};
+    if !executable_file(path) { return false; }
+    let Ok(mut file) = fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK|libc::O_NOCTTY).open(path) else {return false};
+    if !file.metadata().is_ok_and(|m|m.is_file()) {return false;}
+    let mut header=[0;64]; if file.read_exact(&mut header).is_err() {return false;}
+    let machine = match std::env::consts::ARCH {"x86_64"=>62,"x86"=>3,"aarch64"=>183,"arm"=>40,"riscv64"=>243,_=>return false};
+    let class = if cfg!(target_pointer_width="64") {2} else {1};
+    if &header[..4]!=b"\x7fELF" || header[4]!=class || header[5]!=1 || header[6]!=1 || !matches!(header[7],0|3)
+        || u16::from_le_bytes([header[18],header[19]])!=machine {return false;}
+    match u16::from_le_bytes([header[16],header[17]]) {
+        2=>true, // static/native ET_EXEC
+        3=>{ // PIE executables need PT_INTERP; an arbitrary .so is not an emulator.
+            let (offset,size,count)=if class==2 {(u64::from_le_bytes(header[32..40].try_into().unwrap()),u16::from_le_bytes([header[54],header[55]]),u16::from_le_bytes([header[56],header[57]]))}
+                else {(u32::from_le_bytes(header[28..32].try_into().unwrap()) as u64,u16::from_le_bytes([header[42],header[43]]),u16::from_le_bytes([header[44],header[45]]))};
+            if offset>4*1024*1024 || !(4..=256).contains(&size) || count>128 {return false;}
+            for index in 0..count {let mut kind=[0;4];if file.seek(SeekFrom::Start(offset+index as u64*size as u64)).is_err() || file.read_exact(&mut kind).is_err(){return false;}if u32::from_le_bytes(kind)==3{return true;}}
+            false
+        },
+        _=>false,
+    }
 }
 fn installed(profile: &EmulatorProfile) -> Result<(), String> {
     if list_flatpaks()?.iter().any(|app| {
@@ -514,5 +567,30 @@ mod tests {
     fn legacy_profile_stays_executable() {
         let profile:EmulatorProfile=serde_json::from_str(r#"{"emulatorName":"Old emulator","emulatorPath":"/usr/bin/emu","launchArgs":["{game}"]}"#).unwrap();
         assert!(profile.launcher == Launcher::Executable);
+    }
+}
+
+#[cfg(test)]
+mod inventory_regressions {
+    use super::*;
+    #[test]
+    fn flatpak_inventory_timeout_and_output_are_bounded() {
+        let mut sleeping=Command::new("/bin/sh");sleeping.args(["-c","exec /bin/sleep 30"]);
+        let start=std::time::Instant::now();
+        assert!(bounded_inventory(sleeping,std::time::Duration::from_millis(100)).unwrap_err().contains("timed out"));
+        assert!(start.elapsed()<std::time::Duration::from_secs(3));
+        let mut excessive=Command::new("/usr/bin/head");excessive.args(["-c","1048577","/dev/zero"]);
+        assert!(bounded_inventory(excessive,std::time::Duration::from_secs(3)).unwrap_err().contains("output limit"));
+        let mut valid=Command::new("/bin/sh");valid.args(["-c","printf 'org.test.Emulator\\tTest emulator\\tuser\\n'"]);
+        let text=bounded_inventory(valid,std::time::Duration::from_secs(3)).unwrap();assert_eq!(parse_flatpaks(&text).len(),1);
+    }
+    #[test]
+    fn standalone_detection_rejects_data_libraries_and_foreign_binaries() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp=tempfile::tempdir().unwrap();let path=temp.path().join("CustomCore");fs::copy("/bin/true",&path).unwrap();
+        fs::set_permissions(&path,fs::Permissions::from_mode(0o700)).unwrap();assert!(native_binary(&path));
+        let bytes=fs::read(&path).unwrap();let mut foreign=bytes.clone();foreign[18..20].copy_from_slice(&0xffffu16.to_le_bytes());fs::write(&path,foreign).unwrap();assert!(!native_binary(&path));
+        fs::write(&path,b"not a Linux executable").unwrap();assert!(!native_binary(&path));
+        fs::write(&path,bytes).unwrap();fs::set_permissions(&path,fs::Permissions::from_mode(0o600)).unwrap();assert!(!native_binary(&path));
     }
 }

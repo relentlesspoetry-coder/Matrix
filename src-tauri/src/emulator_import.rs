@@ -13,6 +13,7 @@ pub(crate) struct Imported {
     pub path: String,
     pub moved: bool,
     pub message: String,
+    pub profiles: BTreeMap<String, EmulatorProfile>,
 }
 fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
     a.dev() == b.dev()
@@ -24,7 +25,11 @@ fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
 fn private_directory(path: &Path) -> Result<(), String> {
     fs::create_dir_all(path).map_err(|e| e.to_string())?;
     let m = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
-    if !m.is_dir() || m.file_type().is_symlink() || m.uid() != unsafe { libc::geteuid() } || m.mode() & 0o002 != 0 {
+    if !m.is_dir()
+        || m.file_type().is_symlink()
+        || m.uid() != unsafe { libc::geteuid() }
+        || m.mode() & 0o002 != 0
+    {
         return Err("Emulator destination must be a real folder owned by your account and not writable by everyone.".into());
     }
     Ok(())
@@ -90,6 +95,8 @@ pub(crate) fn import(
     }
     // Check identity before making changes (for example, reject PCSX2 in Switch 2).
     discovery::profile_for_file(id, &source)?;
+    let config = config_file()?;
+    settings::load(&config)?;
     let root = matrix_root()?;
     private_directory(&root)?;
     let destination_dir = root.join(s.dir);
@@ -134,43 +141,79 @@ pub(crate) fn import(
             .map_err(|e| e.to_string())?;
         let mut profile = emulators::prepare(discovery::profile_for_file(id, &destination)?, true)?;
         profile_saves::commit(request, id, || {
-            update_settings(|settings| {
-                if let Some(old) = settings.profiles.get(id) {
-                    let same_engine = discovery::identity(old, id)
-                        .is_some_and(|engine| Some(engine) == discovery::identity(&profile, id));
-                    if old.emulator_path == profile.emulator_path
-                        || (old.launcher != emulators::Launcher::Flatpak && same_engine)
-                    {
-                        profile.launch_args = old.launch_args.clone();
-                        profile.extract_appimage = profile.launcher
-                            == emulators::Launcher::Appimage
-                            && old.extract_appimage;
+            settings::update_committed(
+                &config_file()?,
+                |settings| {
+                    if let Some(old) = settings.profiles.get(id) {
+                        let same_engine = discovery::identity(old, id).is_some_and(|engine| {
+                            Some(engine) == discovery::identity(&profile, id)
+                        });
+                        if old.emulator_path == profile.emulator_path
+                            || (old.launcher != emulators::Launcher::Flatpak && same_engine)
+                        {
+                            profile.launch_args = old.launch_args.clone();
+                            profile.extract_appimage = profile.launcher
+                                == emulators::Launcher::Appimage
+                                && old.extract_appimage;
+                        }
                     }
-                }
-                immersive::validate_profile_paths(&profile, id)?;
-                settings.profiles.insert(id.into(), profile);
-                // Adding a console makes it visible even if previously hidden manually.
-                settings.library_preferences.hidden.retain(|v| v != id);
-                Ok(())
-            })
+                    immersive::validate_profile_paths(&profile, id)?;
+                    let mut changed = BTreeMap::new();
+                    // Shared engines (Dolphin, mGBA, Mednafen) can be referenced by
+                    // several manual profiles. Retarget aliases without resetting
+                    // per-console configuration, launch arguments or auto-link status.
+                    for (other_id, other) in &mut settings.profiles {
+                        if other_id != id
+                            && other.launcher != emulators::Launcher::Flatpak
+                            && (other.emulator_path == actionable_path(&source)?
+                                || Path::new(&other.emulator_path)
+                                    .canonicalize()
+                                    .is_ok_and(|p| p == source))
+                        {
+                            other.emulator_path = profile.emulator_path.clone();
+                            other.launcher = profile.launcher.clone();
+                            immersive::validate_profile_paths(other, other_id)?;
+                            changed.insert(other_id.clone(), other.clone());
+                        }
+                    }
+                    changed.insert(id.into(), profile.clone());
+                    settings.profiles.insert(id.into(), profile);
+                    // Adding a console makes it visible even if previously hidden manually.
+                    settings.library_preferences.hidden.retain(|v| v != id);
+                    Ok(changed)
+                },
+                || {
+                    already
+                        || (fs::symlink_metadata(&source).is_ok_and(|now| same_file(&before, &now))
+                            && fs::remove_file(&source).is_ok())
+                },
+            )
         })
     })();
-    if let Err(error) = saved {
-        if temporary.is_some() {
-            let _ = fs::remove_file(&destination);
+    let (profiles, moved) = match saved {
+        Ok(value) => value,
+        Err(error) => {
+            if temporary.is_some() {
+                // A settings sync error can occur after rename, or another
+                // window can already reference this published copy. Never
+                // delete a referenced destination during rollback.
+                let _ = settings::update(&config, |current| {
+                    if !current.profiles.values().any(|p| Path::new(&p.emulator_path) == destination) {
+                        let _ = fs::remove_file(&destination);
+                    }
+                    Ok(())
+                });
+            }
+            return Err(error);
         }
-        return Err(error);
-    }
-    let moved = already
-        || (fs::symlink_metadata(&source).is_ok_and(|now| same_file(&before, &now))
-            && fs::remove_file(&source).is_ok());
+    };
     // Best effort directory durability after unlink. The destination is already synced.
     if !already {
         if let Some(parent) = source.parent() {
             let _ = fs::File::open(parent).and_then(|d| d.sync_all());
         }
     }
-    Ok(Imported{path:actionable_path(&destination)?,moved,message:if moved{"Emulator added and configured."}else{"Emulator added and configured. The original could not be removed and was kept in its original location."}.into()})
+    Ok(Imported{path:actionable_path(&destination)?,moved,profiles,message:if moved{"Emulator added and configured."}else{"Emulator added and configured. The original could not be removed and was kept in its original location."}.into()})
 }
 
 #[cfg(test)]

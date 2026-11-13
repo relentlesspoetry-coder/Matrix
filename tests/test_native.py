@@ -1025,6 +1025,32 @@ def main():
             assert set(invoke('bootstrap')['favorites'].get('ps1', [])) == ps1_favorite_baseline
             assert legacy in json.loads((home/'config/matrix/frontend.json').read_text())['windows']
             assert exe.read_text() == 'Synthetic registration fixture.'
+            # File import must complete without waiting for inventory, even if
+            # Flatpak is unresponsive. Shared profiles update in the live UI.
+            shared=home/'Dolphin-shared.sh';shared.write_text(launcher);shared.chmod(0o700)
+            wii_args=['--user',str(home/'Wii settings'),'-b','-e','{game}']
+            for console_id,argv in [('gamecube',['-b','-e','{game}']),('wii',wii_args)]:
+                invoke('save_emulator',{'id':console_id,'emulatorName':'Shared Dolphin fixture','emulatorPath':str(shared),'launcher':'executable','launchArgs':argv})
+            standalone=library/'PS5/StandaloneCore';shutil.copyfile('/bin/true',standalone);standalone.chmod(0o700)
+            flatpak.write_text('#!/bin/sh\nif [ "$1" = "list" ]; then exec /bin/sleep 60; fi\nexit 0\n')
+            try:
+                js('openEmulatorImport(false,"gamecube");document.querySelector("#import-path").value=arguments[0]',str(shared))
+                click('[data-action="import-emulator-save"]')
+                wait_for(lambda: js('return document.querySelector("#import-status")?.textContent.includes("configured")'),timeout=5)
+                assert not shared.exists()
+                expected=library/'GameCube/Dolphin-shared.sh'
+                assert js('return state.configs.gamecube.emulatorPath === arguments[0] && state.configs.wii.emulatorPath === arguments[0]',str(expected))
+                assert js('return state.configs.wii.launchArgs') == wii_args
+                assert not js('return document.querySelector("[data-action=import-emulator-save]").disabled')
+                click('.emulator-import-dialog [data-action="close"]')
+                assert js('return state.overlay') is None
+                started=time.monotonic();fresh=invoke('bootstrap')
+                assert time.monotonic()-started < 18, 'Flatpak inventory must be bounded'
+                assert fresh['readyProfiles']['gamecube'] and fresh['readyProfiles']['wii']
+                assert any(c['profile']['emulatorPath']==str(standalone) for c in fresh['emulatorDiscovery']['candidates'])
+            finally:
+                flatpak.write_text(healthy_flatpak)
+            print('PASS: native shared-profile relocation, immediate import completion under stalled inventory, bounded Flatpak timeout and standalone ELF discovery')
             print('PASS: scoped sidecar-save Flatpak argv and console-only IPC (synthetic fixtures)')
             print('PASS: automatic Flatpak/AppImage linking, canonical duplicate removal, execute-permission preservation, Open emulator and captured startup errors')
             print('PASS: native favorites survive process restart and webview reload, remain console-scoped, and preserve profiles; Flatpak discovery/setup/launch argv use harmless fixtures')

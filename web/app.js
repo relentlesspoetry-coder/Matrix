@@ -1,4 +1,4 @@
-/* Matrix-Play v0.6.14 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.15 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -681,8 +681,14 @@ async function saveEmulatorImport(button){
  $('#import-error').textContent='';$('#import-status').textContent='Adding emulator…';
  try{
   const result=await nativeInvoke('import_emulator',{id,path});
-  const request=(emulatorSaveRequests.get(id)||0)+1;emulatorSaveRequests.set(id,request);emulatorSavedRequests.set(id,request);
-  await bootstrapNative();await refreshNative();
+  // This response describes the durable move and all retargeted shared profiles.
+  // Do not make completion depend on a later filesystem/Flatpak inventory.
+  for(const [consoleId,profile] of Object.entries(result.profiles)){
+   const request=(emulatorSaveRequests.get(consoleId)||0)+1;emulatorSaveRequests.set(consoleId,request);emulatorSavedRequests.set(consoleId,request);
+   state.configs[consoleId]=profile;state.readyProfiles[consoleId]=true;
+  }
+  libraryPrefs().hidden=(libraryPrefs().hidden||[]).filter(consoleId=>consoleId!==id);
+  render();
   if(owner===$('.emulator-import-dialog')){$('#import-path').value='';$('#import-status').textContent=result.message;updateEmulatorDestination();}
   else toast(result.message);
  }catch(e){if(owner===$('.emulator-import-dialog'))$('#import-error').textContent=String(e);else toast(String(e));}
@@ -691,7 +697,7 @@ async function saveEmulatorImport(button){
 async function finishEmulatorSetup(button){
  if(emulatorImportBusy)return;button.disabled=true;
  const owner=$('.emulator-import-dialog');
- try{const hidden=await saveLibraryPref('hideUnconfigured','',true);if(!hidden)return;const done=await saveLibraryPref('setupCompleted','',true);if(!done)return;state.needsEmulatorSetup=false;if(owner===$('.emulator-import-dialog'))dismissOverlay();render();}
+ try{const hidden=libraryPrefs().hideUnconfigured==null?await saveLibraryPref('hideUnconfigured','',true):true;if(!hidden)return;const done=await saveLibraryPref('setupCompleted','',true);if(!done)return;state.needsEmulatorSetup=false;if(owner===$('.emulator-import-dialog'))dismissOverlay();render();}
  finally{button.disabled=false;}
 }
 async function refreshManagedAndGames(){

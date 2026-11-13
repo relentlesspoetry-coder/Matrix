@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.15
+
+- Retarget every console profile referencing a moved emulator in one settings transaction. Preserve per-console launch/configuration options, finalize source removal while holding the settings lock, and reject saves that refer to a file moved during validation.
+- Complete Add emulator directly from its committed result, including all shared profile updates. Clear the old source selection and unlock the dialog without waiting for another inventory. Bound Flatpak inventory to ten seconds and 1 MB of output.
+- Migrate onboarding once and preserve explicit console visibility choices, including Show all chosen before finishing setup.
+- Discover standalone native Linux executables in managed console folders without requiring a recognized name or extension. Check native ELF architecture and executable type; exclude ordinary shared libraries and foreign binaries.
+- Add regression coverage for shared Dolphin moves, retained launch arguments, post-import refresh failures/stalls, visibility persistence, standalone executables and inventory time/output limits, plus native WebKit import/discovery checks.
+
 ## 0.6.14
 
 - Add first-launch emulator setup and Add emulator buttons on the console menu and in Settings. Choose a console and a portable Linux emulator; Matrix Play moves it into that console's managed folder, allows a valid AppImage to run, and saves the matching launcher profile without executing it.

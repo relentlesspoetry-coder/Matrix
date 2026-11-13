@@ -41,6 +41,16 @@ pub(super) fn update<T>(
     path: &Path,
     change: impl FnOnce(&mut Settings) -> Result<T, String>,
 ) -> Result<T, String> {
+    update_committed(path, change, || ()).map(|(result, ())| result)
+}
+
+/// Run a small filesystem finalization only after durable settings publication,
+/// retaining the same cross-process lock through that finalization.
+pub(super) fn update_committed<T, U>(
+    path: &Path,
+    change: impl FnOnce(&mut Settings) -> Result<T, String>,
+    committed: impl FnOnce() -> U,
+) -> Result<(T, U), String> {
     let parent = path.parent().ok_or("Invalid configuration directory")?;
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     // Leave this sidecar in place. Removing it could let another process lock a
@@ -55,7 +65,7 @@ pub(super) fn update<T>(
     let result = change(&mut settings)?;
     let bytes = serde_json::to_vec_pretty(&settings).map_err(|e| e.to_string())?;
     if bytes == before {
-        return Ok(result);
+        return Ok((result, committed()));
     }
     // A unique create_new temporary also prevents crash leftovers and concurrent
     // instances from sharing a staging file. The rename stays on one filesystem.
@@ -75,7 +85,7 @@ pub(super) fn update<T>(
         .and_then(|dir| dir.sync_all())
         .map_err(|e| e.to_string())?;
     // Closing `lock` releases the OS lock even on an earlier error or panic.
-    Ok(result)
+    Ok((result, committed()))
 }
 
 #[cfg(test)]

@@ -1,5 +1,9 @@
 # Test Matrix Play on Linux
 
+## Version 0.6.15 four regression fixes
+
+The four audit reproductions now have permanent regression coverage. Local checks cover shared emulator relocation and preserved per-console arguments, explicit visibility choices across repeated discovery, same-architecture standalone ELF detection, and immediate import completion without a subsequent bootstrap. Fault injection covers a committed move followed by an unrelated folder-access failure; inventory tests bound a nonresponsive command and excessive output. Exact-version native CI repeats these checks through real IPC/WebKit, including responsive import while Flatpak inventory stalls. All existing build, installer, update and controller gates remain required. Fixtures do not establish real emulator gameplay compatibility.
+
 ## Version 0.6.14 emulator onboarding
 
 Local checks exercise real safe-file imports in a disposable HOME: byte-preserving moves, destination collisions, symlink/invalid-file/wrong-console rejection, settings failure rollback, existing configuration retention, and new managed emulator/game discovery. Lichii/Fritchii tests assert exact fullscreen argv and preserved setup config options; they do not run real emulated games. Frontend checks cover configured-empty visibility, readiness changes, saved onboarding state, guarded pending imports, and polling opt-out/draft protection. Existing protected-account/process fixtures cannot run under this sandbox's mapped ownership; CI retains every gate. Native WebKit release tests exercise first-launch setup, actual imports, automatic discovery, status dots, visibility recovery and all existing installer/update/controller checks before publication.
@@ -644,16 +648,16 @@ checks output after the launching process exits and log-write failure using
 synthetic subprocesses. Run the normal Rust suites and desktop tests as well;
 these checks do not replace a real emulator test or privileged DEB upgrade test.
 
-This is the native testing release, version 0.6.14. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
+This is the native testing release, version 0.6.15. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04
 
-1. Open the [v0.6.14 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.6.14) — the repository and installers are public.
-2. Download `Matrix-Play_0.6.14_amd64.deb`.
+1. Open the [v0.6.15 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.6.15) — the repository and installers are public.
+2. Download `Matrix-Play_0.6.15_amd64.deb`.
 3. Open a terminal in the download folder and run:
 
    ```bash
-   sudo apt install ./Matrix-Play_0.6.14_amd64.deb
+   sudo apt install ./Matrix-Play_0.6.15_amd64.deb
    ```
 
 4. Open **Matrix Play** from the application menu. You can also run `matrix-frontend` in a terminal to capture diagnostics.
@@ -662,24 +666,24 @@ APT installs the GTK/WebKit runtime dependencies if needed. Rust, Node, the sour
 
 ## Portable AppImage alternative
 
-Download `Matrix-Play_0.6.14_amd64.AppImage` from the same release. In its download folder run:
+Download `Matrix-Play_0.6.15_amd64.AppImage` from the same release. In its download folder run:
 
 ```bash
-chmod +x Matrix-Play_0.6.14_amd64.AppImage
-./Matrix-Play_0.6.14_amd64.AppImage
+chmod +x Matrix-Play_0.6.15_amd64.AppImage
+./Matrix-Play_0.6.15_amd64.AppImage
 ```
 
 If FUSE is unavailable, run it in extraction mode:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.6.14_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.6.15_amd64.AppImage
 ```
 
 The AppImage's actual native window, IPC, scanning, local covers, settings and launcher dispatch passed the same isolated desktop test in extraction mode. Other Linux distributions and native FUSE mounting have not been validated. The DEB is recommended on Zorin/Ubuntu.
 
 ## Upgrade from the blank-window build
 
-Close Matrix Play, then install the v0.6.14 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
+Close Matrix Play, then install the v0.6.15 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
 
 If a new startup problem occurs, attach `~/.local/share/matrix/startup.log` to the issue. This contains bounded startup stages and renderer/load errors, not game data. In this incident, graphics workarounds did not resolve the problem; a fresh cache directory did, which the affected user confirmed. The specific problematic shared cache file was not identified or deleted.
 

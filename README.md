@@ -13,14 +13,14 @@ Download the **DEB** or **AppImage** from [Releases](https://github.com/relentle
 For Zorin or Ubuntu, install the DEB from your download folder:
 
 ```bash
-sudo apt install ./Matrix-Play_0.6.14_amd64.deb
+sudo apt install ./Matrix-Play_0.6.15_amd64.deb
 ```
 
 For the portable AppImage:
 
 ```bash
-chmod +x Matrix-Play_0.6.14_amd64.AppImage
-./Matrix-Play_0.6.14_amd64.AppImage
+chmod +x Matrix-Play_0.6.15_amd64.AppImage
+./Matrix-Play_0.6.15_amd64.AppImage
 ```
 
 For future releases, open **Settings → Check for updates**.
