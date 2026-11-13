@@ -1,4 +1,4 @@
-/* Matrix-Play v0.6.18 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.19 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -258,7 +258,7 @@ function renderHome() {
   const focus=captureLibraryFocus($('#screen'),'home');
   const visible=consoleChoices();
   const selected=visible.find(c=>c.id===state.previewConsoleId)||visible.find(c=>c.id==='switch2')||visible[0];state.previewConsoleId=selected?.id;
-  $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${visible.length} ${visible.length===1?'library':'libraries'}</p></div>${state.native?'<div class="home-actions"><button type="button" class="button button-ghost" id="main-update-button" data-action="updates" aria-label="Update Matrix-Play">Check for updates</button><button type="button" class="button button-primary" data-action="add-emulator">Add emulator</button></div>':''}</div>
+  $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${visible.length} ${visible.length===1?'library':'libraries'}</p></div>${state.native?'<div class="home-actions"><button type="button" class="button button-ghost" id="main-update-button" data-action="updates" aria-label="Updates">Updates</button><button type="button" class="button button-primary" data-action="add-emulator">Add emulator</button></div>':''}</div>
     <div class="section-toolbar"><div class="segmented brand-filters" role="group" aria-label="Filter console brands">${['All','Sony','Nintendo','Sega','Xbox'].map(v=>`<button type="button" class="${state.vendor===v?'active':''}" data-action="vendor" data-value="${v}" aria-pressed="${state.vendor===v}">${v==='All'?'All systems':v==='Sony'?'PlayStation':v}</button>`).join('')}</div></div>
     <div class="library-utilities"><button type="button" class="button button-ghost" data-action="playtime-statistics">Playtime statistics</button><button type="button" class="button button-ghost" data-action="ra-dashboard">Achievements</button></div>
     ${state.recent.length?`<details class="library-notes recent-games"><summary>Recently played</summary><div class="tag-row">${state.recent.slice(0,8).map(g=>`<button class="button button-ghost" type="button" data-action="recent-game" data-id="${escapeHtml(g.kind)}" data-uid="${escapeHtml(g.uid)}">${escapeHtml(g.title)}</button>`).join('')}</div></details>`:''}
@@ -1051,11 +1051,33 @@ async function fetchArtwork(kind,uid,serial=null,generation=state.coverGeneratio
 function renderCoverQueue() {
  const node=$('#cover-queue-results');if(node)node.innerHTML=state.coverQueue.items.filter(i=>i.status!=='pending').slice(-30).map(i=>`<p>${escapeHtml(byId[i.kind]?.name||i.kind)} · ${escapeHtml(i.title)} — ${escapeHtml(i.status)}${i.error?': '+escapeHtml(i.error):''}</p>`).join('');
 }
-let artworkScans=0,artworkResumePending=false;
-async function scanArtwork(resume=false) {
- if(!state.native||!state.artwork.enabled||state.coverQueue.paused||gamingPaused())return;
- const generation=++state.coverGeneration;artworkScans++;
- try{
+let artworkTask=null,artworkRescanPending=false,artworkResumePending=false;
+function scanArtwork(resume=false) {
+ if(!state.native||!state.artwork.enabled)return Promise.resolve();
+ if(resume)artworkResumePending=true;
+ else {artworkRescanPending=true;++state.coverGeneration;}
+ // Keep deferred work while paused. Every caller shares one worker, including
+ // a fresh scan requested while the previous download is still finishing.
+ if(artworkTask)return artworkTask;
+ if(state.coverQueue.paused||gamingPaused())return Promise.resolve();
+ let resolveTask,rejectTask;
+ const task=new Promise((resolve,reject)=>{resolveTask=resolve;rejectTask=reject;});
+ artworkTask=task;
+ const drain=async()=>{
+  try{
+   while(artworkRescanPending||artworkResumePending){
+    if(!state.artwork.enabled||state.coverQueue.paused||gamingPaused())return;
+    const rebuild=artworkRescanPending;
+    artworkRescanPending=false;artworkResumePending=false;
+    await runArtworkScan(!rebuild);
+   }
+  }finally{artworkTask=null;}
+ };
+ void drain().then(resolveTask,rejectTask);
+ return task;
+}
+async function runArtworkScan(resume) {
+ const generation=++state.coverGeneration;
  const kinds=state.steamgridEnabled?consoles.map(c=>c.id):AUTO_COVER_KINDS.filter(k=>!TITLE_COVER_KINDS.includes(k)||state.artwork.titleEnabled);
  const items=resume&&state.coverQueue.items.length?state.coverQueue.items:kinds.flatMap(kind=>(state.imported[kind]||[]).filter(g=>!g.offline).map(g=>({kind,uid:g.uid,title:g.title||g.uid,status:'pending'})));
  state.coverQueue.items=items;renderCoverQueue();let complete=0;
@@ -1069,7 +1091,6 @@ async function scanArtwork(resume=false) {
    if(state.steamgridEnabled&&/API key was rejected|rate limit|cooling down|Cannot reach SteamGridDB/i.test(String(error))){state.coverQueue.paused=true;renderCoverQueue();const p=$('#cover-scan-status');if(p)p.textContent='Scan paused: '+String(error);return;}}
   complete++;renderCoverQueue();const p=$('#cover-scan-status');if(p)p.textContent=`Artwork scan: ${complete} / ${items.length} checked`;
  }
- }finally{artworkScans--;if(!artworkScans&&artworkResumePending){artworkResumePending=false;if(!gamingPaused()&&!state.coverQueue.paused)void scanArtwork(true);}}
 }
 async function saveArtworkOptions() {
   if (!state.native || state.artworkSaving) return;
@@ -1211,7 +1232,7 @@ function syncUpdateNotice(info){
 }
 function renderUpdateNotice(){
   const info=state.updateNotice,host=$('#update-notice-root'),button=$('#main-update-button');
-  if(button){button.textContent=info?'Update available':'Check for updates';button.classList.toggle('update-ready',Boolean(info));}
+  if(button){button.textContent='Updates';button.classList.toggle('update-ready',Boolean(info));}
   if(!host)return;
   const show=Boolean(info?.latestVersion)&&Date.now()>=updateNoticeSnoozedUntil&&state.overlay!=='updates';
   host.hidden=!show;
@@ -1394,7 +1415,7 @@ async function handleAction(button) {
     if (!state.native) {toast('Open thecoverproject.net in your browser.');return;}
     try {await nativeInvoke('open_cover_project');} catch(error) {toast(String(error));}
   }
-  else if (action === 'queue-pause') {state.coverQueue.paused=true;++state.coverGeneration;renderCoverQueue();toast('Cover queue paused.');}
+  else if (action === 'queue-pause') {state.coverQueue.paused=true;renderCoverQueue();toast('Cover queue paused.');}
   else if (action === 'queue-resume') {state.coverQueue.paused=false;void scanArtwork(true);}
   else if (action === 'recent-game') {if(byId[id]){goConsole(id);if(state.native)await launchConsole(id,uid);}}
   else if (action === 'backup-library' || action === 'restore-library') {
@@ -1745,7 +1766,7 @@ function applyGamingState(info){
  if(previous!==gamingPaused()&&window.Event&&window.dispatchEvent)window.dispatchEvent(new window.Event('matrix-gaming-state'));
  if(previous&&!gamingPaused()){
    void pollPlaytime();void refreshManagedAndGames();
-   if(!state.coverQueue.paused&&state.coverQueue.items.some(i=>['pending','downloading','failed'].includes(i.status))){if(artworkScans)artworkResumePending=true;else void scanArtwork(true);}
+   if(!state.coverQueue.paused&&(artworkRescanPending||artworkResumePending||state.coverQueue.items.some(i=>['pending','downloading','failed'].includes(i.status))))void scanArtwork(true);
    if(updateChecksStarted)void checkForUpdateNotice().finally(armUpdateCheck);
    if(state.overlay==='ra-dashboard'&&state.ra?.connected&&!state.ra.page&&!state.ra.gameOpen)void loadRAProgress(state.ra.offset||0);
  }
@@ -1782,22 +1803,38 @@ async function loadStatistics(){
  try{const data=state.native?await nativeInvoke('playtime_statistics'):{totals:state.playtime,daily:{}};if(request!==statisticsRequest||owner!==$('#statistics-content')||state.overlay!=='statistics')return;
    const s=activitySummary(data),maximum=Math.max(1,...s.days.map(d=>d.millis));
    owner.innerHTML=`<div class="stat-summary"><div><span>Total</span><strong>${durationText(s.total)}</strong></div><div><span>Last 7 days</span><strong>${durationText(s.week)}</strong></div></div><h3>Daily activity</h3><div class="activity-days">${s.days.map(d=>`<div><span>${d.day}</span><div class="activity-track" aria-hidden="true"><i style="width:${Math.min(100,d.millis/maximum*100)}%"></i></div><strong>${durationText(d.millis)}</strong></div>`).join('')}</div><h3>By console</h3><div class="statistics-list">${s.consoles.map(([id,ms])=>`<p><span>${escapeHtml(byId[id].name)}</span><strong>${durationText(ms)}</strong></p>`).join('')||'<p>No recorded playtime yet.</p>'}</div><h3>Most played</h3><div class="statistics-list">${s.ranked.map(g=>`<p><span>${escapeHtml(g.title)}<small>${escapeHtml(byId[g.id].name)}</small></span><strong>${durationText(g.millis)}</strong></p>`).join('')||'<p>Launch a game through Matrix Play to start tracking.</p>'}</div>`;
- }catch(e){if(owner===$('#statistics-content'))owner.textContent='Cannot load statistics: '+e;}
+ }catch(e){if(request===statisticsRequest&&owner===$('#statistics-content')&&state.overlay==='statistics')owner.textContent='Cannot load statistics: '+e;}
 }
 let raGeneration=0,raRequest=0;
 async function openRADashboard(){
  const generation=++raGeneration;state.lastFocus=document.activeElement;state.overlay='ra-dashboard';state.ra={connected:false,username:'',offset:0,page:null,gameOpen:false};
  $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog achievements-dialog" role="dialog" aria-modal="true" aria-labelledby="ra-title"><button class="close" data-action="close" aria-label="Close achievements">${glyph('close')}</button><h2 id="ra-title">RetroAchievements</h2><p>View your account’s game and achievement progress. Supported emulators handle unlocking and account login separately.</p><details class="ra-account" open><summary>Account connection</summary><label class="field">Username<input id="ra-username" maxlength="64" autocomplete="username"></label><label class="field">Web API key<input id="ra-key" type="password" autocomplete="new-password" placeholder="Paste your Web API key"></label><p>Credentials stay in private local settings and are excluded from backups. Requests send your username and Web API key to RetroAchievements; game files and local paths are not uploaded.</p><div class="tag-row"><button class="button button-primary" data-action="ra-connect" ${state.native?'':'disabled'}>Save connection</button><button class="button button-ghost" data-action="ra-disconnect" ${state.native?'':'disabled'}>Disconnect</button><button class="button button-ghost" data-action="ra-key-page" ${state.native?'':'disabled'}>Get Web API key</button></div></details><p id="ra-message" role="status">${state.native?'Loading account…':'Connect accounts in the native Linux app.'}</p><div class="ra-tools"><button class="button button-ghost" data-action="ra-refresh" data-gaming-network ${gamingPaused()?'disabled':''}>Refresh progress</button></div><div id="ra-content"></div></section></div>`;
  $('.achievements-dialog .close').focus();if(!state.native)return;
- const owner=$('.achievements-dialog'),controls=[...owner.querySelectorAll('.ra-account input,.ra-account button')];for(const control of controls)control.disabled=true;try{const status=await nativeInvoke('ra_status');if(generation!==raGeneration||owner!==$('.achievements-dialog'))return;applyRAStatus(status);for(const control of controls)control.disabled=false;if(status.connected)await loadRAProgress(0);else $('#ra-message').textContent='Add your username and Web API key to connect.';}catch(e){if(owner===$('.achievements-dialog'))$('#ra-message').textContent=String(e);}finally{for(const control of controls)control.disabled=false;}
+ const owner=$('.achievements-dialog'),controls=[...owner.querySelectorAll('.ra-account input,.ra-account button')];
+ let connected=false;
+ for(const control of controls)control.disabled=true;
+ try{
+  const status=await nativeInvoke('ra_status');
+  if(generation!==raGeneration||owner!==$('.achievements-dialog'))return;
+  applyRAStatus(status);connected=status.connected;
+  if(!connected)$('#ra-message').textContent='Add your username and Web API key to connect.';
+ }catch(e){if(generation===raGeneration&&owner===$('.achievements-dialog'))$('#ra-message').textContent=String(e);}
+ finally{
+  if(generation===raGeneration&&owner===$('.achievements-dialog'))for(const control of controls)control.disabled=false;
+ }
+ // Account initialization no longer owns these controls once progress loads.
+ // A later Save must keep ownership until its own settings transaction ends.
+ if(connected&&generation===raGeneration&&owner===$('.achievements-dialog'))await loadRAProgress(0);
 }
 function applyRAStatus(status){Object.assign(state.ra,{connected:status.connected,username:status.username,page:null});$('#ra-username').value=status.username||'';$('#ra-key').value='';$('#ra-key').placeholder=status.connected?'Saved key · leave blank to keep it':'Paste your Web API key';$('.ra-account').open=!status.connected;}
 async function saveRAConnection(disconnect=false){
  const owner=$('.achievements-dialog');if(!owner||owner.dataset.saving==='true')return;
  const generation=++raGeneration;++raRequest;owner.dataset.saving='true';const controls=[...owner.querySelectorAll('.ra-account input,.ra-account button')];for(const c of controls)c.disabled=true;
+ let refresh=false;
  try{const status=await nativeInvoke('ra_save_account',{username:disconnect?'':$('#ra-username').value,key:disconnect?'':$('#ra-key').value});if(owner!==$('.achievements-dialog')||generation!==raGeneration)return;
-   applyRAStatus(status);state.ra.gameOpen=false;$('#ra-content').innerHTML='';$('#ra-message').textContent=status.connected?'Account saved.':'Disconnected.';if(status.connected)await loadRAProgress(0);
+   applyRAStatus(status);refresh=status.connected;state.ra.gameOpen=false;$('#ra-content').innerHTML='';$('#ra-message').textContent=status.connected?'Account saved.':'Disconnected.';
  }catch(e){if(owner===$('.achievements-dialog')&&generation===raGeneration)$('#ra-message').textContent=String(e);}finally{owner.dataset.saving='false';for(const c of controls)c.disabled=false;}
+ if(refresh&&owner===$('.achievements-dialog')&&generation===raGeneration)await loadRAProgress(0);
 }
 async function loadRAProgress(offset=0){
  const owner=$('#ra-content');if(!owner||!state.ra?.connected)return;

@@ -12,7 +12,7 @@ def exercise(invoke, js, click, wait_for, screenshot):
     try:
         wait_for(lambda: js('return !document.querySelector("#update-notice-root").hidden'))
         assert js('return state.overlay===null')
-        assert js('return document.querySelector("#main-update-button").textContent')=='Update available'
+        assert js('return document.querySelector("#main-update-button").textContent')=='Updates'
         assert js('return document.documentElement.scrollWidth<=window.innerWidth')
         screenshot('matrix-native-update-notice.png')
         click('#update-notice-root [data-action="updates"]')

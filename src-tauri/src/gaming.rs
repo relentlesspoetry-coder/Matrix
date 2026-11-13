@@ -41,6 +41,35 @@ fn flatpak_name(id: &str) -> Option<String> {
     }
     discovery::flatpak_engine(id).map(str::to_owned)
 }
+// Dedicated room servers can outlive every game. Identify their mode before
+// executable, Flatpak, inode or AppImage matching can classify them as gaming.
+fn room_server(exe: &Path, args: &[String], flatpak: &str) -> bool {
+    const AZAHAR: &str = "org.azahar_emu.Azahar";
+    let name = exe.file_name().and_then(|v| v.to_str()).unwrap_or("");
+    let lower = name.to_ascii_lowercase();
+    if lower.strip_prefix("azahar-room").is_some_and(|rest| {
+        rest.is_empty() || rest.starts_with(['-', '_', '.', ' '])
+    }) {
+        return true;
+    }
+    let arguments = if name == "flatpak" {
+        let Some(index) = args.iter().position(|a| a == AZAHAR) else {
+            return false;
+        };
+        if args[..index].iter().any(|a| a == "--command=azahar-room")
+            || args[..index].windows(2).any(|a| a[0] == "--command" && a[1] == "azahar-room")
+        {
+            return true;
+        }
+        &args[index + 1..]
+    } else if discovery::process_engine(name) == Some("Azahar") || flatpak == AZAHAR {
+        args.get(1..).unwrap_or_default()
+    } else {
+        return false;
+    };
+    arguments.iter().take_while(|a| a.as_str() != "--")
+        .any(|a| a == "--room" || a.starts_with("--room="))
+}
 fn image_match(
     exe: &Path,
     image: &str,
@@ -71,6 +100,9 @@ fn process_match(
     profiles: &BTreeMap<String, EmulatorProfile>,
     native_files: &BTreeMap<String, (u64, u64)>,
 ) -> Option<String> {
+    if room_server(exe, args, flatpak) {
+        return None;
+    }
     if let Some(name) = recognized(exe) {
         return Some(name);
     }
@@ -165,6 +197,9 @@ pub(crate) fn scan(profiles: &BTreeMap<String, EmulatorProfile>) -> Result<Info,
             .find_map(|v| v.strip_prefix(b"FLATPAK_ID="))
             .and_then(|b| std::str::from_utf8(b).ok())
             .unwrap_or("");
+        if room_server(&exe, &args, flatpak) {
+            continue;
+        }
         let variable = |key: &[u8]| {
             env.split(|b| *b == 0)
                 .find_map(|v| v.strip_prefix(key))
@@ -234,6 +269,35 @@ pub(crate) fn active() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dedicated_room_servers_do_not_pause_the_launcher() {
+        let mut profiles = BTreeMap::from([("3ds".into(), EmulatorProfile {
+            emulator_path: "/usr/bin/azahar".into(),
+            ..Default::default()
+        })]);
+        for (exe, arguments, flatpak, gaming) in [
+            ("/usr/bin/azahar-room", vec!["azahar-room"], "", false),
+            ("/usr/bin/azahar", vec!["azahar", "--room"], "", false),
+            ("/usr/bin/azahar", vec!["azahar", "--room=name"], "", false),
+            ("/usr/bin/flatpak", vec!["flatpak", "run", "--", "org.azahar_emu.Azahar", "--room"], "", false),
+            ("/usr/bin/flatpak", vec!["flatpak", "run", "--command=azahar-room", "org.azahar_emu.Azahar"], "", false),
+            ("/usr/bin/flatpak", vec!["flatpak", "run", "org.azahar_emu.Azahar", "/games/game.3ds"], "", true),
+            ("/app/bin/AppRun", vec!["AppRun", "--room"], "org.azahar_emu.Azahar", false),
+            ("/usr/bin/azahar", vec!["azahar", "/games/game.3ds"], "", true),
+            ("/usr/bin/azahar", vec!["azahar", "--", "--room"], "", true),
+            ("/app/bin/AppRun", vec!["AppRun", "/games/game.3ds"], "org.azahar_emu.Azahar", true),
+            ("/usr/bin/pcsx2-qt", vec!["pcsx2-qt", "--room"], "", true),
+        ] {
+            profiles.get_mut("3ds").unwrap().launcher = if exe.ends_with("/flatpak") {
+                emulators::Launcher::Flatpak
+            } else {
+                emulators::Launcher::Executable
+            };
+            profiles.get_mut("3ds").unwrap().flatpak_id = "org.azahar_emu.Azahar".into();
+            let args = arguments.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            assert_eq!(process_match(Path::new(exe), None, &args, flatpak, &profiles, &BTreeMap::new()).is_some(), gaming, "{exe} {args:?}");
+        }
+    }
     #[test]
     fn exact_paths_and_real_emulator_names_do_not_match_editors_or_inventory() {
         let profiles = BTreeMap::from([

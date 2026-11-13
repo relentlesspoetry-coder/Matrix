@@ -5,7 +5,9 @@ RetroAchievements web responses are injected; no account key or gameplay is used
 """
 import os
 import signal
+import shutil
 import subprocess
+import time
 
 
 def exercise(home, library, invoke, js, click, wait_for, screenshot):
@@ -85,3 +87,102 @@ def exercise(home, library, invoke, js, click, wait_for, screenshot):
         invoke('ra_save_account',{'username':'','key':''})
     assert game.read_bytes()==b'Synthetic GB game'
     print('PASS: native external-emulator detection, background pause/resume, retained playtime statistics, saved progress filters and RetroAchievements connection/dashboard (synthetic responses; no real credentials/gameplay)')
+    exercise_polish(home, invoke, js, click, wait_for, screenshot)
+
+
+def exercise_polish(home, invoke, js, click, wait_for, screenshot):
+    # A harmless native process with the dedicated-server filename must not
+    # activate gaming mode, even after the detector's two-second cache expires.
+    room = home / 'azahar-room'
+    shutil.copyfile('/bin/sleep', room)
+    room.chmod(0o700)
+    process = subprocess.Popen([str(room), '30'], start_new_session=True)
+    started = time.monotonic()
+    try:
+        wait_for(lambda: time.monotonic() - started > 3)
+        assert process.poll() is None
+        assert not invoke('gaming_status')['active']
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+    wait_for(lambda: js('return artworkTask===null'))
+    js('''
+      window.__polishInvoke=nativeInvoke;
+      window.__polishQueue=state.coverQueue;
+      window.__polishEnabled=state.artwork.enabled;
+      window.__polishCovers=[];
+      nativeInvoke=(name,args)=>name==='download_cover'&&args.uid.startsWith('polish-')
+        ?new Promise(resolve=>window.__polishCovers.push({uid:args.uid,resolve}))
+        :window.__polishInvoke(name,args);
+      state.artwork.enabled=true;
+      state.coverQueue={paused:false,items:['polish-a','polish-b'].map(uid=>({kind:'ps2',uid,title:uid,status:'pending'}))};
+      window.__polishWork=scanArtwork(true);
+      window.__polishSameWorker=Array.from({length:10},()=>scanArtwork(true)===window.__polishWork).every(Boolean);
+      void handleAction({dataset:{action:'queue-pause'}});
+      void handleAction({dataset:{action:'queue-resume'}});
+    ''')
+    try:
+        assert js('return window.__polishSameWorker')
+        assert js('return window.__polishCovers.length') == 1
+        js('window.__polishCovers[0].resolve({status:"not-found"})')
+        wait_for(lambda: js('return window.__polishCovers.length===2'))
+        assert js('return window.__polishCovers.map(c=>c.uid)') == ['polish-a', 'polish-b']
+        js('window.__polishCovers[1].resolve({status:"not-found"})')
+        wait_for(lambda: js('return artworkTask===null'))
+        assert js('return window.__polishCovers.length') == 2
+    finally:
+        js('for(const request of window.__polishCovers)request.resolve({status:"not-found"});state.coverQueue.paused=true')
+        wait_for(lambda: js('return artworkTask===null'))
+        js('nativeInvoke=window.__polishInvoke;state.coverQueue=window.__polishQueue;state.artwork.enabled=window.__polishEnabled')
+
+    js('''
+      window.__polishStats=[];
+      nativeInvoke=(name,args)=>name==='playtime_statistics'
+        ?new Promise((resolve,reject)=>window.__polishStats.push({resolve,reject}))
+        :window.__polishInvoke(name,args);
+      window.__polishOpeningDone=false;
+      void openPlaytimeStatistics().then(()=>window.__polishOpeningDone=true);
+      void loadStatistics();
+    ''')
+    try:
+        wait_for(lambda: js('return window.__polishStats.length===2'))
+        js('window.__polishStats[1].resolve({totals:{"gb|fixture":180000000},daily:{}})')
+        wait_for(lambda: js('return document.querySelector("#statistics-content").textContent.includes("50 h played")'))
+        js('window.__polishStats[0].reject(new Error("stale statistics failure"))')
+        wait_for(lambda: js('return window.__polishOpeningDone'))
+        assert '50 h played' in js('return document.querySelector("#statistics-content").textContent')
+        screenshot('matrix-native-polished-statistics.png')
+        click('.statistics-dialog .close')
+    finally:
+        js('nativeInvoke=window.__polishInvoke;dismissOverlay()')
+
+    js('''
+      window.__polishProgressCalls=0;window.__polishOpeningDone=false;
+      nativeInvoke=(name,args)=>{
+        if(name==='ra_status')return Promise.resolve({connected:true,username:'FixtureUser'});
+        if(name==='ra_progress')return ++window.__polishProgressCalls===1
+          ?new Promise((resolve,reject)=>window.__polishOldProgress=reject)
+          :Promise.resolve({total:0,games:[],cached:false,warning:''});
+        if(name==='ra_save_account')return new Promise(resolve=>window.__polishSave=resolve);
+        return window.__polishInvoke(name,args);
+      };
+      void openRADashboard().then(()=>window.__polishOpeningDone=true);
+    ''')
+    try:
+        wait_for(lambda: js('return window.__polishProgressCalls===1'))
+        js('document.querySelector(".ra-account").open=true;document.querySelector("#ra-key").value="fixture-key-never-sent"')
+        click('[data-action="ra-connect"]')
+        wait_for(lambda: js('return typeof window.__polishSave==="function"'))
+        js('window.__polishOldProgress(new Error("stale progress failure"))')
+        wait_for(lambda: js('return window.__polishOpeningDone'))
+        assert js('return document.querySelector(".achievements-dialog").dataset.saving') == 'true'
+        assert js('return [...document.querySelectorAll(".ra-account input,.ra-account button")].every(c=>c.disabled)')
+        js('window.__polishSave({connected:true,username:"FixtureUser"})')
+        wait_for(lambda: js('return document.querySelector("#ra-content").textContent.includes("0 games on your account")'))
+        assert js('return document.querySelector("#ra-key").value') == ''
+        assert js('return [...document.querySelectorAll(".ra-account input,.ra-account button")].every(c=>!c.disabled)')
+        click('.achievements-dialog .close')
+    finally:
+        js('nativeInvoke=window.__polishInvoke;dismissOverlay();delete window.__polishInvoke')
+    print('PASS: native room-helper exclusion, single cover worker through repeated Resume and Pause/Resume, stale-statistics rejection and account-save control ownership (synthetic process/network fixtures)')

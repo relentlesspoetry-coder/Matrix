@@ -62,5 +62,5 @@ test('cover queue resumes interrupted work and retries failures without repeatin
  assert.deepEqual(calls,['one']);assert.equal(f.state.coverQueue.paused,true);
  f.stubFetch(async(kind,uid)=>{calls.push(uid);return {status:'saved'};});
  f.state.coverQueue.paused=false;await f.scanArtwork(true);
- assert.deepEqual(calls,['one','one','two','three']);
+ assert.deepEqual(calls,['one','two','three']);
 });

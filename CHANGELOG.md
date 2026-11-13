@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.19
+
+- Rename the main console menu's update button to Updates. Keep the label stable when an update is available, while retaining the availability highlight and notification banner.
+- Serialize artwork scans through one worker. Coalesce repeated Resume/rescan requests, let in-flight covers finish on Pause, and retain a full rescan requested during gaming mode or a manual queue pause. Resume against the latest library without concurrent duplicate downloads.
+- Exclude Azahar dedicated room executables and room-server arguments from gaming detection before native, Flatpak or AppImage matching. Preserve detection of normal emulator launches and literal arguments following --.
+- Prevent an older achievements load from re-enabling account fields during a newer save. Keep failed-save drafts and errors, and release account controls before loading network progress.
+- Ignore stale statistics failures after a newer refresh succeeds or the dialog changes.
+- Add deterministic queue, delayed-response and account-save regressions, plus native WebKit checks for repeated Pause/Resume, stale statistics, account control ownership and a harmless dedicated-server process fixture. No real gameplay or personal account credentials are used.
+
 ## 0.6.18
 
 - Add automatic gaming mode: recognize running same-user emulators by supported executable/Flatpak identity, configured native paths and executable inodes, owned AppImage runtimes, and tracked session leases. Detect emulators opened outside Matrix Play without sending signals or changing them.
