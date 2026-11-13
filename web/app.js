@@ -1275,6 +1275,7 @@ async function openUpdater() {
   if (!state.native) { toast('App updates are available in the Linux application.'); return; }
   const opening=++updaterOpening, operationAtOpen=updateOperation, busyAtOpen=state.updateBusy;
   state.lastFocus = document.activeElement; state.overlay = 'updates';
+  if(backgroundUpdateTask&&!state.updateBusy)state.update={...state.update,phase:'checking',message:'Checking GitHub…'};
   renderUpdateNotice();renderUpdater();
   $('.update-dialog .close')?.focus();
   try {

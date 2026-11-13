@@ -35,7 +35,7 @@ test('network failure is quiet and does not produce repeated requests on focus',
 });
 test('opening the updater waits for an in-flight hourly check and keeps its verified result',async()=>{
  let resolve;const f=fixture((name)=>name==='check_updates_background'?new Promise(r=>resolve=r):available);
- const checking=f.checkForUpdateNotice();await tick();const opening=f.openUpdater();assert.equal(f.state.overlay,'updates');assert.equal(f.calls.length,1);resolve(available);await checking;await opening;assert.equal(f.state.update.phase,'available');assert.deepEqual(f.calls.map(c=>c[0]),['check_updates_background','update_status']);
+ const checking=f.checkForUpdateNotice();await tick();const opening=f.openUpdater();assert.equal(f.state.overlay,'updates');assert.equal(f.state.update.phase,'checking');assert.equal(f.calls.length,1);resolve(available);await checking;await opening;assert.equal(f.state.update.phase,'available');assert.deepEqual(f.calls.map(c=>c[0]),['check_updates_background','update_status']);
 });
 test('manual download waits for background verification and starts only after user action',async()=>{
  let resolve;const f=fixture(name=>name==='check_updates_background'?new Promise(r=>resolve=r):{phase:'downloaded'});
