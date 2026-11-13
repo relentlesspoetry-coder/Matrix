@@ -258,7 +258,7 @@ function renderHome() {
   const focus=captureLibraryFocus($('#screen'),'home');
   const visible=consoleChoices();
   const selected=visible.find(c=>c.id===state.previewConsoleId)||visible.find(c=>c.id==='switch2')||visible[0];state.previewConsoleId=selected?.id;
-  $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${visible.length} ${visible.length===1?'library':'libraries'}</p></div>${state.native?'<div class="home-actions"><button type="button" class="button button-ghost" id="main-update-button" data-action="updates" aria-label="Update Matrix-Play">Check for updates</button><button type="button" class="button button-primary" data-action="add-emulator">Add emulator</button></div>':''}</div>
+  $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${visible.length} ${visible.length===1?'library':'libraries'}</p></div>${state.native?'<div class="home-actions"><button type="button" class="button button-ghost" id="main-update-button" data-action="updates" aria-label="Updates">Updates</button><button type="button" class="button button-primary" data-action="add-emulator">Add emulator</button></div>':''}</div>
     <div class="section-toolbar"><div class="segmented brand-filters" role="group" aria-label="Filter console brands">${['All','Sony','Nintendo','Sega','Xbox'].map(v=>`<button type="button" class="${state.vendor===v?'active':''}" data-action="vendor" data-value="${v}" aria-pressed="${state.vendor===v}">${v==='All'?'All systems':v==='Sony'?'PlayStation':v}</button>`).join('')}</div></div>
     <div class="library-utilities"><button type="button" class="button button-ghost" data-action="playtime-statistics">Playtime statistics</button><button type="button" class="button button-ghost" data-action="ra-dashboard">Achievements</button></div>
     ${state.recent.length?`<details class="library-notes recent-games"><summary>Recently played</summary><div class="tag-row">${state.recent.slice(0,8).map(g=>`<button class="button button-ghost" type="button" data-action="recent-game" data-id="${escapeHtml(g.kind)}" data-uid="${escapeHtml(g.uid)}">${escapeHtml(g.title)}</button>`).join('')}</div></details>`:''}
@@ -1211,7 +1211,7 @@ function syncUpdateNotice(info){
 }
 function renderUpdateNotice(){
   const info=state.updateNotice,host=$('#update-notice-root'),button=$('#main-update-button');
-  if(button){button.textContent=info?'Update available':'Check for updates';button.classList.toggle('update-ready',Boolean(info));}
+  if(button){button.textContent='Updates';button.classList.toggle('update-ready',Boolean(info));}
   if(!host)return;
   const show=Boolean(info?.latestVersion)&&Date.now()>=updateNoticeSnoozedUntil&&state.overlay!=='updates';
   host.hidden=!show;

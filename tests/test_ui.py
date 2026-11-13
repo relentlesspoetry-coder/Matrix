@@ -130,7 +130,7 @@ with sync_playwright() as p:
       };
     }""")
     native.locator('#nav-consoles').click()
-    native.get_by_role('button',name='Update Matrix-Play').click()
+    native.get_by_role('button',name='Updates',exact=True).click()
     native.get_by_role('button',name='Download update').click()
     native.get_by_role('button',name='Cancel download').focus()
     native.evaluate("window.__focusedCancel=document.activeElement")
@@ -145,7 +145,7 @@ with sync_playwright() as p:
     native.wait_for_timeout(100)
     assert native.locator('.update-dialog').count()==0
     native.locator('#nav-consoles').click()
-    native.get_by_role('button',name='Update Matrix-Play').click()
+    native.get_by_role('button',name='Updates',exact=True).click()
     native.locator('#update-games-closed').check()
     screenshot(native,'matrix-update-shutdown-confirmation.png')
     assert 'stays closed when it succeeds' in native.locator('#update-hint').inner_text()
