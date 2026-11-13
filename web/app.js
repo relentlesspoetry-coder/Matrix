@@ -16,7 +16,7 @@ const state = {
   artwork: {enabled:true, style:"default", titleEnabled:false}, artworkSaving: false, coverStatus: new Map(), coverGeneration: 0, artRevision: 0,
 };
 const $ = selector => document.querySelector(selector);
-const nativeInvoke = (name, args = {}) => window.__TAURI__.core.invoke(name, args);
+function nativeInvoke(name,args={}) { return window.__TAURI__.core.invoke(name,args); }
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[char]);
