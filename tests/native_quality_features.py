@@ -56,7 +56,7 @@ def exercise(home, library, invoke, js, click, wait_for, screenshot):
     total=invoke('get_playtime')[key]
     assert 50*3600000+2000<=total<50*3600000+6000,total
     js('void refreshNative().then(()=>{goConsole("gb");return pollPlaytime()})')
-    wait_for(lambda: js('return document.querySelector(".game-title .game-playtime")?.textContent==="50 h played"'))
+    wait_for(lambda: js('return [...document.querySelectorAll(".game-title .game-playtime")].some(n=>n.dataset.playtimeKey===arguments[0] && n.textContent==="50 h played")',key))
     screenshot('matrix-native-playtime.png')
     js('goSettings();document.querySelector(".display-options").open=true')
     for section,value in [('uiScale','130'),('coverSize','large'),('controllerPrompts','playstation')]:
