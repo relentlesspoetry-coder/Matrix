@@ -150,6 +150,8 @@ fn engine_for_name(name: &str) -> Option<&'static Engine> {
 pub(crate) fn supports_filename(name: &str, id: &str) -> bool {
     engine_for_name(name).is_some_and(|e|e.consoles.contains(&id))
 }
+pub(crate) fn process_engine(name:&str)->Option<&'static str>{engine_for_name(name).map(|e|e.name)}
+pub(crate) fn flatpak_engine(id:&str)->Option<&'static str>{ENGINES.iter().find(|e|!e.flatpak.is_empty()&&e.flatpak==id).map(|e|e.name)}
 pub(crate) fn identity(profile: &EmulatorProfile, console: &str) -> Option<&'static str> {
     let engine = if profile.launcher == Launcher::Flatpak {
         ENGINES

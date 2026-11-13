@@ -16,7 +16,13 @@ pub(crate) async fn bootstrap() -> Result<Bootstrap, String> {
 }
 #[tauri::command]
 pub(crate) async fn refresh_managed_emulators() -> Result<Bootstrap, String> {
-    blocking(|| super::bootstrap_inventory(true)).await
+    blocking(|| {
+        if super::gaming::active() {
+            return Err("Gaming mode pauses automatic emulator discovery".into());
+        }
+        super::bootstrap_inventory(true)
+    })
+    .await
 }
 #[tauri::command]
 pub(crate) async fn import_emulator(
@@ -117,4 +123,33 @@ pub(crate) fn set_app_fullscreen(
         .set_fullscreen(fullscreen)
         .map_err(|e| e.to_string())?;
     Ok(fullscreen)
+}
+
+#[tauri::command]
+pub(crate) async fn gaming_status() -> Result<super::gaming::Info, String> {
+    blocking(super::gaming::status).await
+}
+#[tauri::command]
+pub(crate) async fn playtime_statistics() -> Result<super::playtime::Statistics, String> {
+    blocking(super::playtime::statistics).await
+}
+
+#[tauri::command]
+pub(crate) async fn ra_status() -> Result<super::retroachievements::Status, String> {
+    blocking(super::retroachievements::status).await
+}
+#[tauri::command]
+pub(crate) async fn ra_save_account(
+    username: String,
+    key: String,
+) -> Result<super::retroachievements::Status, String> {
+    blocking(move || super::retroachievements::save_account(username, key)).await
+}
+#[tauri::command]
+pub(crate) async fn ra_progress(offset: u64) -> Result<super::retroachievements::Page, String> {
+    blocking(move || super::retroachievements::progress(offset)).await
+}
+#[tauri::command]
+pub(crate) async fn ra_game(game_id: u64) -> Result<super::retroachievements::GameDetail, String> {
+    blocking(move || super::retroachievements::game(game_id)).await
 }

@@ -81,6 +81,7 @@ const MAX: usize = 64 * 1024 * 1024;
 fn export() -> Result<Vec<u8>, String> {
     let mut settings = load_settings()?;
     settings.steamgriddb_api_key.clear();
+    settings.retroachievements.web_api_key.clear();
     let mut covers = Vec::new();
     let mut total = 0;
     for spec in SPECS {
@@ -196,6 +197,8 @@ fn restore(bytes: &[u8]) -> Result<String, String> {
         }
         update_settings(|current| {
             backup.settings.steamgriddb_api_key = current.steamgriddb_api_key.clone();
+            backup.settings.retroachievements=current.retroachievements.clone();
+            for (day,games) in &current.playtime_daily {for (key,total) in games {let imported=backup.settings.playtime_daily.entry(day.clone()).or_default().entry(key.clone()).or_default();*imported=(*imported).max(*total);}}
             // Import totals monotonically, retaining sessions checkpointed since export.
             for (key,total) in &current.playtime { let incoming=backup.settings.playtime.entry(key.clone()).or_default();*incoming=(*incoming).max(*total); }
             *current = backup.settings;
@@ -303,6 +306,8 @@ mod tests {
         let game = validate_game("ps2", &uid).unwrap();
         update_settings(|s| {
             s.steamgriddb_api_key = "secret-that-must-not-be-exported".into();
+            s.retroachievements=super::retroachievements::Account{username:"TestUser".into(),web_api_key:"private-retro-key-that-must-not-be-exported".into()};
+            s.playtime_daily.insert("2026-11-12".into(),BTreeMap::from([("ps2|fixture".into(),1000)]));
             Ok(())
         })
         .unwrap();
@@ -326,6 +331,7 @@ mod tests {
         let png = include_bytes!("../../tests/fixtures/demo-cover.png");
         fs::write(&cover, png).unwrap();
         let bytes = export().unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("private-retro-key-that-must-not-be-exported"));
         assert!(!String::from_utf8_lossy(&bytes).contains("secret-that-must-not-be-exported"));
         let bad = Backup {
             format: 1,
@@ -344,7 +350,10 @@ mod tests {
             Ok(())
         })
         .unwrap();
+        update_settings(|s|{s.retroachievements.username="CurrentUser".into();s.playtime_daily.get_mut("2026-11-12").unwrap().insert("ps2|fixture".into(),2000);Ok(())}).unwrap();
         restore(&bytes).unwrap();
+        assert_eq!(load_settings().unwrap().retroachievements.username,"CurrentUser");
+        assert_eq!(load_settings().unwrap().playtime_daily["2026-11-12"]["ps2|fixture"],2000);
         assert_eq!(fs::read(&cover).unwrap(), png);
         assert_eq!(load_settings().unwrap().recent.len(), 1);
         assert_eq!(

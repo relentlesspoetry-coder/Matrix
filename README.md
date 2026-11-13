@@ -13,14 +13,14 @@ Download the **DEB** or **AppImage** from [Releases](https://github.com/relentle
 For Zorin or Ubuntu, install the DEB from your download folder:
 
 ```bash
-sudo apt install ./Matrix-Play_0.6.17_amd64.deb
+sudo apt install ./Matrix-Play_0.6.18_amd64.deb
 ```
 
 For the portable AppImage:
 
 ```bash
-chmod +x Matrix-Play_0.6.17_amd64.AppImage
-./Matrix-Play_0.6.17_amd64.AppImage
+chmod +x Matrix-Play_0.6.18_amd64.AppImage
+./Matrix-Play_0.6.18_amd64.AppImage
 ```
 
 For future releases, choose **Check for updates** beside **Add emulator** on the main console menu. Matrix Play also checks at startup and every hour while running, catches up after suspend, and displays a notice when a newer verified release is available. Choose **Review update** or **Later**; downloading and installation remain explicit actions. Background checks keep existing downloads and installer recovery guidance intact. Network failures stay quiet and retry the next hour.
@@ -123,3 +123,22 @@ In a PS1 or Saturn library, open **··· → Create multi-disc game**. Enter a 
 Total session time appears beneath each played game's name, including grid/list cards, the preview and game details—for example, **50 h played**. Timing starts with this version and applies only to games launched through Matrix Play; earlier playtime cannot be recovered. Each file/version keeps its own total; launching a selected disc from a playlist credits the playlist entry.
 
 The clock follows the launched emulator process group, continues if you close Matrix Play, and saves every five seconds and at normal process exit. Menus and paused games count as session time; Linux system suspend does not. Very short launches under one second are ignored. Existing-window handoffs, emulator processes that detach into another process group, and games launched outside Matrix Play cannot be reliably tracked. A crash or power loss can discard the last few seconds. Playtime is stored locally, included in settings backups, and never reduced when restoring an older backup.
+
+
+## Automatic gaming mode
+
+Matrix Play detects supported running emulator executables and Flatpak identities, configured emulator paths/inodes and AppImage runtimes, and its own tracked emulator sessions. This includes emulators opened outside Matrix Play under your Linux account. Opening an emulator’s setup window also activates gaming mode. Detection is read-only, checks approximately every three seconds, and never signals or alters the emulator. Unknown unconfigured launchers and inaccessible processes may not be recognizable; link a custom emulator in Settings so its actual executable can be identified.
+
+While an emulator remains open, Matrix Play pauses scheduled library and emulator discovery, cover queue scheduling, automatic update checks, periodic playtime display refresh, flowing backgrounds and unfocused controller rendering. A small activity monitor and the independent session clocks continue so it can detect exit and retain accurate playtime. Already-running requests may finish; foreground user actions still work. Background work resumes automatically, keeping a manually paused cover queue paused. Launching games externally does not assign playtime to a guessed game identity.
+
+## Statistics and progress labels
+
+On the main console menu, choose **Playtime statistics** for lifetime time, the last seven days, daily activity, totals per console and the twenty most-played games. Daily records use the computer’s local calendar and begin with v0.6.18; previous lifetime totals stay intact. Daily statistics and progress labels are included in settings backups, with newer daily checkpoints kept during restore.
+
+Game details → **Game progress** offers **Backlog**, **Playing**, **Completed**, **Dropped**, and **Not marked**. Use the **Progress** selector beside library controls to filter that console. Labels apply to individual game/file identities, including separate versions, and do not rename or modify games.
+
+## RetroAchievements dashboard
+
+Choose **Achievements** on the main console menu, or **Settings → RetroAchievements**. Add your RetroAchievements username and **Web API key** using **Get Web API key**; the key is different from your password and emulator login. Credentials are stored in private local settings, excluded from backups, and never returned by the backend to the UI. Disconnect removes the saved connection.
+
+The dashboard lists your account’s completion progress in pages of 100 games. Select a game to see its achievement list, normal unlocks and hardcore unlocks. Requests send your username/key to the official RetroAchievements API; local game paths and game files are not uploaded. Results are cached in memory for five minutes, stale cached data can be shown after a failed refresh, and gaming mode pauses new refreshes. The account dashboard does not guess local ROM identities from filenames or unlock achievements. Configure achievements and log in separately in a compatible emulator. This integration was tested against documented synthetic responses; personal-account network access requires your own credentials.

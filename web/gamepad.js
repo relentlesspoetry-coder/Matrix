@@ -101,6 +101,7 @@
     const poll=createInput(dispatch);
     let running=false;
     function frame(time) {
+      if(window.matrixGamingPaused&&!document.hasFocus()){running=false;poll.reset();return;}
       let pads=[];
       try {pads=Array.from(window.navigator.getGamepads?.() || []);} catch (_) { /* Restricted web preview. */ }
       poll(pads,time,document.visibilityState!=='hidden' && document.hasFocus());
@@ -113,6 +114,7 @@
     // next sample must not turn a background press into a foreground action.
     const rearm=()=>{poll.reset();start();};
     window.addEventListener('gamepadconnected',start);
+    window.addEventListener('matrix-gaming-state',rearm);
     window.addEventListener('blur',()=>poll.reset());
     window.addEventListener('focus',rearm);
     document.addEventListener('visibilitychange',rearm);

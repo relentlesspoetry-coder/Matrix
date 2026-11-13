@@ -32,6 +32,7 @@ pub(crate) struct Metadata {
     pub display: String,
     pub cover_title: String,
     pub group: String,
+    pub progress: String,
 }
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn set_library_preference(
@@ -95,6 +96,7 @@ pub(crate) fn set_library_preference(
                 {
                     return Err("Use titles up to 240 bytes without control characters".into());
                 }
+                if !["", "backlog", "playing", "completed", "dropped"].contains(&m.progress.as_str()){return Err("Invalid game progress label".into());}
                 p.metadata.insert(key, m);
             }
             _ => return Err("Unknown library preference".into()),
@@ -138,8 +140,8 @@ pub(crate) fn snapshot_impl() -> Result<Snapshot, String> {
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) async fn library_snapshot() -> Result<Snapshot, String> {
-    tauri::async_runtime::spawn_blocking(snapshot_impl)
+pub(crate) async fn library_snapshot(background:Option<bool>) -> Result<Snapshot, String> {
+    tauri::async_runtime::spawn_blocking(move||{if background==Some(true)&&gaming::active(){return Err("Gaming mode pauses background scans".into());}snapshot_impl()})
         .await
         .map_err(|e| e.to_string())?
 }
@@ -324,6 +326,18 @@ mod tests {
         assert_eq!(load_settings().unwrap().library_preferences.ui_scale,Some(130));
         assert!(set_library_preference("uiScale".into(),"".into(),serde_json::json!(900)).is_err());
         assert!(set_library_preference("coverSize".into(),"".into(),serde_json::json!("huge")).is_err());
+        set_library_preference("metadata".into(),"ps1|disc".into(),serde_json::json!({"display":"Keep title","progress":"completed"})).unwrap();
+        assert_eq!(load_settings().unwrap().library_preferences.metadata["ps1|disc"].progress,"completed");
+        assert!(set_library_preference("metadata".into(),"ps1|disc".into(),serde_json::json!({"progress":"unknown"})).is_err());
+        assert_eq!(load_settings().unwrap().library_preferences.metadata["ps1|disc"].display,"Keep title");
+        let secret="fixture-retro-web-key-000000000000";
+        let status=super::retroachievements::save_account("FixtureUser".into(),secret.into()).unwrap();
+        assert!(!serde_json::to_string(&status).unwrap().contains(secret));
+        super::retroachievements::save_account("FixtureUser".into(),String::new()).unwrap();
+        assert_eq!(load_settings().unwrap().retroachievements.web_api_key,secret);
+        assert!(super::retroachievements::save_account("ChangedUser".into(),String::new()).is_err());
+        super::retroachievements::save_account(String::new(),String::new()).unwrap();
+        assert!(load_settings().unwrap().retroachievements.web_api_key.is_empty());
         super::save_data::test_restore_roundtrip();
     }
 }

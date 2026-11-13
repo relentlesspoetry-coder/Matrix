@@ -648,16 +648,16 @@ checks output after the launching process exits and log-write failure using
 synthetic subprocesses. Run the normal Rust suites and desktop tests as well;
 these checks do not replace a real emulator test or privileged DEB upgrade test.
 
-This is the native testing release, version 0.6.17. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
+This is the native testing release, version 0.6.18. GitHub Actions builds the installers on Ubuntu 24.04 for **x86-64 / amd64** computers. Earlier installed-app testing used Zorin OS 18.1 (Ubuntu 24.04 base). Other distributions and ARM systems have not been validated.
 
 ## Install the DEB — recommended for Zorin 18 / Ubuntu 24.04
 
-1. Open the [v0.6.17 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.6.17) — the repository and installers are public.
-2. Download `Matrix-Play_0.6.17_amd64.deb`.
+1. Open the [v0.6.18 GitHub release](https://github.com/relentlesspoetry-coder/Matrix/releases/tag/v0.6.18) — the repository and installers are public.
+2. Download `Matrix-Play_0.6.18_amd64.deb`.
 3. Open a terminal in the download folder and run:
 
    ```bash
-   sudo apt install ./Matrix-Play_0.6.17_amd64.deb
+   sudo apt install ./Matrix-Play_0.6.18_amd64.deb
    ```
 
 4. Open **Matrix Play** from the application menu. You can also run `matrix-frontend` in a terminal to capture diagnostics.
@@ -666,24 +666,24 @@ APT installs the GTK/WebKit runtime dependencies if needed. Rust, Node, the sour
 
 ## Portable AppImage alternative
 
-Download `Matrix-Play_0.6.17_amd64.AppImage` from the same release. In its download folder run:
+Download `Matrix-Play_0.6.18_amd64.AppImage` from the same release. In its download folder run:
 
 ```bash
-chmod +x Matrix-Play_0.6.17_amd64.AppImage
-./Matrix-Play_0.6.17_amd64.AppImage
+chmod +x Matrix-Play_0.6.18_amd64.AppImage
+./Matrix-Play_0.6.18_amd64.AppImage
 ```
 
 If FUSE is unavailable, run it in extraction mode:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.6.17_amd64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Matrix-Play_0.6.18_amd64.AppImage
 ```
 
 The AppImage's actual native window, IPC, scanning, local covers, settings and launcher dispatch passed the same isolated desktop test in extraction mode. Other Linux distributions and native FUSE mounting have not been validated. The DEB is recommended on Zorin/Ubuntu.
 
 ## Upgrade from the blank-window build
 
-Close Matrix Play, then install the v0.6.17 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
+Close Matrix Play, then install the v0.6.18 DEB using the same APT command above. The existing game folders, downloaded artwork, configuration and browser data remain in place. Open Matrix Play normally; no special graphics or cache launch command should be needed.
 
 If a new startup problem occurs, attach `~/.local/share/matrix/startup.log` to the issue. This contains bounded startup stages and renderer/load errors, not game data. In this incident, graphics workarounds did not resolve the problem; a fresh cache directory did, which the affected user confirmed. The specific problematic shared cache file was not identified or deleted.
 
@@ -807,3 +807,10 @@ checks; passing fixture tests does not certify those integrations.
 ### v0.6.17 main-menu and hourly update checks
 
 `tests/test_hourly_updates.cjs` uses a fake clock for startup/hourly deadlines, one scheduler, suspend catch-up, quiet failure retries, prompt snoozing, focus/dialog preservation and manual operations overlapping background verification. Backend updater tests preserve busy/downloaded/recovery states and keep manual retries independent of the automatic hourly cache. `tests/native_hourly_updates.py` checks the main menu button and notification layout in actual WebKit using a synthetic available release, opens its review dialog, chooses Later and asserts that no download/installation was requested. Existing signed-installer/lifecycle gates remain required.
+
+
+### v0.6.18 gaming activity, daily statistics and achievements
+
+`tests/test_activity_features.cjs` checks that scheduled scans, cover work, updater calls and display polling pause during gaming, in-flight cover work does not schedule another job, user-paused queues stay paused, progress filters compose with favorites, metadata failures preserve newer edits, legacy playtime is not backfilled, and stale dashboard/statistics responses cannot overwrite new views. Backend fixtures exercise exact process identities, interpreter-vs-editor discrimination, Flatpak inventory exclusion, owned AppImage runtime checks, external launch detection, daily checkpoint accumulation, progress validation, credential handling and secret-free backups.
+
+`tests/native_activity_features.py` starts a disposable external shell process linked as an emulator and checks actual native detection, animation state, no scheduled background IPC, resume, daily statistics, progress persistence/filtering, and account/dashboard flows. It uses harmless synthetic games and injected documented RetroAchievements responses; no real API key, account network response, physical controller or actual gameplay is claimed. Existing installer, updater lifecycle and signed release gates remain required.

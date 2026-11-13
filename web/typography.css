@@ -125,3 +125,37 @@ html[data-theme="white-frost"] body .sidebar { height:auto; min-height:62px }
 :root body .update-notice-actions { display:flex; gap:10px; flex-wrap:wrap }
 :root body #main-update-button.update-ready { border-color:#006bea; color:#004bd2; background:#e8f7ff }
 @media(max-width:760px) { :root body .update-notice { margin:12px 20px 0 } :root body .title-row { flex-wrap:wrap; gap:16px } :root body .home-actions { justify-content:flex-start } }
+
+:root[data-gaming="active"] body::before,:root[data-gaming="active"] body::after { animation-play-state:paused!important; will-change:auto!important }
+:root body .gaming-status { margin:10px 36px 0; padding:10px 15px; border:1px solid #fff; border-radius:12px; background:#dfedffcb; color:#13396b; font-size:13px; font-weight:650 }
+:root body .gaming-status[hidden] { display:none }
+:root body .library-utilities { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 16px }
+:root body .progress-filter { display:flex; gap:8px; align-items:center; color:#244c73; font-size:13px; font-weight:600 }
+:root body .progress-filter select { min-height:42px; max-width:180px }
+:root body .progress-control { margin:18px 0; max-width:300px }
+:root body .progress-badge { display:inline-block; padding:2px 8px; margin-top:6px; border:1px solid #b9cfee; border-radius:7px; color:#244c73; background:#e4effb; font-size:11px; font-weight:650; line-height:1.5; letter-spacing:0 }
+:root body .progress-playing { color:#0047bf; background:#d4e7ff }
+:root body .progress-completed { color:#24623c; background:#dbf4e7 }
+:root body .progress-dropped { color:#6a4c63; background:#eee5f1 }
+:root body .statistics-dialog,:root body .achievements-dialog { width:min(900px,94vw); max-width:900px; max-height:90vh; overflow-y:auto }
+:root body .stat-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:20px 0 }
+:root body .stat-summary>div { padding:18px; border:1px solid #fff; border-radius:14px; background:#f2faffaa }
+:root body .stat-summary span { display:block; font-size:13px; color:#244c73 }
+:root body .stat-summary strong { display:block; font-size:22px; margin-top:6px }
+:root body .statistics-list p { display:flex; justify-content:space-between; gap:18px; padding:12px 0; margin:0; border-bottom:1px solid #9dbbd455; font-size:14px }
+:root body .statistics-list small { display:block; margin-top:3px; color:#244c73; font-size:12px }
+:root body .activity-days>div { display:grid; grid-template-columns:90px minmax(40px,1fr) 160px; align-items:center; gap:12px; padding:8px 0; font-size:12px }
+:root body .activity-track { height:14px; border-radius:6px; background:#bcd6ed88; overflow:hidden }
+:root body .activity-track i { display:block; height:100%; border-radius:6px; background:linear-gradient(90deg,#004fff,#05c6ff) }
+:root body .achievement-games { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:18px 0 }
+:root body .achievement-game { padding:16px; border:1px solid white; border-radius:13px; text-align:left; color:#0b254d; background:#edf7ffb8 }
+:root body .achievement-game strong,:root body .achievement-game small,:root body .achievement-game span { display:block; overflow-wrap:anywhere }
+:root body .achievement-game strong { font-size:16px }:root body .achievement-game small { margin:4px 0 12px; color:#244c73; font-size:12px }
+:root body .achievement-game span { font-size:12px; margin-bottom:6px }
+:root body .achievement-game progress { width:100%; accent-color:#006bea }
+:root body .achievement { margin:10px 0; padding:15px; border:1px solid #9dbbd466; border-radius:12px; background:#e7eff888 }
+:root body .achievement.earned { border-color:#006bea66; background:#d6eeffaa }
+:root body .achievement strong { font-size:16px }:root body .achievement p { margin:8px 0; font-size:13px }:root body .achievement small { color:#244c73; font-size:12px }
+:root body .ra-account { padding:12px 0; border-block:1px solid #9dbbd455 }:root body .ra-account summary { cursor:pointer; font-size:15px; font-weight:700 }
+:root body .ra-account .field { margin:14px 0; max-width:430px }:root body .ra-account p { font-size:12px; color:#244c73 }
+@media(max-width:760px) { :root body .gaming-status { margin:10px 20px 0 }:root body .activity-days>div { grid-template-columns:76px minmax(20px,1fr) 120px; gap:8px }:root body .achievement-games { grid-template-columns:minmax(0,1fr) } }

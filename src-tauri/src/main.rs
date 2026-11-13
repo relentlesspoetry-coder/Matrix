@@ -25,6 +25,8 @@ mod installed_titles;
 mod launch_log;
 mod launches;
 mod playtime;
+mod gaming;
+mod retroachievements;
 mod disc_sets;
 mod drop_setup;
 mod libraries;
@@ -224,6 +226,10 @@ impl Default for ArtworkSettings {
 struct Settings {
     #[serde(default)]
     playtime: BTreeMap<String,u64>,
+    #[serde(default)]
+    playtime_daily: BTreeMap<String,BTreeMap<String,u64>>,
+    #[serde(default)]
+    retroachievements: retroachievements::Account,
     #[serde(default)]
     library_preferences: library_features::Preferences,
     #[serde(default)]
@@ -1174,9 +1180,10 @@ async fn download_cover(
     kind: String,
     uid: String,
     serial: Option<String>,
+    background: Option<bool>,
 ) -> Result<matrix_cover_core::Outcome, String> {
     // Blocking filesystem, decoding and network work stays off the UI thread.
-    tauri::async_runtime::spawn_blocking(move || download_cover_impl(kind, uid, serial))
+    tauri::async_runtime::spawn_blocking(move || {if background==Some(true)&&gaming::active(){return Ok(matrix_cover_core::Outcome{status:"paused".into(),message:"Gaming mode pauses cover downloads".into(),..Default::default()});}download_cover_impl(kind, uid, serial)})
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1421,6 +1428,13 @@ fn main() {
             open_emulator,
             launches::get_launch_status,
             playtime::get_playtime,
+            desktop_commands::gaming_status,
+            desktop_commands::playtime_statistics,
+            desktop_commands::ra_status,
+            desktop_commands::ra_save_account,
+            desktop_commands::ra_progress,
+            desktop_commands::ra_game,
+            retroachievements::ra_open_key,
             desktop_commands::disc_set,
             desktop_commands::create_disc_set,
             desktop_commands::inspect_drop,

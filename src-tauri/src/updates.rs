@@ -354,7 +354,7 @@ pub(crate) async fn check_updates_background(
     service: tauri::State<'_, Service>,
 ) -> Result<Info, String> {
     let service = service.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || service.check_background())
+    tauri::async_runtime::spawn_blocking(move || {if super::gaming::active(){return Err("Gaming mode pauses automatic update checks".into());}service.check_background()})
         .await
         .map_err(|e| e.to_string())?
 }

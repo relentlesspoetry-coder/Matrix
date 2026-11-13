@@ -1,4 +1,4 @@
-/* Matrix-Play v0.6.17 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.18 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -6,7 +6,7 @@ const AUTO_COVER_KINDS = ['ps1','ps2','gamecube','wii','switch',...TITLE_COVER_K
 const byId = Object.fromEntries(consoles.map(consoleInfo => [consoleInfo.id, consoleInfo]));
 const state = {
   page: 'home', consoleId: null, vendor: 'All', query: '',
-  gameFilter: 'All', sort: 'default', view: 'list', previewGame: null,
+  gameFilter: 'All', progressFilter:'all', gaming:{active:false,emulators:[]}, sort: 'default', view: 'list', previewGame: null,
   overlay: null, selectedGame: null, lastFocus: null,
   configs: {}, imported: {}, favorites: new Set(), art: new Map(),
   native: Boolean(window.__TAURI__?.core?.invoke), root: '', folders: {},
@@ -260,6 +260,7 @@ function renderHome() {
   const selected=visible.find(c=>c.id===state.previewConsoleId)||visible.find(c=>c.id==='switch2')||visible[0];state.previewConsoleId=selected?.id;
   $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${visible.length} ${visible.length===1?'library':'libraries'}</p></div>${state.native?'<div class="home-actions"><button type="button" class="button button-ghost" id="main-update-button" data-action="updates" aria-label="Update Matrix-Play">Check for updates</button><button type="button" class="button button-primary" data-action="add-emulator">Add emulator</button></div>':''}</div>
     <div class="section-toolbar"><div class="segmented brand-filters" role="group" aria-label="Filter console brands">${['All','Sony','Nintendo','Sega','Xbox'].map(v=>`<button type="button" class="${state.vendor===v?'active':''}" data-action="vendor" data-value="${v}" aria-pressed="${state.vendor===v}">${v==='All'?'All systems':v==='Sony'?'PlayStation':v}</button>`).join('')}</div></div>
+    <div class="library-utilities"><button type="button" class="button button-ghost" data-action="playtime-statistics">Playtime statistics</button><button type="button" class="button button-ghost" data-action="ra-dashboard">Achievements</button></div>
     ${state.recent.length?`<details class="library-notes recent-games"><summary>Recently played</summary><div class="tag-row">${state.recent.slice(0,8).map(g=>`<button class="button button-ghost" type="button" data-action="recent-game" data-id="${escapeHtml(g.kind)}" data-uid="${escapeHtml(g.uid)}">${escapeHtml(g.title)}</button>`).join('')}</div></details>`:''}
     <div class="console-browser"><div class="console-grid">${visible.map(consoleCard).join('')||'<p>No consoles match. Adjust Console visibility in Settings.</p>'}</div><aside class="console-preview" aria-label="Console preview" data-console-id="${selected?.id||''}">${consolePreview(selected)}</aside></div>`;
   renderUpdateNotice();restoreLibraryFocus(focus);
@@ -385,7 +386,7 @@ function gameCard(consoleInfo, game, index) {
   const liked = state.favorites.has(favoriteKey(consoleInfo.id, game.uid));
   return `<div class="game-item ${state.previewGame?.id===consoleInfo.id && state.previewGame?.uid===game.uid ? 'is-previewed' : ''}" data-preview-uid="${escapeHtml(game.uid)}" data-id="${consoleInfo.id}" data-uid="${escapeHtml(game.uid)}">
     <button class="game-card" type="button" data-action="quick-launch" data-id="${consoleInfo.id}" data-uid="${escapeHtml(game.uid)}" aria-label="${state.native && !consoleInfo.libraryOnly ? 'Launch' : 'View'} ${escapeHtml(game.title)}${state.native && !consoleInfo.libraryOnly ? '' : ' details'}">
-      ${gameCover(consoleInfo, game, index)}<span class="game-title">${escapeHtml(game.title)}${game.versions?.length>1?` <small class="version-count">${game.versions.length} versions</small>`:''}${game.offline?' <small class="offline-badge">Offline</small>':''}${playtimeMarkup(consoleInfo.id,game.uid)}</span><span class="game-meta">${game.year || (game.demo ? 'Sample game' : state.native ? consoleInfo.libraryOnly ? 'Collection file' : 'Installed game' : 'Folder preview')} · ${escapeHtml(consoleInfo.abbrev)}</span></button>
+      ${gameCover(consoleInfo, game, index)}<span class="game-title">${escapeHtml(game.title)}${game.versions?.length>1?` <small class="version-count">${game.versions.length} versions</small>`:''}${game.offline?' <small class="offline-badge">Offline</small>':''}${playtimeMarkup(consoleInfo.id,game.uid)}${progressBadge(consoleInfo.id,game.uid)}</span><span class="game-meta">${game.year || (game.demo ? 'Sample game' : state.native ? consoleInfo.libraryOnly ? 'Collection file' : 'Installed game' : 'Folder preview')} · ${escapeHtml(consoleInfo.abbrev)}</span></button>
     <button class="game-info" type="button" data-action="game" data-id="${consoleInfo.id}" data-uid="${escapeHtml(game.uid)}" aria-label="Details for ${escapeHtml(game.title)}" title="Game details">${glyph('info')}</button>
     <button class="favorite ${liked ? 'active' : ''}" type="button" data-action="favorite" data-id="${consoleInfo.id}" data-uid="${escapeHtml(game.uid)}" aria-label="${liked ? 'Remove' : 'Add'} ${escapeHtml(game.title)} ${liked ? 'from' : 'to'} favorites" aria-pressed="${liked}">${glyph('heart')}</button>
   </div>`;
@@ -396,6 +397,7 @@ function normalizeGameSort(id) { if (state.sort==='recent' && !hasReleaseYears(i
 function visibleGames(id) {
   normalizeGameSort(id);
   let result = gamesFor(id).filter(game => game.title.toLocaleLowerCase().includes(state.query.toLocaleLowerCase()));
+  if(state.progressFilter&&state.progressFilter!=='all')result=result.filter(game=>(gameMetadata(id,game.uid).progress||'unmarked')===state.progressFilter);
   if (state.gameFilter === 'Favorites') result = result.filter(game => state.favorites.has(favoriteKey(id, game.uid)));
   if (state.sort === 'az') result.sort((a,b) => a.title.localeCompare(b.title));
   if (state.sort === 'recent') result.sort((a,b) => releaseYear(b) - releaseYear(a));
@@ -492,6 +494,7 @@ function renderConsole() {
     <div id="launch-status"></div>
     <div class="library-tools"><label class="search">${glyph('search')}<input type="search" id="game-search" autocomplete="off" placeholder="Search games" aria-label="Search ${escapeHtml(consoleInfo.name)} games" value="${escapeHtml(state.query)}"></label>
       <div class="segmented" role="group" aria-label="Game filter">${['All','Favorites'].map(v=>`<button type="button" data-action="filter-games" data-value="${v}" class="${state.gameFilter===v?'active':''}" aria-pressed="${state.gameFilter===v}">${v==='All'?'All games':`Favorites (${favoriteCount(consoleInfo.id)})`}</button>`).join('')}</div>
+      <label class="progress-filter">Progress<select id="progress-filter" aria-label="Filter by game progress">${progressOptions(state.progressFilter||'all',true)}</select></label>
       <select id="sort-games" class="sort-select" aria-label="Sort games" aria-describedby="sort-year-hint"><option value="default" ${state.sort==='default'?'selected':''}>Default</option><option value="az" ${state.sort==='az'?'selected':''}>Name</option><option value="recent" ${state.sort==='recent'?'selected':''} ${yearSorting?'':'disabled'}>Release year</option></select>
       <div class="segmented" role="group" aria-label="Library layout"><button type="button" data-action="view" data-value="grid" aria-label="Grid view" aria-pressed="${state.view==='grid'}" class="${state.view==='grid'?'active':''}">${glyph('grid')}</button><button type="button" data-action="view" data-value="list" aria-label="List view" aria-pressed="${state.view==='list'}" class="${state.view==='list'?'active':''}">${glyph('list')}</button></div></div>
     <p id="sort-year-hint" class="sr-only">${yearSorting?'Titles with unknown years appear last.':'Release-year sorting is unavailable: these titles have no release-year metadata.'}</p><div id="game-results"></div>
@@ -503,6 +506,7 @@ function renderSettings() {
   if(state.settingsTab==='themes'){renderThemes(focus);return;}
   $('#screen').innerHTML=`<div class="settings-header"><h1 class="page-title">Settings</h1><div class="settings-app"><span>Matrix-Play</span></div></div>${settingsTabs()}
     ${state.native?discoverySummary():''}
+    <details class="library-notes"><summary>RetroAchievements</summary><p>Connect your account to view game and achievement progress. Your emulator handles unlocking.</p><button class="button button-ghost" data-action="ra-dashboard">Open achievements / connect account</button></details>
     ${displayControls()}
     ${organizationControls()}
     <details class="library-notes"><summary>Library behavior</summary><p>Playtime appears beneath played games and measures emulator session time launched here, including menus and pauses. Existing-window handoffs may not be measurable. Time starts with this version; earlier hours cannot be recovered.</p><label><input type="checkbox" data-pref="autoRefresh" ${libraryPrefs().autoRefresh!==false?'checked':''}> Automatically detect emulators and games every 30 seconds</label><label><input type="checkbox" data-pref="grouping" ${libraryPrefs().grouping?'checked':''}> Group game versions (same console)</label></details>
@@ -531,7 +535,7 @@ function goHome() {
 function goConsole(id) {
   if (!byId[id]) return;
   rememberLibrary();const remembered=libraryPrefs().views?.[id];state.view=remembered?.layout||'list';state.previewGame={id,uid:remembered?.selected||''};
-  dismissOverlay(); state.page = 'console'; state.consoleId = id; state.query = ''; state.gameFilter = 'All'; state.sort = remembered?.sort||'default'; render(); window.scrollTo(0,0);
+  dismissOverlay(); state.page = 'console'; state.consoleId = id; state.query = ''; state.gameFilter = 'All'; state.progressFilter='all';state.sort = remembered?.sort||'default'; render(); window.scrollTo(0,0);
 }
 function goSettings() {
   rememberLibrary();dismissOverlay(); state.page = 'settings'; state.consoleId = null; render(); window.scrollTo(0,0);
@@ -840,6 +844,7 @@ function openGame(id, uid) {
   $('#overlay-root').innerHTML = `<div class="overlay detail-overlay" data-backdrop="true"><aside class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detail-title">
     <button type="button" class="close" data-action="close" aria-label="Close game details">${glyph('close')}</button>
     <div class="detail-cover">${gameCover(consoleInfo,game,index)}</div><div class="eyebrow">GAME DETAILS · ${state.native ? consoleInfo.libraryOnly ? 'COLLECTION FILE' : 'LOCAL GAME' : game.demo ? 'DEMO TITLE' : 'FOLDER PREVIEW'}</div><h2 id="detail-title">${escapeHtml(game.title)}</h2>${playtimeMarkup(id,uid)}<div id="disc-set-controls"></div>
+    ${progressControls(id,game)}
     ${metadataControls(id,game)}
     <p class="detail-sub">${escapeHtml(consoleInfo.name)}${game.year ? ` · ${game.year}` : ''}</p>
     <div class="tag-row"><span class="tag">${escapeHtml(consoleInfo.abbrev)}</span><span class="tag">${escapeHtml(state.configs[id]?.emulatorName || consoleInfo.emulator)}</span><span class="tag">${consoleInfo.libraryOnly ? 'No launch adapter' : isConfigured(id) ? 'Profile saved' : 'Not connected'}</span></div>
@@ -1027,8 +1032,9 @@ function updateCoverStatus(kind,uid) {
     if (node) node.textContent = coverMessage(kind,uid);
   }
 }
-async function fetchArtwork(kind,uid,serial=null,generation=state.coverGeneration) {
-  const outcome = await nativeInvoke('download_cover',{kind,uid,serial});
+async function fetchArtwork(kind,uid,serial=null,generation=state.coverGeneration,background=false) {
+  if(background&&gamingPaused())return {status:'paused'};
+  const outcome = await nativeInvoke('download_cover',{kind,uid,serial,...(background?{background:true}:{})});
   if (generation !== state.coverGeneration) return;
   const key=artKey(kind,uid);
   state.coverStatus.set(key,outcome);
@@ -1045,22 +1051,25 @@ async function fetchArtwork(kind,uid,serial=null,generation=state.coverGeneratio
 function renderCoverQueue() {
  const node=$('#cover-queue-results');if(node)node.innerHTML=state.coverQueue.items.filter(i=>i.status!=='pending').slice(-30).map(i=>`<p>${escapeHtml(byId[i.kind]?.name||i.kind)} · ${escapeHtml(i.title)} — ${escapeHtml(i.status)}${i.error?': '+escapeHtml(i.error):''}</p>`).join('');
 }
+let artworkScans=0,artworkResumePending=false;
 async function scanArtwork(resume=false) {
- const generation=++state.coverGeneration;
- if(!state.native||!state.artwork.enabled||state.coverQueue.paused)return;
+ if(!state.native||!state.artwork.enabled||state.coverQueue.paused||gamingPaused())return;
+ const generation=++state.coverGeneration;artworkScans++;
+ try{
  const kinds=state.steamgridEnabled?consoles.map(c=>c.id):AUTO_COVER_KINDS.filter(k=>!TITLE_COVER_KINDS.includes(k)||state.artwork.titleEnabled);
  const items=resume&&state.coverQueue.items.length?state.coverQueue.items:kinds.flatMap(kind=>(state.imported[kind]||[]).filter(g=>!g.offline).map(g=>({kind,uid:g.uid,title:g.title||g.uid,status:'pending'})));
  state.coverQueue.items=items;renderCoverQueue();let complete=0;
  for(const item of items){
   if(resume&&!['pending','downloading','failed'].includes(item.status)){complete++;continue;}
   delete item.error;
-  if(generation!==state.coverGeneration||!state.artwork.enabled||state.coverQueue.paused)return;
+  if(generation!==state.coverGeneration||!state.artwork.enabled||state.coverQueue.paused||gamingPaused())return;
   item.status='downloading';renderCoverQueue();
-  try {const result=await fetchArtwork(item.kind,item.uid,null,generation);if(generation!==state.coverGeneration)return;item.status=result?.status||'checked';}
+  try {const result=await fetchArtwork(item.kind,item.uid,null,generation,true);if(generation!==state.coverGeneration)return;if(result?.status==='paused'){item.status='pending';renderCoverQueue();void pollGamingMode();return;}item.status=result?.status||'checked';}
   catch(error){if(generation!==state.coverGeneration)return;item.status='failed';item.error=String(error);state.coverStatus.set(artKey(item.kind,item.uid),{message:String(error)});updateCoverStatus(item.kind,item.uid);
    if(state.steamgridEnabled&&/API key was rejected|rate limit|cooling down|Cannot reach SteamGridDB/i.test(String(error))){state.coverQueue.paused=true;renderCoverQueue();const p=$('#cover-scan-status');if(p)p.textContent='Scan paused: '+String(error);return;}}
   complete++;renderCoverQueue();const p=$('#cover-scan-status');if(p)p.textContent=`Artwork scan: ${complete} / ${items.length} checked`;
  }
+ }finally{artworkScans--;if(!artworkScans&&artworkResumePending){artworkResumePending=false;if(!gamingPaused()&&!state.coverQueue.paused)void scanArtwork(true);}}
 }
 async function saveArtworkOptions() {
   if (!state.native || state.artworkSaving) return;
@@ -1213,7 +1222,7 @@ function renderUpdateNotice(){
   host.innerHTML=`<p role="status">Matrix Play <strong>v${escapeHtml(info.latestVersion)}</strong> is available.</p><div class="update-notice-actions"><button type="button" class="button button-primary" data-action="updates">Review update</button><button type="button" class="button button-ghost" data-action="later-update">Later</button></div>`;
 }
 function checkForUpdateNotice(){
-  if(!state.native||backgroundUpdateTask||state.updateBusy||state.overlay==='updates'||Date.now()<nextUpdateCheck)return backgroundUpdateTask||Promise.resolve();
+  if(!state.native||gamingPaused()||backgroundUpdateTask||state.updateBusy||state.overlay==='updates'||Date.now()<nextUpdateCheck)return backgroundUpdateTask||Promise.resolve();
   nextUpdateCheck=Date.now()+UPDATE_CHECK_INTERVAL;
   const operation=updateOperation;
   const task=Promise.resolve().then(async()=>{
@@ -1296,9 +1305,10 @@ async function handleAction(button) {
   const menu=button.closest?.('.library-menu');
   if (menu) { menu.open=false;menu.querySelector('summary')?.focus(); }
   const { action, id, uid, value } = button.dataset;
+  if(ACTIVITY_ACTIONS.has(action)){await activityAction(button);return;}
   if(QUALITY_ACTIONS.has(action)){await qualityAction(button);return;}
   if(action==='move-console'){const order=[...new Set([...(libraryPrefs().order||[]),...consoles.map(c=>c.id)])];const at=order.indexOf(id),next=at+Number(value);if(next>=0&&next<order.length){[order[at],order[next]]=[order[next],order[at]];await saveLibraryPref('order','',order);renderSettings();}return;}
-  if(action==='save-game-metadata'){const selected={...state.selectedGame};const owner=$('.detail-panel');const metadata={display:$('#display-title').value.trim(),coverTitle:$('#cover-search-title').value.trim(),group:$('#version-group').value.trim()};if(!await saveLibraryPref('metadata',artKey(selected.id,selected.uid),metadata))return;if($('.detail-panel')===owner){dismissOverlay();render();}return;}
+  if(action==='save-game-metadata'){const selected={...state.selectedGame};const owner=$('.detail-panel');const metadata={...gameMetadata(selected.id,selected.uid),display:$('#display-title').value.trim(),coverTitle:$('#cover-search-title').value.trim(),group:$('#version-group').value.trim()};if(!await saveLibraryPref('metadata',artKey(selected.id,selected.uid),metadata))return;if($('.detail-panel')===owner){dismissOverlay();render();}return;}
   if(action==='select-version'){state.previewGame={id,uid};rememberLibrary();renderConsole();openGame(id,uid);return;}
   if(action==='save-data-backup'||action==='save-data-restore'){button.disabled=true;try{await saveDataFlow(id,action==='save-data-restore');}catch(e){toast(String(e));}finally{button.disabled=false;}return;}
   if(action==='apply-save-restore'){button.disabled=true;try{toast(await nativeInvoke('apply_save_restore',{token:value}));dismissOverlay();}catch(e){toast(String(e));}finally{button.disabled=false;}return;}
@@ -1440,6 +1450,8 @@ function setupEvents() {
   document.addEventListener('focusin', previewConsole);
   document.addEventListener('change', event => {
     const field=event.target;
+    if(field.id==='game-progress'){void saveGameProgress(field);return;}
+    if(field.id==='progress-filter'){state.progressFilter=field.value;renderGameResults();return;}
     if(field.dataset?.displayPref){void changeDisplayPreference(field);return;}
     if(field.id==='drop-console')updateDropDestination();
     if(field.dataset?.pref){void saveLibraryPref(field.dataset.pref,'',field.checked);return;}
@@ -1555,7 +1567,7 @@ function consoleChoices(){const p=libraryPrefs();const order=[...(p.order||[]),.
 function organizationControls(){const p=libraryPrefs();return `<details class="library-notes organization"><summary>Console visibility &amp; order</summary><label><input type="checkbox" data-pref="hideUnconfigured" ${p.hideUnconfigured?'checked':''}> Hide consoles without a working emulator</label><label><input type="checkbox" data-pref="readyOnly" ${p.readyOnly?'checked':''}> Ready systems only</label><div class="console-order">${[...new Set([...(p.order||[]),...consoles.map(c=>c.id)])].map(id=>`<div><span>${escapeHtml(byId[id].name)}</span><label><input type="checkbox" data-console-hide="${id}" ${(p.hidden||[]).includes(id)?'checked':''}> Hide</label><label><input type="checkbox" data-console-pin="${id}" ${(p.pinned||[]).includes(id)?'checked':''}> Pin</label><button class="button button-ghost" data-action="move-console" data-id="${id}" data-value="-1" aria-label="Move ${escapeHtml(byId[id].name)} up">↑</button><button class="button button-ghost" data-action="move-console" data-id="${id}" data-value="1" aria-label="Move ${escapeHtml(byId[id].name)} down">↓</button></div>`).join('')}</div></details>`;}
 function metadataControls(id,game){const m=gameMetadata(id,game.uid);const variants=gamesFor(id).filter(g=>versionKey(id,g)===versionKey(id,game));return `<details class="library-notes"><summary>Title &amp; versions${variants.length>1?' ('+variants.length+')':''}</summary><label class="field">Display title<input id="display-title" maxlength="240" value="${escapeHtml(m.display||'')}" placeholder="${escapeHtml(game.originalTitle||game.title)}"></label><label class="field">Cover search title<input id="cover-search-title" maxlength="240" value="${escapeHtml(m.coverTitle||'')}" placeholder="Original catalog title"></label><label class="field">Version group<input id="version-group" maxlength="240" value="${escapeHtml(m.group||'')}" placeholder="Automatic; use - to keep separate"></label><p class="muted">Changes affect the library only. Matching group names combine versions within this console when grouping is enabled.</p><button class="button button-ghost" data-action="save-game-metadata">Save title &amp; group</button>${variants.length>1?`<p>Choose version:</p><div class="tag-row">${variants.map(g=>`<button class="button button-ghost" data-action="select-version" data-id="${id}" data-uid="${escapeHtml(g.uid)}">${escapeHtml(g.originalTitle||g.title)}${g.offline?' · Offline':''}</button>`).join('')}</div>`:''}</details>`;}
 function offlineGame(id,g){return (state.libraryFolders?.[id]||[]).some(f=>!f.available&&(g.path===f.path||g.path?.startsWith(f.path.replace(/\/$/,'')+'/')));}
-function libraryUiBusy(){return document.hidden||state.overlay||state.page==='settings'||document.activeElement?.matches?.('input,textarea,select')||document.querySelector?.('details.library-menu[open]');}
+function libraryUiBusy(){return gamingPaused()||document.hidden||state.overlay||state.page==='settings'||document.activeElement?.matches?.('input,textarea,select')||document.querySelector?.('details.library-menu[open]');}
 function queueDiscoveredGames(previous){
  if(!state.artwork.enabled)return;const allowed=new Set(state.steamgridEnabled?consoles.map(c=>c.id):AUTO_COVER_KINDS.filter(k=>!TITLE_COVER_KINDS.includes(k)||state.artwork.titleEnabled));let added=false;
  for(const c of consoles){if(!allowed.has(c.id))continue;const old=new Set((previous[c.id]||[]).map(g=>g.uid));for(const g of state.imported[c.id]||[])if(!g.offline&&!old.has(g.uid)&&!state.coverQueue.items.some(i=>i.kind===c.id&&i.uid===g.uid)){state.coverQueue.items.push({kind:c.id,uid:g.uid,title:g.title,status:'pending'});added=true;}}
@@ -1563,7 +1575,7 @@ function queueDiscoveredGames(previous){
 }
 async function pollLibraries(force=false){
  if(!state.native||libraryPolling||!force&&(libraryPrefs().autoRefresh===false||libraryUiBusy()))return;
- libraryPolling=true;const generation=nativeRefreshGeneration;try{await libraryWrites;const result=await nativeInvoke('library_snapshot');if(!result?.games||!force&&libraryUiBusy()||generation!==nativeRefreshGeneration)return;const previous=state.imported;state.imported={...previous};const before=JSON.stringify([previous,state.libraryFolders]);state.libraryFolders=result.folders||{};for(const c of consoles)state.imported[c.id]=(result.games[c.id]||[]).map(g=>({...g,demo:false,offline:offlineGame(c.id,g)}));if(before!==JSON.stringify([state.imported,state.libraryFolders])){state.missingArt.clear();if(!state.overlay)render();queueDiscoveredGames(previous);}}catch(e){if(force)toast('Library refresh failed: '+e);}finally{libraryPolling=false;}
+ libraryPolling=true;const generation=nativeRefreshGeneration;try{await libraryWrites;const result=await nativeInvoke('library_snapshot',{background:!force});if(!result?.games||!force&&libraryUiBusy()||generation!==nativeRefreshGeneration)return;const previous=state.imported;state.imported={...previous};const before=JSON.stringify([previous,state.libraryFolders]);state.libraryFolders=result.folders||{};for(const c of consoles)state.imported[c.id]=(result.games[c.id]||[]).map(g=>({...g,demo:false,offline:offlineGame(c.id,g)}));if(before!==JSON.stringify([state.imported,state.libraryFolders])){state.missingArt.clear();if(!state.overlay)render();queueDiscoveredGames(previous);}}catch(e){if(force)toast('Library refresh failed: '+e);}finally{libraryPolling=false;}
 }
 async function saveDataFlow(id,restore){
  const result=await nativeInvoke('save_data_dialog',{id,restore});if(result.cancelled)return;if(result.message){toast(result.message);return;}
@@ -1579,7 +1591,7 @@ function formatPlaytime(millis){
 function playtimeMarkup(id,uid){const key=artKey(id,uid),label=formatPlaytime(state.playtime[key]);return `<span class="game-playtime" data-playtime-key="${escapeHtml(key)}" ${label?'':'hidden'}>${label}</span>`;}
 let playtimePolling=false;
 async function pollPlaytime(){
-  if(!state.native||playtimePolling)return;
+  if(!state.native||playtimePolling||gamingPaused())return;
   playtimePolling=true;
   try{const totals=await nativeInvoke('get_playtime');if(totals&&typeof totals==='object'&&!Array.isArray(totals)){
     state.playtime=totals;
@@ -1703,6 +1715,7 @@ function setupQualityEvents(){
   document.addEventListener('dragover',e=>e.preventDefault());document.addEventListener('drop',e=>e.preventDefault());
 }
 async function initializeQuality(){
+  void pollGamingMode();setInterval(()=>void pollGamingMode(),3000);
   void pollPlaytime();setInterval(()=>{if(!document.hidden)void pollPlaytime();},5000);
   window.addEventListener?.('focus',()=>void pollPlaytime());
   const current=window.__TAURI__?.webviewWindow?.getCurrentWebviewWindow?.();
@@ -1715,6 +1728,101 @@ async function initializeQuality(){
       void previewNativeDrop(payload.paths,target);
     }
   });state.qualityDropListening=true;}catch(e){toast('File drop is unavailable: '+e);}}
+}
+
+// Automatic gaming mode leaves only the detector and independent session clocks running.
+function gamingPaused(){return state.gaming?.active===true;}
+let gamingPolling=false;
+async function pollGamingMode(){
+ if(!state.native||gamingPolling)return;gamingPolling=true;
+ try{const info=await nativeInvoke('gaming_status');if(info&&typeof info.active==='boolean')applyGamingState(info);}catch{}finally{gamingPolling=false;}
+}
+function applyGamingState(info){
+ const previous=gamingPaused();state.gaming={active:info.active===true,emulators:Array.isArray(info.emulators)?info.emulators:[]};
+ window.matrixGamingPaused=gamingPaused();if(document.documentElement?.dataset)document.documentElement.dataset.gaming=gamingPaused()?'active':'idle';
+ const node=$('#gaming-status');if(node){node.hidden=!gamingPaused();node.textContent=gamingPaused()?`Gaming mode · ${state.gaming.emulators.join(', ')||'Emulator running'} · Background work paused`:'';}
+ for(const control of document.querySelectorAll?.('[data-gaming-network]')||[])control.disabled=gamingPaused();
+ if(previous!==gamingPaused()&&window.Event&&window.dispatchEvent)window.dispatchEvent(new window.Event('matrix-gaming-state'));
+ if(previous&&!gamingPaused()){
+   void pollPlaytime();void refreshManagedAndGames();
+   if(!state.coverQueue.paused&&state.coverQueue.items.some(i=>['pending','downloading','failed'].includes(i.status))){if(artworkScans)artworkResumePending=true;else void scanArtwork(true);}
+   if(updateChecksStarted)void checkForUpdateNotice().finally(armUpdateCheck);
+   if(state.overlay==='ra-dashboard'&&state.ra?.connected&&!state.ra.page&&!state.ra.gameOpen)void loadRAProgress(state.ra.offset||0);
+ }
+}
+const PROGRESS_LABELS={unmarked:'Not marked',backlog:'Backlog',playing:'Playing',completed:'Completed',dropped:'Dropped'};
+function progressOptions(selected,filter=false){return `${filter?`<option value="all" ${selected==='all'?'selected':''}>All progress</option>`:''}${Object.entries(PROGRESS_LABELS).map(([value,label])=>`<option value="${value}" ${selected===value?'selected':''}>${label}</option>`).join('')}`;}
+function progressBadge(id,uid){const value=gameMetadata(id,uid).progress;return PROGRESS_LABELS[value]&&value!=='unmarked'?`<small class="progress-badge progress-${value}">${PROGRESS_LABELS[value]}</small>`:'';}
+function progressControls(id,game){return `<label class="field progress-control">Game progress<select id="game-progress" data-id="${id}" data-uid="${escapeHtml(game.uid)}">${progressOptions(gameMetadata(id,game.uid).progress||'unmarked')}</select></label>`;}
+async function saveGameProgress(field){
+ if(field.disabled)return;field.disabled=true;const {id,uid}=field.dataset,key=artKey(id,uid),previous={...gameMetadata(id,uid)};
+ const next={...previous,progress:field.value==='unmarked'?'':field.value};
+ try{if(!await saveLibraryPref('metadata',key,next)){if(libraryPrefs().metadata[key]===next)libraryPrefs().metadata[key]=previous;field.value=gameMetadata(id,uid).progress||'unmarked';return;}
+   if(state.page==='console'&&state.consoleId===id)renderGameResults();toast(next.progress?`Marked ${PROGRESS_LABELS[next.progress]}.`:'Progress label cleared.');
+ }finally{field.disabled=false;}
+}
+function localDateKey(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
+function activitySummary(data,now=new Date()){
+ const totals=data?.totals||{},daily=data?.daily||{},days=[];
+ for(let n=6;n>=0;n--){const date=new Date(now);date.setDate(date.getDate()-n);const key=localDateKey(date);days.push({day:key,millis:Object.entries(daily[key]||{}).reduce((a,[game,b])=>a+(byId[game.split('|')[0]]&&Number.isFinite(b)?Math.max(0,b):0),0)});}
+ const byConsole=new Map(),ranked=[],titles=new Map();for(const c of consoles)for(const game of gamesFor(c.id))titles.set(artKey(c.id,game.uid),game.title);let total=0;
+ for(const [key,millis]of Object.entries(totals)){const split=key.indexOf('|'),id=key.slice(0,split),uid=key.slice(split+1);if(!byId[id]||!Number.isFinite(millis)||millis<=0)continue;total+=millis;byConsole.set(id,(byConsole.get(id)||0)+millis);ranked.push({id,uid,title:titles.get(key)||cleanTitle(uid.split('/').at(-1)||'Game'),millis});}
+ ranked.sort((a,b)=>b.millis-a.millis||a.title.localeCompare(b.title));
+ return {total,week:days.reduce((a,b)=>a+b.millis,0),days,consoles:[...byConsole].sort((a,b)=>b[1]-a[1]),ranked:ranked.slice(0,20)};
+}
+function durationText(ms){return formatPlaytime(ms)||'0 min played';}
+let statisticsRequest=0;
+async function openPlaytimeStatistics(){
+ state.lastFocus=document.activeElement;state.overlay='statistics';
+ $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog statistics-dialog" role="dialog" aria-modal="true" aria-labelledby="statistics-title"><button class="close" data-action="close" aria-label="Close playtime statistics">${glyph('close')}</button><h2 id="statistics-title">Playtime statistics</h2><p>Emulator session time includes menus and pauses. Daily history starts with this update; previous total playtime is preserved.</p><button class="button button-ghost" data-action="refresh-statistics" ${state.native?'':'disabled'}>Refresh statistics</button><div id="statistics-content" role="status">Loading…</div></section></div>`;
+ $('.statistics-dialog .close').focus();await loadStatistics();
+}
+async function loadStatistics(){
+ const owner=$('#statistics-content'),request=++statisticsRequest;if(!owner)return;
+ try{const data=state.native?await nativeInvoke('playtime_statistics'):{totals:state.playtime,daily:{}};if(request!==statisticsRequest||owner!==$('#statistics-content')||state.overlay!=='statistics')return;
+   const s=activitySummary(data),maximum=Math.max(1,...s.days.map(d=>d.millis));
+   owner.innerHTML=`<div class="stat-summary"><div><span>Total</span><strong>${durationText(s.total)}</strong></div><div><span>Last 7 days</span><strong>${durationText(s.week)}</strong></div></div><h3>Daily activity</h3><div class="activity-days">${s.days.map(d=>`<div><span>${d.day}</span><div class="activity-track" aria-hidden="true"><i style="width:${Math.min(100,d.millis/maximum*100)}%"></i></div><strong>${durationText(d.millis)}</strong></div>`).join('')}</div><h3>By console</h3><div class="statistics-list">${s.consoles.map(([id,ms])=>`<p><span>${escapeHtml(byId[id].name)}</span><strong>${durationText(ms)}</strong></p>`).join('')||'<p>No recorded playtime yet.</p>'}</div><h3>Most played</h3><div class="statistics-list">${s.ranked.map(g=>`<p><span>${escapeHtml(g.title)}<small>${escapeHtml(byId[g.id].name)}</small></span><strong>${durationText(g.millis)}</strong></p>`).join('')||'<p>Launch a game through Matrix Play to start tracking.</p>'}</div>`;
+ }catch(e){if(owner===$('#statistics-content'))owner.textContent='Cannot load statistics: '+e;}
+}
+let raGeneration=0,raRequest=0;
+async function openRADashboard(){
+ const generation=++raGeneration;state.lastFocus=document.activeElement;state.overlay='ra-dashboard';state.ra={connected:false,username:'',offset:0,page:null,gameOpen:false};
+ $('#overlay-root').innerHTML=`<div class="overlay" data-backdrop="true"><section class="dialog achievements-dialog" role="dialog" aria-modal="true" aria-labelledby="ra-title"><button class="close" data-action="close" aria-label="Close achievements">${glyph('close')}</button><h2 id="ra-title">RetroAchievements</h2><p>View your account’s game and achievement progress. Supported emulators handle unlocking and account login separately.</p><details class="ra-account" open><summary>Account connection</summary><label class="field">Username<input id="ra-username" maxlength="64" autocomplete="username"></label><label class="field">Web API key<input id="ra-key" type="password" autocomplete="new-password" placeholder="Paste your Web API key"></label><p>Credentials stay in private local settings and are excluded from backups. Requests send your username and Web API key to RetroAchievements; game files and local paths are not uploaded.</p><div class="tag-row"><button class="button button-primary" data-action="ra-connect" ${state.native?'':'disabled'}>Save connection</button><button class="button button-ghost" data-action="ra-disconnect" ${state.native?'':'disabled'}>Disconnect</button><button class="button button-ghost" data-action="ra-key-page" ${state.native?'':'disabled'}>Get Web API key</button></div></details><p id="ra-message" role="status">${state.native?'Loading account…':'Connect accounts in the native Linux app.'}</p><div class="ra-tools"><button class="button button-ghost" data-action="ra-refresh" data-gaming-network ${gamingPaused()?'disabled':''}>Refresh progress</button></div><div id="ra-content"></div></section></div>`;
+ $('.achievements-dialog .close').focus();if(!state.native)return;
+ const owner=$('.achievements-dialog'),controls=[...owner.querySelectorAll('.ra-account input,.ra-account button')];for(const control of controls)control.disabled=true;try{const status=await nativeInvoke('ra_status');if(generation!==raGeneration||owner!==$('.achievements-dialog'))return;applyRAStatus(status);for(const control of controls)control.disabled=false;if(status.connected)await loadRAProgress(0);else $('#ra-message').textContent='Add your username and Web API key to connect.';}catch(e){if(owner===$('.achievements-dialog'))$('#ra-message').textContent=String(e);}finally{for(const control of controls)control.disabled=false;}
+}
+function applyRAStatus(status){Object.assign(state.ra,{connected:status.connected,username:status.username,page:null});$('#ra-username').value=status.username||'';$('#ra-key').value='';$('#ra-key').placeholder=status.connected?'Saved key · leave blank to keep it':'Paste your Web API key';$('.ra-account').open=!status.connected;}
+async function saveRAConnection(disconnect=false){
+ const owner=$('.achievements-dialog');if(!owner||owner.dataset.saving==='true')return;
+ const generation=++raGeneration;++raRequest;owner.dataset.saving='true';const controls=[...owner.querySelectorAll('.ra-account input,.ra-account button')];for(const c of controls)c.disabled=true;
+ try{const status=await nativeInvoke('ra_save_account',{username:disconnect?'':$('#ra-username').value,key:disconnect?'':$('#ra-key').value});if(owner!==$('.achievements-dialog')||generation!==raGeneration)return;
+   applyRAStatus(status);state.ra.gameOpen=false;$('#ra-content').innerHTML='';$('#ra-message').textContent=status.connected?'Account saved.':'Disconnected.';if(status.connected)await loadRAProgress(0);
+ }catch(e){if(owner===$('.achievements-dialog')&&generation===raGeneration)$('#ra-message').textContent=String(e);}finally{owner.dataset.saving='false';for(const c of controls)c.disabled=false;}
+}
+async function loadRAProgress(offset=0){
+ const owner=$('#ra-content');if(!owner||!state.ra?.connected)return;
+ const request=++raRequest,generation=raGeneration;state.ra.offset=offset;state.ra.gameOpen=false;
+ if(gamingPaused()){$('#ra-message').textContent='Gaming mode pauses achievement refreshes until the emulator closes.';return;}
+ $('#ra-message').textContent='Loading progress…';
+ try{const page=await nativeInvoke('ra_progress',{offset});if(request!==raRequest||generation!==raGeneration||owner!==$('#ra-content')||state.overlay!=='ra-dashboard')return;
+   state.ra.page=page;$('#ra-message').textContent=page.warning||(page.cached?'Showing cached progress (five-minute cache).':`Progress for ${state.ra.username}`);
+   owner.innerHTML=`<p>${page.total} games on your account · showing ${page.games.length?offset+1:0}–${offset+page.games.length}</p><div class="achievement-games">${page.games.map(g=>`<button class="achievement-game" data-action="ra-game" data-value="${g.gameId}"><strong>${escapeHtml(g.title)}</strong><small>${escapeHtml(g.consoleName)}</small><span>${g.earned} / ${g.possible} achievements · ${g.hardcore} hardcore</span><progress value="${Math.min(g.earned,g.possible)}" max="${Math.max(1,g.possible)}" aria-label="Achievement completion for ${escapeHtml(g.title)}"></progress></button>`).join('')||'<p>No achievement progress yet. Play a supported game in a connected emulator first.</p>'}</div><div class="tag-row"><button class="button button-ghost" data-action="ra-page" data-value="${Math.max(0,offset-100)}" ${offset===0?'disabled':''}>Previous</button><button class="button button-ghost" data-action="ra-page" data-value="${offset+100}" ${offset+page.games.length>=page.total||page.games.length===0?'disabled':''}>Next</button></div>`;
+ }catch(e){if(request===raRequest&&owner===$('#ra-content'))$('#ra-message').textContent=String(e);}
+}
+async function loadRAGame(gameId){
+ const owner=$('#ra-content');if(!owner||gamingPaused())return;const request=++raRequest,generation=raGeneration;state.ra.gameOpen=true;$('#ra-message').textContent='Loading achievements…';
+ try{const game=await nativeInvoke('ra_game',{gameId});if(request!==raRequest||generation!==raGeneration||owner!==$('#ra-content')||state.overlay!=='ra-dashboard')return;
+   $('#ra-message').textContent=game.warning||(game.cached?'Showing cached achievements.':'Achievement progress loaded.');
+   owner.innerHTML=`<button class="button button-ghost" data-action="ra-page" data-value="${state.ra.offset}">Back to games</button><h3>${escapeHtml(game.title)}</h3><p>${escapeHtml(game.consoleName)} · ${game.earned} / ${game.possible} unlocked · ${game.hardcore} hardcore</p><div class="achievement-list">${game.achievements.map(a=>`<article class="achievement ${a.earned?'earned':''}"><strong>${a.earned?'✓ ':''}${escapeHtml(a.title)}</strong><p>${escapeHtml(a.description)}</p><small>${a.points} points · ${a.hardcore?'Hardcore unlocked':a.earned?'Unlocked':'Locked'}</small></article>`).join('')||'<p>No achievements available for this game.</p>'}</div>`;
+ }catch(e){if(request===raRequest&&owner===$('#ra-content'))$('#ra-message').textContent=String(e);}
+}
+const ACTIVITY_ACTIONS=new Set(['playtime-statistics','refresh-statistics','ra-dashboard','ra-connect','ra-disconnect','ra-key-page','ra-refresh','ra-game','ra-page']);
+async function activityAction(button){const action=button.dataset.action;
+ if(action==='playtime-statistics'){await openPlaytimeStatistics();return;}if(action==='refresh-statistics'){button.disabled=true;try{await loadStatistics();}finally{button.disabled=false;}return;}
+ if(action==='ra-dashboard'){await openRADashboard();return;}if(action==='ra-connect'||action==='ra-disconnect'){await saveRAConnection(action==='ra-disconnect');return;}
+ if(action==='ra-key-page'){try{await nativeInvoke('ra_open_key');}catch(e){toast(String(e));}return;}
+ if(action==='ra-game'){await loadRAGame(Number(button.dataset.value));return;}
+ if(action==='ra-refresh'||action==='ra-page'){await loadRAProgress(action==='ra-page'?Number(button.dataset.value):state.ra?.offset||0);}
 }
 
 readPrefs(); setupEvents(); render(); window.matrixStartup?.complete(); void initializeArt(); void initializeNative();

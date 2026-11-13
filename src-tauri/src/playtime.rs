@@ -143,14 +143,59 @@ fn group_alive(identity: &update_lifecycle::Identity) -> bool {
     })
 }
 
-fn checkpoint(path: &Path, key: &str, millis: u64) -> Result<(), String> {
+pub(crate) fn local_day(seconds: u64) -> String {
+    let stamp = seconds.min(i64::MAX as u64) as libc::time_t;
+    let mut out = std::mem::MaybeUninit::<libc::tm>::uninit();
+    if unsafe { libc::localtime_r(&stamp, out.as_mut_ptr()) }.is_null() {
+        return "1970-01-01".into();
+    }
+    let out = unsafe { out.assume_init() };
+    format!(
+        "{:04}-{:02}-{:02}",
+        out.tm_year + 1900,
+        out.tm_mon + 1,
+        out.tm_mday
+    )
+}
+fn checkpoint_days(
+    path: &Path,
+    key: &str,
+    millis: u64,
+    days: &BTreeMap<String, u64>,
+) -> Result<(), String> {
     if millis == 0 {
         return Ok(());
     }
     settings::update(path, |s| {
         let total = s.playtime.entry(key.into()).or_default();
         *total = total.saturating_add(millis);
+        for (day, millis) in days {
+            let total = s
+                .playtime_daily
+                .entry(day.clone())
+                .or_default()
+                .entry(key.into())
+                .or_default();
+            *total = total.saturating_add(*millis);
+        }
         Ok(())
+    })
+}
+#[cfg(test)]
+fn checkpoint(path: &Path, key: &str, millis: u64) -> Result<(), String> {
+    checkpoint_days(path, key, millis, &BTreeMap::new())
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Statistics {
+    totals: BTreeMap<String, u64>,
+    daily: BTreeMap<String, BTreeMap<String, u64>>,
+}
+pub(crate) fn statistics() -> Result<Statistics, String> {
+    let s = load_settings()?;
+    Ok(Statistics {
+        totals: s.playtime,
+        daily: s.playtime_daily,
     })
 }
 
@@ -177,6 +222,7 @@ pub(crate) fn run() -> Result<(), String> {
     let beginning = Instant::now();
     let mut last = beginning;
     let mut pending = 0u64;
+    let mut days = BTreeMap::<String, u64>::new();
     loop {
         std::thread::sleep(Duration::from_millis(500));
         let now = Instant::now();
@@ -185,15 +231,25 @@ pub(crate) fn run() -> Result<(), String> {
         // CLOCK_MONOTONIC excludes system suspend on Linux. A stopped tracker
         // also must not manufacture hours after a long scheduling gap.
         if delta <= Duration::from_secs(5) {
-            pending = pending.saturating_add(delta.as_millis() as u64);
+            let millis = delta.as_millis() as u64;
+            pending = pending.saturating_add(millis);
+            let day = local_day(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            );
+            let value = days.entry(day).or_default();
+            *value = value.saturating_add(millis);
         }
         let alive = group_alive(&session.identity);
         if !alive && beginning.elapsed() < Duration::from_secs(1) {
             return Ok(());
         }
         if pending >= 5000 || !alive {
-            if checkpoint(&path, &session.key, pending).is_ok() {
+            if checkpoint_days(&path, &session.key, pending, &days).is_ok() {
                 pending = 0;
+                days.clear();
             }
             if !alive {
                 return if pending == 0 {
@@ -236,6 +292,31 @@ mod tests {
         assert_eq!(s.playtime["game-a"], 10000);
         assert_eq!(s.playtime["game-b"], 42);
         assert_eq!(s.artwork.style, "3d");
+    }
+    #[test]
+    fn daily_checkpoints_preserve_earlier_totals_and_other_games() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("settings.json");
+        checkpoint(&path, "gb|old", 50000).unwrap();
+        checkpoint_days(
+            &path,
+            "gb|old",
+            1000,
+            &BTreeMap::from([("2026-11-12".into(), 1000)]),
+        )
+        .unwrap();
+        checkpoint_days(
+            &path,
+            "ps1|new",
+            2000,
+            &BTreeMap::from([("2026-11-12".into(), 2000)]),
+        )
+        .unwrap();
+        let s = settings::load(&path).unwrap();
+        assert_eq!(s.playtime["gb|old"], 51000);
+        assert_eq!(s.playtime_daily["2026-11-12"]["gb|old"], 1000);
+        assert_eq!(s.playtime_daily["2026-11-12"]["ps1|new"], 2000);
+        assert_eq!(local_day(0).len(), 10);
     }
     #[test]
     fn a_background_child_keeps_the_session_alive() {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.18
+
+- Add automatic gaming mode: recognize running same-user emulators by supported executable/Flatpak identity, configured native paths and executable inodes, owned AppImage runtimes, and tracked session leases. Detect emulators opened outside Matrix Play without sending signals or changing them.
+- While an emulator is open, pause scheduled library/emulator scans, cover queue scheduling, hourly update checks, playtime UI polling, background currents and unfocused controller animation frames. Keep the lightweight detector and independent playtime clocks running, preserve the user’s queue pause choice, and resume deferred work after exit. In-flight requests may finish; explicit user actions remain available.
+- Record local-calendar daily playtime alongside preserved lifetime totals. Add a home-menu statistics view with seven-day activity, per-console totals and the twenty most-played games. Do not invent daily history for older totals; retain newer daily checkpoints during backup restore.
+- Add per-game Backlog, Playing, Completed and Dropped labels, a progress filter per console, and compact library badges. Keep game identity, title/group edits, favorites and cover choices independent of progress labels.
+- Add a read-only RetroAchievements dashboard with account connection, paginated game completion, normal/hardcore counts and individual achievement lists. Keep Web API keys private and out of backups/UI responses, restrict requests to the official HTTPS API without redirects, bound responses/timeouts, and cache results for five minutes. Emulators still handle unlocking and their own login.
+- Add backend, asynchronous UI and native WebKit fixtures for external emulator detection, pause/resume, daily statistics, progress persistence and dashboard flows. Achievement responses use documented synthetic fixtures; no personal account credentials or actual gameplay were used.
+
 ## 0.6.17
 
 - Move Check for updates from Settings to the main console menu beside Add emulator, in both themes. Show Update available on that button when a newer verified release is known.
