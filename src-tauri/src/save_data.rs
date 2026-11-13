@@ -340,6 +340,19 @@ mod tests {
 
 #[cfg(test)]
 pub(super) fn test_restore_roundtrip() {
+    // Earlier launch fixtures share the account-wide activity gate. Their
+    // independent clocks can still be flushing after the launcher has exited.
+    // Wait for natural completion before testing this fixture's own leases.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match update_lifecycle::begin_save() {
+            Ok(guard) => { drop(guard); break; }
+            Err(error) => {
+                assert!(std::time::Instant::now() < deadline, "Prior fixture did not become idle: {error}");
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+        }
+    }
     update_settings(|s| {
         s.profiles.insert(
             "psp".into(),
@@ -370,6 +383,7 @@ pub(super) fn test_restore_roundtrip() {
     drop(launch);
     assert!(apply_restore_impl("fixture".into()).is_err());
     drop(inherited);
+    drop(update_lifecycle::begin_save().unwrap());
     let script = home().unwrap().join("save-safety-emulator.sh");
     fs::write(&script,"#!/bin/sh\nsleep 5\n").unwrap();
     update_settings(|s|{s.profiles.get_mut("psp").unwrap().emulator_path=script.to_str().unwrap().into();Ok(())}).unwrap();
@@ -377,7 +391,7 @@ pub(super) fn test_restore_roundtrip() {
     for _ in 0..40 { if gaming::scan(&load_settings().unwrap().profiles).unwrap().active { break; } std::thread::sleep(std::time::Duration::from_millis(25)); }
     let blocked = apply_restore_impl("fixture".into()).unwrap_err();
     external.kill().unwrap();external.wait().unwrap();
-    assert!(blocked.contains("Close"));
+    assert!(blocked.contains("Close all emulators before"), "{blocked}");
     assert_eq!(fs::read(save.join("game.bin")).unwrap(),b"newer save");
     let result = apply_restore_impl("fixture".into()).unwrap();
     assert!(result.contains("backed up"));
