@@ -33,6 +33,7 @@ window.__TAURI__ = { core: { invoke: async (name,args={}) => {
   window.__calls.push([name,args]);
   const ids = ['switch','ps1','ps2','ps3','psp','n64','gamecube','dreamcast','wii','wiiu','gb','gba','nds','3ds','ps4','ps5','vita','switch2'];
   if(name==='update_status') return window.__update;
+  if(name==='check_updates_background') return window.__update;
   if(name==='check_updates') return (window.__update={...window.__update,latestVersion:'0.6.0',phase:'available',message:'A newer Matrix Play release is available.',notes:'Console artwork and updates.'});
   if(name==='download_update') return (window.__update={...window.__update,phase:'downloaded',message:'Verified update downloaded.'});
   if(name==='install_update') return (window.__update={...window.__update,phase:'installing',message:'Closing Matrix Play to install the update…'});
@@ -128,7 +129,7 @@ with sync_playwright() as p:
         return window.__originalInvoke(name,args);
       };
     }""")
-    native.locator('#nav-settings').click()
+    native.locator('#nav-consoles').click()
     native.get_by_role('button',name='Update Matrix-Play').click()
     native.get_by_role('button',name='Download update').click()
     native.get_by_role('button',name='Cancel download').focus()
@@ -143,7 +144,7 @@ with sync_playwright() as p:
     native.evaluate("window.__finishDownload(); window.__TAURI__.core.invoke=window.__originalInvoke")
     native.wait_for_timeout(100)
     assert native.locator('.update-dialog').count()==0
-    native.locator('#nav-settings').click()
+    native.locator('#nav-consoles').click()
     native.get_by_role('button',name='Update Matrix-Play').click()
     native.locator('#update-games-closed').check()
     screenshot(native,'matrix-update-shutdown-confirmation.png')

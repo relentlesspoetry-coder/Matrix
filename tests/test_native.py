@@ -166,18 +166,19 @@ def main():
             assert js('return document.documentElement.scrollWidth <= window.innerWidth'), 'Larger typography must fit the window'
 
         def check_shutdown_prompt():
+            wait_for(lambda: js('return backgroundUpdateTask===null'),timeout=180)
             update=invoke('update_status')
             # Real WebKit layout/interaction check with synthetic status only.
-            # Backend state remains idle with no verified package, so even a
-            # broken UI cannot install. Deterministic JS tests separately spy on
-            # invocation; this real window checks the same no-operation state.
+            # No package was downloaded. Deterministic JS tests separately spy
+            # on invocation; this real window checks that an unchecked confirmation
+            # leaves backend state unchanged and never starts installation.
             js("""state.overlay='updates';state.update={currentVersion:'0.0.0 fixture',latestVersion:'99.0.0 fixture',phase:'downloaded',installMode:'appimage',message:'Synthetic verified-download status for UI testing only.',notes:'No package will be installed.'};renderUpdater();""")
             assert 'Let installers and updates finish' in js('return document.querySelector("#update-safety").textContent')
             assert 'saved my progress' in js('return document.querySelector("#update-close-confirm").textContent')
             assert not js('return document.querySelector("#update-games-closed").checked')
             click('[data-action="install-update"]')
             assert not js('return state.updateBusy')
-            assert invoke('update_status')['phase'] == 'idle'
+            assert invoke('update_status')['phase'] == update['phase']
             assert js('return state.update.phase') == 'downloaded'
             js('window.__confirmationNode=document.querySelector("#update-games-closed");window.__confirmationNode.checked=true;window.__confirmationNode.focus();')
             for _ in range(3): js('renderUpdater()')
@@ -262,7 +263,7 @@ def main():
                         .catch(error=>window.__inventoryResult={done:true,error:String(error)});''',command,arguments)
                     wait_for(lambda: inventory_started.exists(),timeout=5)
                     assert time.monotonic()-started < 5, command+' blocked native dispatch'
-                    assert invoke('update_status')['phase']=='idle'
+                    assert invoke('update_status')['phase'] not in ['downloading','installing']
                     assert time.monotonic()-started < 5, command+' blocked a separate native command'
                     assert not js('return window.__inventoryResult.done'), 'Inventory must still be waiting'
                     inventory_release.touch()
@@ -627,11 +628,12 @@ def main():
             print('PASS: additional compressed formats, literal PPSSPP/Dolphin argv, installed SFO names, HTML escaping, metadata fallback and stable artwork identity')
             wait_for(lambda: js('return document.querySelectorAll(".console-card").length === consoles.length && [...document.querySelectorAll(".console-card")].every(card => { const image = card.querySelector(".console-image"); return image?.complete && image.naturalWidth > 0; })'))
             update=invoke('update_status')
-            assert update['phase'] == 'idle' and update['currentVersion'] == diagnostics['version']
+            assert update['phase'] in ['idle','checking','current','available','error','recovery'] and update['currentVersion'] == diagnostics['version']
+            assert js('return updateChecksStarted===true')
             check_shutdown_prompt()
             if cfg.check_updates or cfg.download_update:
-                click('#nav-settings')
-                click('[data-action="updates"]')
+                click('[data-action="home"]')
+                click('#main-update-button')
                 wait_for(lambda: invoke('update_status')['phase'] in ['current','available','error'], 75)
                 status=invoke('update_status')
                 assert status['phase'] in ['current','available'],status
@@ -1052,6 +1054,8 @@ def main():
                 flatpak.write_text(healthy_flatpak)
             from native_quality_features import exercise as exercise_quality
             exercise_quality(home, library, invoke, js, click, wait_for, screenshot)
+            from native_hourly_updates import exercise as exercise_update_notice
+            exercise_update_notice(invoke, js, click, wait_for, screenshot)
             print('PASS: native shared-profile relocation, immediate import completion under stalled inventory, bounded Flatpak timeout and standalone ELF discovery')
             print('PASS: scoped sidecar-save Flatpak argv and console-only IPC (synthetic fixtures)')
             print('PASS: automatic Flatpak/AppImage linking, canonical duplicate removal, execute-permission preservation, Open emulator and captured startup errors')

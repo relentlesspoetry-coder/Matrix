@@ -108,3 +108,10 @@ Validation must be reported precisely: updater core tests exercise signature/ide
 ## Secure DEB helper regression checks
 
 Run `cargo test --locked --manifest-path update-core/Cargo.toml` for the privileged protocol tests: forged/oversized metadata, signed downgrade rejection, modified/truncated/oversized package streams, source mutation after staging, and unsafe staging directory rejection. These tests use synthetic packages and a test-only signing key and never invoke APT or pkexec. `cargo build --locked --release --manifest-path src-tauri/Cargo.toml --no-default-features --bin matrix-install-update --bin matrix-update-coordinator` builds the helpers; Tauri development/build commands run this automatically, and the build script/CI prepare it before desktop tests. Direct desktop Cargo commands also need this preparation because Tauri validates the coordinator resource during compilation. Run `python3 tests/test_deb_package.py path/to/package.deb` to confirm the built DEB requires `pkexec` and contains a root-owned, non-writable-by-ordinary-users `/usr/lib/matrix-play/matrix-install-update`. A real authorization/package installation remains a separate, explicitly authorized integration test.
+
+
+### Automatic checks
+
+The console menu exposes Check for updates beside Add emulator. While the app runs, its frontend asks the signed updater at startup and on an hourly deadline, with focus/visibility catch-up after suspend. A backend background-check policy coalesces concurrent requests, throttles automatic requests, and keeps active operations, downloaded installers and recovery messages intact. Manual checks retain their existing short cache and immediate error retry.
+
+A new available release produces an inline notice with Review update and Later. Background requests never start a download/installation or open a modal. Later snoozes that version for at least an hour; a newer release can notify immediately. Offline checks retry on the next scheduled hour. No checks run after Matrix Play exits.

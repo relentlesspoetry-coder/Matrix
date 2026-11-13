@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.17
+
+- Move Check for updates from Settings to the main console menu beside Add emulator, in both themes. Show Update available on that button when a newer verified release is known.
+- Check for updates at startup and every hour while Matrix Play is running. Catch up after suspend/focus, avoid overlapping requests, keep manual rechecks available, and retry quiet network failures on the next hourly check.
+- Show an available-update notice with Review update and Later, without opening dialogs, stealing focus, downloading or installing automatically. Preserve active downloads, downloaded installers and installer recovery messages during background checks.
+- Add fake-clock scheduler and updater-state regressions plus native main-menu/notification review checks; retain explicit installation confirmation and signed-update verification.
+
 ## 0.6.16
 
 - Add native drag-and-drop setup: preview and confirm a portable emulator move, register a game folder in place, or replace a selected game’s cover. Preserve active dialogs and validate files through the normal import/artwork paths.

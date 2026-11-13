@@ -27,6 +27,7 @@ struct Runtime {
     download: Option<core::Downloaded>,
     installed: Option<PathBuf>,
     last_check: Option<Instant>,
+    last_background_check: Option<Instant>,
 }
 #[derive(Clone)]
 pub(crate) struct Service {
@@ -90,6 +91,7 @@ impl Service {
                 download: None,
                 installed: None,
                 last_check: None,
+                last_background_check: None,
             })),
             cancel: Arc::new(AtomicBool::new(false)),
         }
@@ -122,9 +124,34 @@ impl Service {
         &self,
         fetch: impl FnOnce(&str) -> Result<(Option<core::VerifiedRelease>, String), String>,
     ) -> Result<Info, String> {
+        self.check_with_policy(false, fetch)
+    }
+    fn check_background(&self) -> Result<Info, String> {
+        self.check_with_policy(true, |kind| {
+            core::check(&mut core::Http::new()?, env!("CARGO_PKG_VERSION"), kind)
+        })
+    }
+    fn check_with_policy(
+        &self,
+        background: bool,
+        fetch: impl FnOnce(&str) -> Result<(Option<core::VerifiedRelease>, String), String>,
+    ) -> Result<Info, String> {
         let kind = {
             let mut s = self.inner.lock().map_err(|_| "Update state unavailable")?;
             if ["checking", "downloading", "installing"].contains(&s.info.phase.as_str()) {
+                return Ok(s.info.clone());
+            }
+            // Automatic checks must never discard a verified download or hide
+            // installer recovery guidance. Only an explicit action can retry.
+            if background
+                && ["downloaded", "installed", "recovery"].contains(&s.info.phase.as_str())
+            {
+                return Ok(s.info.clone());
+            }
+            if background
+                && s.last_background_check
+                    .is_some_and(|t| t.elapsed() < Duration::from_secs(3600))
+            {
                 return Ok(s.info.clone());
             }
             if s.last_check
@@ -133,6 +160,9 @@ impl Service {
                 return Ok(s.info.clone());
             }
             s.last_check = Some(Instant::now());
+            if background {
+                s.last_background_check = Some(Instant::now());
+            }
             s.info.phase = "checking".into();
             s.info.message = "Checking GitHub…".into();
             s.release = None;
@@ -320,6 +350,16 @@ pub(crate) async fn check_updates(service: tauri::State<'_, Service>) -> Result<
 }
 #[cfg(feature = "desktop")]
 #[tauri::command]
+pub(crate) async fn check_updates_background(
+    service: tauri::State<'_, Service>,
+) -> Result<Info, String> {
+    let service = service.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || service.check_background())
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[cfg(feature = "desktop")]
+#[tauri::command]
 pub(crate) async fn download_update(service: tauri::State<'_, Service>) -> Result<Info, String> {
     let service = service.inner().clone();
     tauri::async_runtime::spawn_blocking(move || service.download())
@@ -381,6 +421,65 @@ pub(crate) fn open_update_releases() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn automatic_checks_preserve_downloads_recovery_and_active_operations() {
+        for phase in [
+            "checking",
+            "downloading",
+            "installing",
+            "downloaded",
+            "installed",
+            "recovery",
+        ] {
+            let service = Service::with_outcome(None);
+            service.inner.lock().unwrap().info.phase = phase.into();
+            assert_eq!(
+                service
+                    .check_with_policy(true, |_| panic!("Background checks must preserve {phase}"))
+                    .unwrap()
+                    .phase,
+                phase
+            );
+        }
+    }
+
+    #[test]
+    fn automatic_checks_are_hourly_but_manual_rechecks_remain_available() {
+        let service = Service::with_outcome(None);
+        service
+            .check_with_policy(true, |_| Ok((None, env!("CARGO_PKG_VERSION").into())))
+            .unwrap();
+        {
+            let mut s = service.inner.lock().unwrap();
+            s.last_check = Some(Instant::now() - Duration::from_secs(3599));
+            s.last_background_check = s.last_check;
+        }
+        service
+            .check_with_policy(true, |_| panic!("The hour has not elapsed"))
+            .unwrap();
+        let mut manual = false;
+        service
+            .check_with(|_| {
+                manual = true;
+                Ok((None, env!("CARGO_PKG_VERSION").into()))
+            })
+            .unwrap();
+        assert!(manual);
+        {
+            let mut s = service.inner.lock().unwrap();
+            s.last_check = Some(Instant::now() - Duration::from_secs(900));
+            s.last_background_check = Some(Instant::now() - Duration::from_secs(3601));
+        }
+        let mut automatic = false;
+        service
+            .check_with_policy(true, |_| {
+                automatic = true;
+                Ok((None, env!("CARGO_PKG_VERSION").into()))
+            })
+            .unwrap();
+        assert!(automatic);
+    }
 
     #[test]
     fn persisted_install_outcome_is_retained_until_explicit_retry() {

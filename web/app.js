@@ -1,4 +1,4 @@
-/* Matrix-Play v0.6.16 — native Tauri library, launcher, and local artwork bridge. */
+/* Matrix-Play v0.6.17 — native Tauri library, launcher, and local artwork bridge. */
 'use strict';
 
 const TITLE_COVER_KINDS = ['ps3','ps4','psp','vita','n64','dreamcast','wiiu','gb','gba','nds','3ds'];
@@ -258,11 +258,11 @@ function renderHome() {
   const focus=captureLibraryFocus($('#screen'),'home');
   const visible=consoleChoices();
   const selected=visible.find(c=>c.id===state.previewConsoleId)||visible.find(c=>c.id==='switch2')||visible[0];state.previewConsoleId=selected?.id;
-  $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${visible.length} ${visible.length===1?'library':'libraries'}</p></div>${state.native?'<button type="button" class="button button-primary" data-action="add-emulator">Add emulator</button>':''}</div>
+  $('#screen').innerHTML=`<div class="title-row"><div><h1 class="page-title">Consoles</h1><p class="page-subtitle">${visible.length} ${visible.length===1?'library':'libraries'}</p></div>${state.native?'<div class="home-actions"><button type="button" class="button button-ghost" id="main-update-button" data-action="updates" aria-label="Update Matrix-Play">Check for updates</button><button type="button" class="button button-primary" data-action="add-emulator">Add emulator</button></div>':''}</div>
     <div class="section-toolbar"><div class="segmented brand-filters" role="group" aria-label="Filter console brands">${['All','Sony','Nintendo','Sega','Xbox'].map(v=>`<button type="button" class="${state.vendor===v?'active':''}" data-action="vendor" data-value="${v}" aria-pressed="${state.vendor===v}">${v==='All'?'All systems':v==='Sony'?'PlayStation':v}</button>`).join('')}</div></div>
     ${state.recent.length?`<details class="library-notes recent-games"><summary>Recently played</summary><div class="tag-row">${state.recent.slice(0,8).map(g=>`<button class="button button-ghost" type="button" data-action="recent-game" data-id="${escapeHtml(g.kind)}" data-uid="${escapeHtml(g.uid)}">${escapeHtml(g.title)}</button>`).join('')}</div></details>`:''}
     <div class="console-browser"><div class="console-grid">${visible.map(consoleCard).join('')||'<p>No consoles match. Adjust Console visibility in Settings.</p>'}</div><aside class="console-preview" aria-label="Console preview" data-console-id="${selected?.id||''}">${consolePreview(selected)}</aside></div>`;
-  restoreLibraryFocus(focus);
+  renderUpdateNotice();restoreLibraryFocus(focus);
 }
 function consolePreview(consoleInfo) {
   if (!consoleInfo) return '';
@@ -501,7 +501,7 @@ function renderConsole() {
 function renderSettings() {
   const focus=captureLibraryFocus($('#screen'),'settings');
   if(state.settingsTab==='themes'){renderThemes(focus);return;}
-  $('#screen').innerHTML=`<div class="settings-header"><h1 class="page-title">Settings</h1><div class="settings-app"><span>Matrix-Play</span><button type="button" class="button button-ghost" data-action="updates" aria-label="Update Matrix-Play">Check for updates</button></div></div>${settingsTabs()}
+  $('#screen').innerHTML=`<div class="settings-header"><h1 class="page-title">Settings</h1><div class="settings-app"><span>Matrix-Play</span></div></div>${settingsTabs()}
     ${state.native?discoverySummary():''}
     ${displayControls()}
     ${organizationControls()}
@@ -540,6 +540,7 @@ function dismissOverlay() {
   if(state.overlay==='emulator-import'&&emulatorImportBusy||state.overlay==='drop-preview'&&dropBusy||state.overlay==='disc-create'&&$('.disc-create-dialog')?.dataset.busy==='true')return;
   if (state.overlay === null) return;
   state.overlay = null;
+  renderUpdateNotice();
   state.selectedGame = null;
   const shell=$('.app-shell');if (shell) shell.inert=false;
   $('#overlay-root').innerHTML = '';
@@ -1141,7 +1142,7 @@ async function initializeNative() {
   $('#mode-indicator').textContent = 'NATIVE LINUX';
   $('#native-status').textContent = 'Native backend · folders managed automatically';
   try {
-    if (await bootstrapNative()) {await refreshNative();await pollLibraries(true);if(state.needsEmulatorSetup&&!state.overlay)openEmulatorImport(true);state.nativeInitialized=true;void initializeQuality();setInterval(()=>void refreshManagedAndGames(),30000);}
+    if (await bootstrapNative()) {await refreshNative();await pollLibraries(true);if(state.needsEmulatorSetup&&!state.overlay)openEmulatorImport(true);state.nativeInitialized=true;startUpdateChecks();void initializeQuality();setInterval(()=>void refreshManagedAndGames(),30000);}
   } catch(error) { toast(`Matrix-Play initialization failed: ${error}`); }
 }
 
@@ -1187,10 +1188,67 @@ function renderUpdater() {
   button.classList.toggle('button-primary',info.phase!=='downloading');
   if (button.disabled && document.activeElement===button) $('.update-dialog .close').focus();
 }
+// In-app checks only: no downloads or installation without an explicit action.
+const UPDATE_CHECK_INTERVAL=60*60*1000;
+let updateCheckTimer=null,updateChecksStarted=false,backgroundUpdateTask=null,nextUpdateCheck=0;
+let updateNoticeSnoozedUntil=0,updateNoticeVersion='';
+function syncUpdateNotice(info){
+  if(!info)return;
+  if(info.phase==='available'&&info.latestVersion){
+    if(updateNoticeVersion!==info.latestVersion){updateNoticeVersion=info.latestVersion;updateNoticeSnoozedUntil=0;}
+    state.updateNotice=info;
+  }else if(['current','downloading','downloaded','installing','installed'].includes(info.phase))state.updateNotice=null;
+  renderUpdateNotice();
+}
+function renderUpdateNotice(){
+  const info=state.updateNotice,host=$('#update-notice-root'),button=$('#main-update-button');
+  if(button){button.textContent=info?'Update available':'Check for updates';button.classList.toggle('update-ready',Boolean(info));}
+  if(!host)return;
+  const show=Boolean(info?.latestVersion)&&Date.now()>=updateNoticeSnoozedUntil&&state.overlay!=='updates';
+  host.hidden=!show;
+  if(!show)return;
+  // Keep the existing buttons/focus through repeated checks of the same release.
+  if(host.dataset.version===info.latestVersion)return;
+  host.dataset.version=info.latestVersion;
+  host.innerHTML=`<p role="status">Matrix Play <strong>v${escapeHtml(info.latestVersion)}</strong> is available.</p><div class="update-notice-actions"><button type="button" class="button button-primary" data-action="updates">Review update</button><button type="button" class="button button-ghost" data-action="later-update">Later</button></div>`;
+}
+function checkForUpdateNotice(){
+  if(!state.native||backgroundUpdateTask||state.updateBusy||state.overlay==='updates'||Date.now()<nextUpdateCheck)return backgroundUpdateTask||Promise.resolve();
+  nextUpdateCheck=Date.now()+UPDATE_CHECK_INTERVAL;
+  const operation=updateOperation;
+  const task=Promise.resolve().then(async()=>{
+    try{
+      const info=await nativeInvoke('check_updates_background');
+      if(operation!==updateOperation||state.updateBusy||!info)return;
+      // Background network failures stay quiet; the manual updater still shows
+      // their details when opened. Existing verified availability stays visible.
+      if(info.phase!=='error'){state.update=info;syncUpdateNotice(info);renderUpdater();}
+    }catch{}finally{nextUpdateCheck=Date.now()+UPDATE_CHECK_INTERVAL;}
+  });
+  backgroundUpdateTask=task;
+  void task.finally(()=>{if(backgroundUpdateTask===task)backgroundUpdateTask=null;});
+  return task;
+}
+function armUpdateCheck(){
+  if(!updateChecksStarted)return;
+  clearTimeout(updateCheckTimer);
+  // Retry a due check deferred by a manual operation in one minute. Otherwise
+  // preserve the actual hourly deadline, including after suspend/resume.
+  updateCheckTimer=setTimeout(()=>void checkForUpdateNotice().finally(armUpdateCheck),Math.max(60000,nextUpdateCheck-Date.now()));
+}
+function startUpdateChecks(){
+  if(!state.native||updateChecksStarted)return;
+  updateChecksStarted=true;
+  const wake=()=>{if(!document.hidden){renderUpdateNotice();void checkForUpdateNotice().finally(armUpdateCheck);}};
+  window.addEventListener?.('focus',wake);document.addEventListener?.('visibilitychange',wake);
+  void checkForUpdateNotice().finally(armUpdateCheck);
+}
+
 let updateOperation = 0;
 let updaterOpening = 0;
 async function runUpdate(command) {
   if (!state.native) { toast('App updates are available in the Linux application.'); return; }
+  if (backgroundUpdateTask) await backgroundUpdateTask;
   if (state.updateBusy) return;
   const gamesClosed=command==='install_update' && $('#update-games-closed')?.checked===true;
   if (command==='install_update' && !gamesClosed) { toast('Save your progress, close launched apps, and wait for installers/updates to finish. Then check the confirmation.'); return; }
@@ -1199,6 +1257,7 @@ async function runUpdate(command) {
   if (state.update) {
     state.update.phase = {check_updates:'checking',download_update:'downloading',install_update:'installing'}[command] || state.update.phase;
     state.update.message = 'Please wait…';
+    syncUpdateNotice(state.update);
   }
   renderUpdater();
   let polling = false;
@@ -1210,15 +1269,16 @@ async function runUpdate(command) {
   }, 500);
   try { state.update = await nativeInvoke(command, command==='install_update' ? {gamesClosed} : undefined); }
   catch(error) { state.update = {...state.update, phase:'error',message:String(error)}; }
-  finally { clearInterval(timer); state.updateBusy = false; renderUpdater(); }
+  finally { clearInterval(timer); state.updateBusy = false; syncUpdateNotice(state.update);renderUpdater(); }
 }
 async function openUpdater() {
   if (!state.native) { toast('App updates are available in the Linux application.'); return; }
   const opening=++updaterOpening, operationAtOpen=updateOperation, busyAtOpen=state.updateBusy;
   state.lastFocus = document.activeElement; state.overlay = 'updates';
-  renderUpdater();
+  renderUpdateNotice();renderUpdater();
   $('.update-dialog .close')?.focus();
   try {
+    if (backgroundUpdateTask) await backgroundUpdateTask;
     const info=await nativeInvoke('update_status');
     if (opening!==updaterOpening || state.overlay!=='updates') return;
     if (!busyAtOpen && !state.updateBusy && operationAtOpen===updateOperation) state.update=info;
@@ -1249,7 +1309,8 @@ async function handleAction(button) {
     try{if(await saveLibraryPref('theme','',value)){applyTheme();toast('Theme saved.');}else{libraryPrefs().theme=previous;applyTheme();}}
     finally{state.themeSaving=false;if(state.page==='home')renderHome();else if(state.page==='settings'&&state.settingsTab==='themes')renderSettings();button.disabled=false;}return;
   }
-  if (action === 'updates') void openUpdater();
+  if (action === 'later-update') {updateNoticeSnoozedUntil=Date.now()+UPDATE_CHECK_INTERVAL;renderUpdateNotice();}
+  else if (action === 'updates') void openUpdater();
   else if (action === 'check-updates') void runUpdate('check_updates');
   else if (action === 'download-update') void runUpdate('download_update');
   else if (action === 'install-update') void runUpdate('install_update');

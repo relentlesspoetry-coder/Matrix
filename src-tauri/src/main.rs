@@ -1397,6 +1397,7 @@ fn main() {
             desktop_commands::import_emulator,
             updates::update_status,
             updates::check_updates,
+            updates::check_updates_background,
             updates::download_update,
             updates::install_update,
             updates::cancel_update,
